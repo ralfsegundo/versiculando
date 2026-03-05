@@ -65,8 +65,22 @@ export default function App() {
       setIsInitializing(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      // Quando um novo usuário loga, reseta o onboarding para não mostrar dados do usuário anterior
+      if (event === 'SIGNED_IN') {
+        const savedUserId = localStorage.getItem('current_user_id');
+        if (session?.user && savedUserId !== session.user.id) {
+          localStorage.removeItem('onboarding_done');
+          localStorage.removeItem('onboarding_profile');
+          localStorage.removeItem('onboarding_welcome');
+          localStorage.removeItem('user_profile');
+          localStorage.removeItem('user_badges');
+          localStorage.setItem('current_user_id', session.user.id);
+          setOnboardingDone(false);
+          setWelcomeMessage(null);
+        }
+      }
     });
 
     return () => subscription.unsubscribe();

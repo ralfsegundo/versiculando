@@ -4,6 +4,7 @@ import { Users, Search, UserPlus, Check, X, UserMinus, Clock, Activity, Trophy, 
 import { sharingService, Connection } from '../services/sharingService';
 import { motion } from 'motion/react';
 import { BIBLE_BOOKS, BEGINNER_PATH } from '../constants';
+import { supabase } from '../lib/supabase';
 
 // Group Types
 interface GroupMember {
@@ -140,108 +141,246 @@ export default function Community() {
     onConfirm: () => {}
   });
 
-  // Mock Data
-  const [mockFeed, setMockFeed] = useState([
-    { id: 1, user: 'Maria', avatarId: 'maria', action: 'concluiu Êxodo ⭐', time: 'há 2h' },
-    { id: 2, user: 'João', avatarId: 'jose', action: 'leu 3 capítulos de Gênesis', time: 'há 5h' },
-    { id: 3, user: 'Ana', avatarId: 'teresinha', action: 'desbloqueou a conquista "Madrugador" 🌅', time: 'há 1 dia' },
-  ]);
+  // ── Estado real (Supabase) ────────────────────────────────
+  const [mockFeed, setMockFeed] = useState<{ id: number; user: string; avatarId: string; action: string; time: string }[]>([]);
+  const [mockRankingData, setMockRankingData] = useState<{ id: string; name: string; avatarId: string; avatarUrl?: string; points: number; position: number }[]>([]);
+  const [mockGroups, setMockGroups] = useState<Group[]>([]);
+  const [mockGroupInvites, setMockGroupInvites] = useState<{ id: string; groupName: string; targetName: string; from: string; fromAvatarId: string }[]>([]);
+  const [mockPrayers, setMockPrayers] = useState<{ id: string; user: string; userId: string; avatarId: string; avatarUrl?: string; request: string; prayedCount: number; hasPrayed: boolean }[]>([]);
+  const [isLoadingCommunity, setIsLoadingCommunity] = useState(false);
 
-  const mockRanking = [
-    { id: 1, name: 'João', avatarId: 'jose', points: 1250, position: 1 },
-    { id: 2, name: 'Maria', avatarId: 'maria', points: 1100, position: 2 },
-    { id: 3, name: profile.name, avatarId: profile.avatarId, avatarUrl: profile.avatarUrl, points: profile.points, position: 3 },
-    { id: 4, name: 'Ana', avatarId: 'teresinha', points: 850, position: 4 },
-  ].sort((a, b) => b.points - a.points).map((u, i) => ({ ...u, position: i + 1 }));
+  // Alias para compatibilidade com renderização do ranking
+  const mockRanking = mockRankingData;
 
-  const [mockGroups, setMockGroups] = useState<Group[]>([
-    { 
-      id: 1, 
-      name: 'Jovens Sarados', 
-      targetId: 'genesis',
-      targetName: 'Gênesis',
-      members: [
-        { email: 'joao@example.com', name: 'João', avatarId: 'jose', progress: 80, isLeader: true },
-        { email: profile.email || 'me', name: profile.name, avatarId: profile.avatarId, avatarUrl: profile.avatarUrl, progress: 45 },
-        { email: 'maria@example.com', name: 'Maria', avatarId: 'maria', progress: 10 }
-      ],
-      messages: [
-        { id: 1, user: 'João', userEmail: 'joao@example.com', avatarId: 'jose', text: 'Pessoal, vamos tentar terminar o capítulo 5 hoje!', timestamp: '10:00', type: 'text' }
-      ]
-    },
-    { 
-      id: 2, 
-      name: 'Estudo de Apocalipse', 
-      targetId: 'apocalipse',
-      targetName: 'Apocalipse',
-      members: [
-        { email: 'ana@example.com', name: 'Ana', avatarId: 'teresinha', progress: 100, isLeader: true },
-        { email: profile.email || 'me', name: profile.name, avatarId: profile.avatarId, avatarUrl: profile.avatarUrl, progress: 60 }
-      ],
-      messages: []
-    },
-  ]);
+  // ── Carregamento de dados ─────────────────────────────────
+  const loadCommunityData = async () => {
+    if (!profile.email) return;
+    setIsLoadingCommunity(true);
+    try {
+      await Promise.all([loadFeed(), loadRanking(), loadGroups(), loadGroupInvites(), loadPrayers()]);
+    } finally {
+      setIsLoadingCommunity(false);
+    }
+  };
 
-  const [mockGroupInvites, setMockGroupInvites] = useState([
-    { id: 101, groupName: 'Leitura Anual', targetName: 'Bíblia Toda', from: 'Pedro', fromAvatarId: 'peixe' }
-  ]);
+  const loadFeed = async () => {
+    const { data } = await supabase
+      .from('community_feed')
+      .select('id, user_name, avatar_id, action, created_at')
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if (data) {
+      setMockFeed(data.map((r: any) => ({
+        id: r.id,
+        user: r.user_name,
+        avatarId: r.avatar_id,
+        action: r.action,
+        time: formatRelativeTime(r.created_at),
+      })));
+    }
+  };
 
-  const [mockPrayers, setMockPrayers] = useState([
-    { id: 1, user: 'Ana', avatarId: 'teresinha', request: 'Pela saúde da minha mãe que fará uma cirurgia amanhã.', prayedCount: 5, hasPrayed: false },
-    { id: 2, user: 'João', avatarId: 'jose', request: 'Por uma porta de emprego.', prayedCount: 12, hasPrayed: true },
-  ]);
+  const loadRanking = async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, name, avatar_id, avatar_url, points')
+      .order('points', { ascending: false })
+      .limit(20);
+    if (data) {
+      setMockRankingData(data.map((u: any, i: number) => ({
+        id: u.id,
+        name: u.name || 'Usuário',
+        avatarId: u.avatar_id || '',
+        avatarUrl: u.avatar_url,
+        points: u.points || 0,
+        position: i + 1,
+      })));
+    }
+  };
 
-  const handleCreateGroup = () => {
-    if (!newGroupName.trim() || !newGroupTarget) return;
-    
-    const targetName = newGroupTarget === 'beginner' ? 'Trilha do Discípulo' : 
+  const loadGroups = async () => {
+    if (!profile.email) return;
+    const { data } = await supabase
+      .from('community_groups')
+      .select('id, name, target_id, target_name, members, messages, materials')
+      .order('created_at', { ascending: false });
+    if (data) {
+      const myGroups = data.filter((g: any) =>
+        Array.isArray(g.members) && g.members.some((m: any) => m.email === profile.email)
+      );
+      setMockGroups(myGroups.map((g: any) => ({
+        id: g.id,
+        name: g.name,
+        targetId: g.target_id,
+        targetName: g.target_name,
+        members: g.members || [],
+        messages: g.messages || [],
+        materials: g.materials || [],
+      })));
+    }
+  };
+
+  const loadGroupInvites = async () => {
+    if (!profile.email) return;
+    const { data } = await supabase
+      .from('community_group_invites')
+      .select('id, group_name, target_name, from_name, from_avatar_id')
+      .eq('to_email', profile.email)
+      .eq('status', 'pending');
+    if (data) {
+      setMockGroupInvites(data.map((i: any) => ({
+        id: i.id,
+        groupName: i.group_name,
+        targetName: i.target_name,
+        from: i.from_name,
+        fromAvatarId: i.from_avatar_id,
+      })));
+    }
+  };
+
+  const loadPrayers = async () => {
+    const { data: prayers } = await supabase
+      .from('community_prayers')
+      .select('id, user_name, user_id, avatar_id, avatar_url, request, prayed_count')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (!prayers) return;
+
+    const { data: myPrayers } = await supabase
+      .from('community_prayer_votes')
+      .select('prayer_id')
+      .eq('user_email', profile.email || '');
+
+    const prayedSet = new Set((myPrayers || []).map((p: any) => p.prayer_id));
+
+    setMockPrayers(prayers.map((p: any) => ({
+      id: p.id,
+      user: p.user_name,
+      userId: p.user_id,
+      avatarId: p.avatar_id || '',
+      avatarUrl: p.avatar_url,
+      request: p.request,
+      prayedCount: p.prayed_count || 0,
+      hasPrayed: prayedSet.has(p.id),
+    })));
+  };
+
+  const formatRelativeTime = (isoString: string) => {
+    const diff = Date.now() - new Date(isoString).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'Agora mesmo';
+    if (m < 60) return `há ${m}min`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `há ${h}h`;
+    return `há ${Math.floor(h / 24)} dias`;
+  };
+
+  const addToFeed = async (action: string) => {
+    if (!profile.email) return;
+    await supabase.from('community_feed').insert({
+      user_name: profile.name,
+      user_email: profile.email,
+      avatar_id: profile.avatarId || '',
+      action,
+    });
+    await loadFeed();
+  };
+  // ── Helper: persiste grupo no Supabase ──────────────────
+  const persistGroup = async (group: Group) => {
+    await supabase
+      .from('community_groups')
+      .update({
+        members: group.members,
+        messages: group.messages,
+        materials: group.materials || [],
+      })
+      .eq('id', group.id);
+  };
+
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim() || !newGroupTarget || !profile.email) return;
+    const targetName = newGroupTarget === 'beginner' ? 'Trilha do Discípulo' :
                        BIBLE_BOOKS.find(b => b.id === newGroupTarget)?.name || 'Estudo';
 
-    const newGroup: Group = {
-      id: Date.now(),
+    const { data, error } = await supabase.from('community_groups').insert({
       name: newGroupName,
-      targetId: newGroupTarget,
-      targetName: targetName,
-      members: [
-        { email: profile.email || 'me', name: profile.name, avatarId: profile.avatarId, avatarUrl: profile.avatarUrl, progress: 0, isLeader: true }
-      ],
-      messages: []
-    };
+      target_id: newGroupTarget,
+      target_name: targetName,
+      members: [{ email: profile.email, name: profile.name, avatarId: profile.avatarId, avatarUrl: profile.avatarUrl, progress: 0, isLeader: true }],
+      messages: [],
+      materials: [],
+      created_by: profile.email,
+    }).select().single();
 
-    setMockGroups(prev => [newGroup, ...prev]);
+    if (!error && data) {
+      const newGroup: Group = {
+        id: data.id,
+        name: data.name,
+        targetId: data.target_id,
+        targetName: data.target_name,
+        members: data.members,
+        messages: data.messages,
+        materials: data.materials,
+      };
+      setMockGroups(prev => [newGroup, ...prev]);
+      await addToFeed(`criou o grupo "${newGroupName}"`);
+
+      // Enviar convites
+      if (newGroupInvites.length > 0) {
+        const invites = newGroupInvites.map(email => ({
+          group_id: data.id,
+          group_name: newGroupName,
+          target_name: targetName,
+          from_email: profile.email,
+          from_name: profile.name,
+          from_avatar_id: profile.avatarId || '',
+          to_email: email,
+          status: 'pending',
+        }));
+        await supabase.from('community_group_invites').insert(invites);
+        alert(`Convites enviados para ${newGroupInvites.length} amigo(s)!`);
+      }
+    }
+
     setNewGroupName('');
     setNewGroupTarget('');
     setNewGroupInvites([]);
     setIsCreatingGroup(false);
-    
-    // Add to feed
-    setMockFeed(prev => [
-      { id: Date.now(), user: profile.name, avatarId: profile.avatarId, action: `criou o grupo "${newGroupName}"`, time: 'Agora mesmo' },
-      ...prev
-    ]);
+  };
 
-    if (newGroupInvites.length > 0) {
-      alert(`Convites enviados para ${newGroupInvites.length} amigo(s)!`);
+  const handleAcceptGroupInvite = async (inviteId: string) => {
+    const invite = mockGroupInvites.find(i => i.id === inviteId);
+    if (!invite || !profile.email) return;
+    // Accept invite: update status and add user to group
+    await supabase.from('community_group_invites').update({ status: 'accepted' }).eq('id', inviteId);
+    // Fetch group and add member
+    const { data: groupData } = await supabase
+      .from('community_groups')
+      .select('*')
+      .eq('name', invite.groupName)
+      .single();
+    if (groupData) {
+      const updatedMembers = [...(groupData.members || []),
+        { email: profile.email, name: profile.name, avatarId: profile.avatarId, avatarUrl: profile.avatarUrl, progress: 0 }
+      ];
+      await supabase.from('community_groups').update({ members: updatedMembers }).eq('id', groupData.id);
     }
-  };
-
-  const handleAcceptGroupInvite = (inviteId: number) => {
     setMockGroupInvites(prev => prev.filter(i => i.id !== inviteId));
+    await loadGroups();
     alert('Você entrou no grupo!');
-    // In a real app, this would add the user to the group in the backend
   };
 
-  const handleRejectGroupInvite = (inviteId: number) => {
+  const handleRejectGroupInvite = async (inviteId: string) => {
+    await supabase.from('community_group_invites').update({ status: 'rejected' }).eq('id', inviteId);
     setMockGroupInvites(prev => prev.filter(i => i.id !== inviteId));
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!newMessage.trim() || !activeGroup) return;
-    
     let updatedMessages = [...activeGroup.messages];
 
     if (editingMessageId) {
-      updatedMessages = updatedMessages.map(msg => 
+      updatedMessages = updatedMessages.map(msg =>
         msg.id === editingMessageId ? { ...msg, text: newMessage, type: postType } : msg
       );
     } else {
@@ -257,13 +396,10 @@ export default function Community() {
       });
     }
 
-    const updatedGroup = {
-      ...activeGroup,
-      messages: updatedMessages
-    };
-    
+    const updatedGroup = { ...activeGroup, messages: updatedMessages };
     setActiveGroup(updatedGroup);
     setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+    await persistGroup(updatedGroup);
     setNewMessage('');
     setEditingMessageId(null);
     setPostType('text');
@@ -275,34 +411,28 @@ export default function Community() {
     setEditingMessageId(msg.id);
   };
 
-  const handlePinMessage = (messageId: number) => {
+  const handlePinMessage = async (messageId: number) => {
     if (!activeGroup) return;
-    const updatedMessages = activeGroup.messages.map(msg => 
+    const updatedMessages = activeGroup.messages.map(msg =>
       msg.id === messageId ? { ...msg, isPinned: !msg.isPinned } : msg
     );
     const updatedGroup = { ...activeGroup, messages: updatedMessages };
     setActiveGroup(updatedGroup);
     setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+    await persistGroup(updatedGroup);
   };
 
-  const handleReact = (messageId: number, emoji: string) => {
+  const handleReact = async (messageId: number, emoji: string) => {
     if (!activeGroup) return;
     const userEmail = profile.email || 'me';
-
     const updatedMessages = activeGroup.messages.map(msg => {
       if (msg.id === messageId) {
         const reactions = msg.reactions || [];
-
-        // Find if user already reacted with any emoji
         const currentEmojiIndex = reactions.findIndex(r => r.users.includes(userEmail));
         const isSameEmoji = currentEmojiIndex >= 0 && reactions[currentEmojiIndex].emoji === emoji;
-
-        // Remove user from their current reaction (if any)
         let newReactions = reactions
           .map(r => ({ ...r, users: r.users.filter(u => u !== userEmail) }))
           .filter(r => r.users.length > 0);
-
-        // If it's a different emoji (or no previous reaction), add user to new emoji
         if (!isSameEmoji) {
           const targetIndex = newReactions.findIndex(r => r.emoji === emoji);
           if (targetIndex >= 0) {
@@ -311,63 +441,52 @@ export default function Community() {
             newReactions.push({ emoji, users: [userEmail] });
           }
         }
-
         return { ...msg, reactions: newReactions };
       }
       return msg;
     });
-
     const updatedGroup = { ...activeGroup, messages: updatedMessages };
     setActiveGroup(updatedGroup);
     setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+    await persistGroup(updatedGroup);
     setShowReactionMenu(null);
   };
 
-  const handleCreatePoll = () => {
+  const handleCreatePoll = async () => {
     if (!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2 || !activeGroup) return;
-
     const validOptions = pollOptions.filter(o => o.trim()).map((opt, idx) => ({
       id: `opt_${Date.now()}_${idx}`,
       text: opt.trim(),
       votes: []
     }));
-
     const updatedGroup = {
       ...activeGroup,
-      messages: [
-        ...activeGroup.messages,
-        {
-          id: Date.now(),
-          user: profile.name,
-          userEmail: profile.email || 'me',
-          avatarId: profile.avatarId,
-          avatarUrl: profile.avatarUrl,
-          text: '',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          type: 'poll' as const,
-          poll: {
-            question: pollQuestion.trim(),
-            options: validOptions
-          }
-        }
-      ]
+      messages: [...activeGroup.messages, {
+        id: Date.now(),
+        user: profile.name,
+        userEmail: profile.email || 'me',
+        avatarId: profile.avatarId,
+        avatarUrl: profile.avatarUrl,
+        text: '',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: 'poll' as const,
+        poll: { question: pollQuestion.trim(), options: validOptions }
+      }]
     };
-
     setActiveGroup(updatedGroup);
     setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+    await persistGroup(updatedGroup);
     setIsCreatingPoll(false);
     setPollQuestion('');
     setPollOptions(['', '']);
   };
 
-  const handleAddMaterial = () => {
+  const handleAddMaterial = async () => {
     if (!materialTitle.trim() || !materialUrl.trim() || !activeGroup) return;
-    
     let finalUrl = materialUrl.trim();
     if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
       finalUrl = 'https://' + finalUrl;
     }
-
     const detectMaterialType = (url: string) => {
       if (url.includes('docs.google.com/spreadsheets')) return 'spreadsheet';
       if (url.includes('docs.google.com/document')) return 'document';
@@ -375,14 +494,12 @@ export default function Community() {
       if (url.includes('youtube.com') || url.includes('youtu.be')) return 'video';
       return 'link';
     };
-
     const newMaterial: GroupMaterial = {
       id: `mat_${Date.now()}`,
       title: materialTitle.trim(),
       url: finalUrl,
       type: detectMaterialType(finalUrl)
     };
-
     const alertMessage: GroupMessage = {
       id: Date.now(),
       user: profile.name,
@@ -394,16 +511,14 @@ export default function Community() {
       type: 'text',
       isPinned: true
     };
-
     const updatedGroup = {
       ...activeGroup,
       materials: [...(activeGroup.materials || []), newMaterial],
       messages: [...activeGroup.messages, alertMessage]
     };
-
     setActiveGroup(updatedGroup);
     setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
-    
+    await persistGroup(updatedGroup);
     setMaterialTitle('');
     setMaterialUrl('');
     setIsAddingMaterial(false);
@@ -411,104 +526,78 @@ export default function Community() {
 
   const handleDeleteMaterial = (materialId: string) => {
     if (!activeGroup) return;
-    
-    const materialToDelete = activeGroup.materials?.find(m => m.id === materialId);
-    if (!materialToDelete) return;
-
-    const expectedMessageText = `Compartilhou um material: ${materialToDelete.title}`;
-
     setConfirmModal({
       isOpen: true,
       title: 'Excluir Material',
       message: 'Tem certeza que deseja excluir este material de apoio?',
       confirmText: 'Excluir',
       confirmColor: 'bg-rose-700 hover:bg-rose-800',
-      onConfirm: () => {
+      onConfirm: async () => {
         const updatedGroup = {
           ...activeGroup,
           materials: (activeGroup.materials || []).filter(m => m.id !== materialId),
-          messages: activeGroup.messages.filter(msg => msg.text !== expectedMessageText)
+          messages: activeGroup.messages.filter(msg => !msg.text.includes(activeGroup.materials?.find(m => m.id === materialId)?.title || '____'))
         };
         setActiveGroup(updatedGroup);
         setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+        await persistGroup(updatedGroup);
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
     });
   };
 
-  const handleVote = (messageId: number, optionId: string) => {
+  const handleVote = async (messageId: number, optionId: string) => {
     if (!activeGroup) return;
     const userEmail = profile.email || 'me';
-
     const updatedMessages = activeGroup.messages.map(msg => {
       if (msg.id === messageId && msg.type === 'poll' && msg.poll) {
-        // Check if user already voted for this same option (toggle off not desired, just allow change)
         const alreadyVotedThis = msg.poll.options.find(opt => opt.id === optionId)?.votes.includes(userEmail);
-        if (alreadyVotedThis) return msg; // Already voted for this option, no change needed
-
-        // Remove previous vote (if any) and add new vote
+        if (alreadyVotedThis) return msg;
         const updatedOptions = msg.poll.options.map(opt => {
-          if (opt.id === optionId) {
-            // Add vote to selected option
-            return { ...opt, votes: [...opt.votes.filter(v => v !== userEmail), userEmail] };
-          }
-          // Remove vote from other options
+          if (opt.id === optionId) return { ...opt, votes: [...opt.votes.filter(v => v !== userEmail), userEmail] };
           return { ...opt, votes: opt.votes.filter(v => v !== userEmail) };
         });
-
         return { ...msg, poll: { ...msg.poll, options: updatedOptions } };
       }
       return msg;
     });
-
     const updatedGroup = { ...activeGroup, messages: updatedMessages };
     setActiveGroup(updatedGroup);
     setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+    await persistGroup(updatedGroup);
   };
 
-  const handleCreateQuestionBox = () => {
+  const handleCreateQuestionBox = async () => {
     if (!questionBoxText.trim() || !activeGroup) return;
-
     const updatedGroup = {
       ...activeGroup,
-      messages: [
-        ...activeGroup.messages,
-        {
-          id: Date.now(),
-          user: profile.name,
-          userEmail: profile.email || 'me',
-          avatarId: profile.avatarId,
-          avatarUrl: profile.avatarUrl,
-          text: '',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          type: 'question_box' as const,
-          questionBox: {
-            question: questionBoxText.trim(),
-            answers: []
-          }
-        }
-      ]
+      messages: [...activeGroup.messages, {
+        id: Date.now(),
+        user: profile.name,
+        userEmail: profile.email || 'me',
+        avatarId: profile.avatarId,
+        avatarUrl: profile.avatarUrl,
+        text: '',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: 'question_box' as const,
+        questionBox: { question: questionBoxText.trim(), answers: [] }
+      }]
     };
-
     setActiveGroup(updatedGroup);
     setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+    await persistGroup(updatedGroup);
     setIsCreatingQuestionBox(false);
     setQuestionBoxText('');
   };
 
-  const handleAnswerQuestionBox = (messageId: number) => {
+  const handleAnswerQuestionBox = async (messageId: number) => {
     if (!activeGroup) return;
     const answerText = questionBoxAnswers[messageId];
     if (!answerText || !answerText.trim()) return;
-
     const userEmail = profile.email || 'me';
-
     const updatedMessages = activeGroup.messages.map(msg => {
       if (msg.id === messageId && msg.type === 'question_box' && msg.questionBox) {
-        // Check if user already answered
-        const hasAnswered = msg.questionBox.answers.some(ans => ans.userEmail === userEmail);
-        if (hasAnswered) return msg;
-
+        if (msg.questionBox.answers.some(ans => ans.userEmail === userEmail)) return msg;
         const newAnswer: QuestionBoxAnswer = {
           userEmail,
           userName: profile.name,
@@ -516,39 +605,28 @@ export default function Community() {
           text: answerText.trim(),
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
-
-        return {
-          ...msg,
-          questionBox: {
-            ...msg.questionBox,
-            answers: [...msg.questionBox.answers, newAnswer]
-          }
-        };
+        return { ...msg, questionBox: { ...msg.questionBox, answers: [...msg.questionBox.answers, newAnswer] } };
       }
       return msg;
     });
-
     const updatedGroup = { ...activeGroup, messages: updatedMessages };
     setActiveGroup(updatedGroup);
     setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
-    
-    // Clear the input for this message
-    setQuestionBoxAnswers(prev => {
-      const newState = { ...prev };
-      delete newState[messageId];
-      return newState;
-    });
+    await persistGroup(updatedGroup);
+    setQuestionBoxAnswers(prev => { const s = { ...prev }; delete s[messageId]; return s; });
   };
 
   const handleLeaveGroup = () => {
-    if (!activeGroup) return;
+    if (!activeGroup || !profile.email) return;
     setConfirmModal({
       isOpen: true,
       title: 'Sair do Grupo',
       message: `Tem certeza que deseja sair do grupo "${activeGroup.name}"?`,
       confirmText: 'Sair',
       confirmColor: 'bg-rose-700 hover:bg-rose-800',
-      onConfirm: () => {
+      onConfirm: async () => {
+        const updatedGroup = { ...activeGroup, members: activeGroup.members.filter(m => m.email !== profile.email) };
+        await persistGroup(updatedGroup);
         setMockGroups(prev => prev.filter(g => g.id !== activeGroup.id));
         setActiveGroup(null);
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
@@ -564,7 +642,8 @@ export default function Community() {
       message: `Tem certeza absoluta que deseja EXCLUIR o grupo "${activeGroup.name}"? Todos os dados serão perdidos e esta ação não pode ser desfeita.`,
       confirmText: 'Excluir',
       confirmColor: 'bg-rose-700 hover:bg-rose-800',
-      onConfirm: () => {
+      onConfirm: async () => {
+        await supabase.from('community_groups').delete().eq('id', activeGroup.id);
         setMockGroups(prev => prev.filter(g => g.id !== activeGroup.id));
         setActiveGroup(null);
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
@@ -580,13 +659,11 @@ export default function Community() {
       message: `Tem certeza que deseja remover ${memberName} do grupo?`,
       confirmText: 'Remover',
       confirmColor: 'bg-rose-700 hover:bg-rose-800',
-      onConfirm: () => {
-        const updatedGroup = {
-          ...activeGroup,
-          members: activeGroup.members.filter(m => m.email !== memberEmail)
-        };
+      onConfirm: async () => {
+        const updatedGroup = { ...activeGroup, members: activeGroup.members.filter(m => m.email !== memberEmail) };
         setActiveGroup(updatedGroup);
         setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+        await persistGroup(updatedGroup);
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
     });
@@ -600,13 +677,11 @@ export default function Community() {
       message: 'Tem certeza que deseja excluir esta mensagem?',
       confirmText: 'Excluir',
       confirmColor: 'bg-rose-700 hover:bg-rose-800',
-      onConfirm: () => {
-        const updatedGroup = {
-          ...activeGroup,
-          messages: activeGroup.messages.filter(m => m.id !== messageId)
-        };
+      onConfirm: async () => {
+        const updatedGroup = { ...activeGroup, messages: activeGroup.messages.filter(m => m.id !== messageId) };
         setActiveGroup(updatedGroup);
         setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+        await persistGroup(updatedGroup);
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
     });
@@ -618,34 +693,59 @@ export default function Community() {
     return Math.round(total / members.length);
   };
 
-  const handleCreatePrayer = () => {
-    if (!newPrayerRequest.trim()) return;
-    setMockPrayers(prev => [
-      { id: Date.now(), user: profile.name, avatarId: profile.avatarId, request: newPrayerRequest, prayedCount: 0, hasPrayed: false },
-      ...prev
-    ]);
+  const handleCreatePrayer = async () => {
+    if (!newPrayerRequest.trim() || !profile.email) return;
+    const { data } = await supabase.from('community_prayers').insert({
+      user_name: profile.name,
+      user_id: profile.id || '',
+      user_email: profile.email,
+      avatar_id: profile.avatarId || '',
+      avatar_url: profile.avatarUrl || null,
+      request: newPrayerRequest,
+      prayed_count: 0,
+    }).select().single();
+
+    if (data) {
+      setMockPrayers(prev => [{
+        id: data.id,
+        user: data.user_name,
+        userId: data.user_id,
+        avatarId: data.avatar_id || '',
+        avatarUrl: data.avatar_url,
+        request: data.request,
+        prayedCount: 0,
+        hasPrayed: false,
+      }, ...prev]);
+    }
+
     setNewPrayerRequest('');
     setIsCreatingPrayer(false);
-    
-    // Add to feed
-    setMockFeed(prev => [
-      { id: Date.now(), user: profile.name, avatarId: profile.avatarId, action: 'pediu oração 🙏', time: 'Agora mesmo' },
-      ...prev
-    ]);
+    await addToFeed('pediu oração 🙏');
   };
 
-  const handlePray = (id: number) => {
-    setMockPrayers(prev => prev.map(p => {
-      if (p.id === id && !p.hasPrayed) {
-        return { ...p, prayedCount: p.prayedCount + 1, hasPrayed: true };
-      }
-      return p;
-    }));
-  };
+  const handlePray = async (id: string) => {
+    if (!profile.email) return;
+    const prayer = mockPrayers.find(p => p.id === id);
+    if (!prayer || prayer.hasPrayed) return;
 
+    // Upsert vote
+    const { error } = await supabase.from('community_prayer_votes').upsert(
+      { prayer_id: id, user_email: profile.email },
+      { onConflict: 'prayer_id,user_email' }
+    );
+    if (error) return;
+
+    // Increment count
+    await supabase.from('community_prayers').update({ prayed_count: prayer.prayedCount + 1 }).eq('id', id);
+
+    setMockPrayers(prev => prev.map(p =>
+      p.id === id ? { ...p, prayedCount: p.prayedCount + 1, hasPrayed: true } : p
+    ));
+  };
   useEffect(() => {
     if (profile.email) {
       loadConnections();
+      loadCommunityData();
       const removeListener = sharingService.addListener((data) => {
         if (data.type === 'CONNECTION_REQUEST' || data.type === 'CONNECTION_ACCEPTED' || data.type === 'CONNECTION_REJECTED') {
           loadConnections();

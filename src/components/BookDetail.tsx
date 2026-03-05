@@ -4,6 +4,7 @@ import { generateBookSummary, BookData, MindMapData } from '../services/bookData
 import { ArrowLeft, Loader2, Map, List, BookOpen, Search, FileText, Clock, Heart, Lightbulb, Key, Hash, Users, CheckCircle2, Trash2, Navigation, Pencil, Palette, Copy, Sparkles, Check, MapPin, X, ArrowRight, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGamification, AVATARS } from '../services/gamification';
+import { supabase } from '../lib/supabase';
 import { useNotes, NoteContext } from '../services/notes';
 import { sharingService } from '../services/sharingService';
 
@@ -13,6 +14,12 @@ interface BookDetailProps {
 }
 
 export default function BookDetail({ bookId, onBack }: BookDetailProps) {
+  const [userId, setUserId] = React.useState<string>('anonymous');
+  React.useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) setUserId(session.user.id);
+    });
+  }, []);
   const book = BIBLE_BOOKS.find(b => b.id === bookId);
   const [data, setData] = useState<BookData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,10 +52,10 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
   const isGpsBook = BEGINNER_PATH.some(step => step.books.includes(bookId));
 
   useEffect(() => {
-    if (!isGpsBook && !localStorage.getItem('seen_free_exploration_tooltip')) {
+    if (!isGpsBook && !localStorage.getItem(`${userId}_seen_free_exploration_tooltip`)) {
       const timer = setTimeout(() => {
         setShowTooltip(true);
-        localStorage.setItem('seen_free_exploration_tooltip', 'true');
+        localStorage.setItem(`${userId}_seen_free_exploration_tooltip`, 'true');
         
         // Auto hide after 3 seconds
         setTimeout(() => {
@@ -271,7 +278,7 @@ function MainVersesGrid({ verses, bookName, colorClass }: { verses: BookData['ma
   const { addFavorite } = useGamification();
   const [favorites, setFavorites] = useState<Record<string, boolean>>(() => {
     try {
-      const stored = localStorage.getItem('bible_favorites');
+      const stored = localStorage.getItem(`${userId}_bible_favorites`);
       return stored ? JSON.parse(stored) : {};
     } catch { return {}; }
   });
@@ -282,14 +289,14 @@ function MainVersesGrid({ verses, bookName, colorClass }: { verses: BookData['ma
     if (!favorites[reference]) {
       const updated = { ...favorites, [reference]: true };
       setFavorites(updated);
-      if (!hasSupabase) localStorage.setItem('bible_favorites', JSON.stringify(updated));
+      if (!hasSupabase) localStorage.setItem(`${userId}_bible_favorites`, JSON.stringify(updated));
       addFavorite();
     } else {
       // Toggle off — remove from favorites (don't decrement counter, already counted)
       const updated = { ...favorites };
       delete updated[reference];
       setFavorites(updated);
-      if (!hasSupabase) localStorage.setItem('bible_favorites', JSON.stringify(updated));
+      if (!hasSupabase) localStorage.setItem(`${userId}_bible_favorites`, JSON.stringify(updated));
     }
   };
 

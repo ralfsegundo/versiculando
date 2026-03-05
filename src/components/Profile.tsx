@@ -75,8 +75,19 @@ export default function Profile() {
         const { supabase } = await import('../lib/supabase');
         await supabase.auth.signOut();
       }
-      // Clear local storage to force a clean state on next load
-      localStorage.removeItem('user_profile');
+      // Limpa todo o localStorage
+      localStorage.clear();
+
+      // Remove Service Workers
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const r of registrations) await r.unregister();
+      }
+
+      // Limpa cache do PWA
+      const cacheNames = await caches.keys();
+      for (const name of cacheNames) await caches.delete(name);
+
       window.location.reload();
     } catch (error) {
       console.error('Error logging out:', error);

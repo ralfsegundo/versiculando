@@ -1,4 +1,3 @@
-import Admin from './components/Admin';
 import { useState, useEffect } from 'react';
 import Home from './components/Home';
 import BookDetail from './components/BookDetail';
@@ -10,11 +9,15 @@ import Onboarding, { OnboardingProfile, getWelcomeConfig } from './components/On
 import Trails from './components/Trails';
 import TrailDetail from './components/TrailDetail';
 import OfflineBanner from './components/OfflineBanner';
+import Admin from './components/Admin';
 import { GamificationProvider } from './services/gamification';
 import { supabase } from './lib/supabase';
 import Auth from './components/Auth';
 import { Session } from '@supabase/supabase-js';
 import { Trail } from './services/trails';
+
+// Email do administrador — só este usuário vê o acesso ao painel admin
+const ADMIN_EMAIL = 'ralfsegundo@gmail.com';
 
 // Registra o Service Worker para modo offline (apenas em produção real)
 const isAIStudio = window.location.hostname.includes('run.app') || window.location.hostname.includes('aistudio');
@@ -30,6 +33,7 @@ if ('serviceWorker' in navigator && !isAIStudio) {
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [selectedTrail, setSelectedTrail] = useState<Trail | null>(null);
@@ -80,6 +84,7 @@ export default function App() {
           localStorage.setItem('current_user_id', session.user.id);
           setOnboardingDone(false);
           setWelcomeMessage(null);
+          setShowAdmin(false);
         }
       }
     });
@@ -98,6 +103,8 @@ export default function App() {
     setSelectedBookId(config.startBookId);
   };
 
+  const isAdmin = session?.user?.email === ADMIN_EMAIL;
+
   if (isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-stone-50">
@@ -112,6 +119,11 @@ export default function App() {
 
   if (!onboardingDone) {
     return <Onboarding onComplete={handleOnboardingComplete} />;
+  }
+
+  // Painel admin — só acessível para o email admin
+  if (isAdmin && showAdmin) {
+    return <Admin onExit={() => setShowAdmin(false)} />;
   }
 
   return (
@@ -142,7 +154,12 @@ export default function App() {
           {currentTab === 'journey'    && <JourneyMap onSelectBook={setSelectedBookId} />}
           {currentTab === 'trails'     && <Trails onSelectTrail={setSelectedTrail} />}
           {currentTab === 'community'  && <Community />}
-          {currentTab === 'profile'    && <Profile />}
+          {currentTab === 'profile'    && (
+            <Profile
+              isAdmin={isAdmin}
+              onOpenAdmin={() => setShowAdmin(true)}
+            />
+          )}
 
           <Navigation currentTab={currentTab} onTabChange={setCurrentTab} />
         </>

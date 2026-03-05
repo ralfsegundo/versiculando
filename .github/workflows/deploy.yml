@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v3
 
-      - name: Copiar projeto para o servidor via SSH
+      - name: Copiar projeto para o servidor
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -25,25 +25,23 @@ jobs:
           target: "/var/www/versiculando"
           rm: true
 
-      - name: Build e reiniciar no servidor
+      - name: Build e reiniciar PM2
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: SUPABASE_URL,SUPABASE_KEY
           script: |
             cd /var/www/versiculando
-
-            # Criar .env com as variáveis do Supabase
-            echo "VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}" > .env
-            echo "VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}" >> .env
+            echo "VITE_SUPABASE_URL=$SUPABASE_URL" > .env
+            echo "VITE_SUPABASE_ANON_KEY=$SUPABASE_KEY" >> .env
             echo "NODE_ENV=production" >> .env
-
-            # Instalar dependências e fazer build
             npm ci
             npm run build
-
-            # Reiniciar o PM2
             pm2 restart versiculando --update-env
             pm2 save

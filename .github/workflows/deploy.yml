@@ -14,33 +14,18 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v3
 
-      - name: Configurar Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-          cache: 'npm'
-
-      - name: Instalar dependências
-        run: npm ci
-
-      - name: Build do projeto
-        run: npm run build
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-
-      - name: Copiar arquivos para o servidor via SSH
+      - name: Copiar projeto para o servidor via SSH
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "dist/"
+          source: "."
           target: "/var/www/versiculando"
-          strip_components: 1
+          rm: true
 
-      - name: Reiniciar PM2 no servidor
+      - name: Build e reiniciar no servidor
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -49,5 +34,16 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/versiculando
+
+            # Criar .env com as variáveis do Supabase
+            echo "VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}" > .env
+            echo "VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}" >> .env
+            echo "NODE_ENV=production" >> .env
+
+            # Instalar dependências e fazer build
+            npm ci
+            npm run build
+
+            # Reiniciar o PM2
             pm2 restart versiculando --update-env
             pm2 save

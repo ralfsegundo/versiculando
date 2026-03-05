@@ -3,6 +3,7 @@ import { BIBLE_BOOKS, GROUP_COLORS, BEGINNER_PATH } from '../constants';
 import { Book, Library, Search, BookOpen, Compass, ListOrdered, Sun, CheckCircle2, ArrowRight, Info, MapPin, Lock, Trophy, Download, X, Navigation, Star, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGamification } from '../services/gamification';
+import { supabase } from '../lib/supabase';
 import confetti from 'canvas-confetti';
 
 // Passos 1-6 = Trilha do Discípulo (iniciante), 7-12 = Jornada do Sábio (avançado)
@@ -61,6 +62,12 @@ function usePWAInstall() {
 }
 
 export default function Home({ onSelectBook, viewMode, onViewModeChange, welcomeMessage, onDismissWelcome }: HomeProps) {
+  const [userId, setUserId] = useState<string>('anonymous');
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) setUserId(session.user.id);
+    });
+  }, []);
   const [searchTerm, setSearchTerm] = useState('');
   const { profile, accessDailyVerse, addPoints, showFloatingPoints } = useGamification();
   const [dailyVerseRead, setDailyVerseRead] = useState<boolean>(() => {
@@ -75,7 +82,7 @@ export default function Home({ onSelectBook, viewMode, onViewModeChange, welcome
   const [completedStepModal, setCompletedStepModal] = useState<number | null>(null);
   const [showGraduationModal, setShowGraduationModal] = useState(false);
   const [showDeepJourney, setShowDeepJourney] = useState(() =>
-    localStorage.getItem('sage_journey_unlocked') === 'true'
+    localStorage.getItem(`${userId}_sage_journey_unlocked`) === 'true'
   );
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { isInstallable, install, dismiss, dismissed } = usePWAInstall();
@@ -92,12 +99,12 @@ export default function Home({ onSelectBook, viewMode, onViewModeChange, welcome
   // Check for newly visited books to animate
   useEffect(() => {
     const newlyVisited = profile.visitedBooks?.filter(
-      id => !profile.completedBooks.includes(id) && !localStorage.getItem(`animated_${id}`)
+      id => !profile.completedBooks.includes(id) && !localStorage.getItem(`${userId}_animated_${id}`)
     ) || [];
     
     if (newlyVisited.length > 0) {
       setAnimatingBooks(newlyVisited);
-      newlyVisited.forEach(id => localStorage.setItem(`animated_${id}`, 'true'));
+      newlyVisited.forEach(id => localStorage.setItem(`${userId}_animated_${id}`, 'true'));
       
       const timer = setTimeout(() => {
         setAnimatingBooks([]);
@@ -114,20 +121,20 @@ export default function Home({ onSelectBook, viewMode, onViewModeChange, welcome
 
     BEGINNER_PATH.forEach((step, index) => {
       const isCompleted = step.books.every(id => profile.completedBooks.includes(id));
-      const wasCompleted = localStorage.getItem(`step_completed_${index}`);
+      const wasCompleted = localStorage.getItem(`${userId}_step_completed_${index}`);
       
       if (!isCompleted) {
         allStepsCompleted = false;
       }
       
       if (isCompleted && !wasCompleted) {
-        localStorage.setItem(`step_completed_${index}`, 'true');
+        localStorage.setItem(`${userId}_step_completed_${index}`, 'true');
 
         // Passo 6 (index 5) = conclusão da Trilha do Discípulo → modal de graduação
         if (index === DISCIPLE_PATH_LENGTH - 1) {
-          const wasGraduated = localStorage.getItem('disciple_trail_graduated');
+          const wasGraduated = localStorage.getItem(`${userId}_disciple_trail_graduated`);
           if (!wasGraduated) {
-            localStorage.setItem('disciple_trail_graduated', 'true');
+            localStorage.setItem(`${userId}_disciple_trail_graduated`, 'true');
             addPoints(500, 'Concluiu a Trilha do Discípulo!', 'bonus');
             showFloatingPoints(500, 'bonus_step');
             setTimeout(() => {
@@ -153,9 +160,9 @@ export default function Home({ onSelectBook, viewMode, onViewModeChange, welcome
     });
 
     // Check for entire trail completion
-    const wasTrailCompleted = localStorage.getItem('trail_completed');
+    const wasTrailCompleted = localStorage.getItem(`${userId}_trail_completed`);
     if (allStepsCompleted && !wasTrailCompleted) {
-      localStorage.setItem('trail_completed', 'true');
+      localStorage.setItem(`${userId}_trail_completed`, 'true');
       addPoints(500, 'Concluiu a Trilha do Discípulo', 'bonus');
       setTimeout(() => {
         showFloatingPoints(500, 'bonus_trail');
@@ -625,7 +632,7 @@ export default function Home({ onSelectBook, viewMode, onViewModeChange, welcome
               </p>
               <button
                 onClick={() => {
-                  localStorage.setItem('sage_journey_unlocked', 'true');
+                  localStorage.setItem(`${userId}_sage_journey_unlocked`, 'true');
                   setShowDeepJourney(true);
                   confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#a855f7', '#6366f1', '#3b82f6'] });
                 }}
@@ -1097,7 +1104,7 @@ export default function Home({ onSelectBook, viewMode, onViewModeChange, welcome
                 <div className="space-y-3">
                   <button
                     onClick={() => {
-                      localStorage.setItem('sage_journey_unlocked', 'true');
+                      localStorage.setItem(`${userId}_sage_journey_unlocked`, 'true');
                       setShowDeepJourney(true);
                       setShowGraduationModal(false);
                       setTimeout(() => confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 }, colors: ['#a855f7', '#6366f1'] }), 200);

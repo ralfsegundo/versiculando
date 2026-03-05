@@ -1,3 +1,4 @@
+import Admin from './components/Admin';
 import { useState, useEffect } from 'react';
 import Home from './components/Home';
 import BookDetail from './components/BookDetail';

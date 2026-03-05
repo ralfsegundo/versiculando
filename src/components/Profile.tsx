@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useGamification, BADGES, BadgeId, AVATARS } from '../services/gamification';
-import { Flame, Star, Trophy, Target, Award, Lock, Calendar, BookOpen, Heart, Edit3, Share2, X, Download, Instagram, MessageCircle, Clock, Users, Search, UserPlus, Check, UserMinus, Upload } from 'lucide-react';
+import { Flame, Star, Trophy, Target, Award, Lock, Calendar, BookOpen, Heart, Edit3, Share2, X, Download, Instagram, MessageCircle, Clock, Users, Search, UserPlus, Check, UserMinus, Upload, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import html2canvas from 'html2canvas';
 import { sharingService, Connection } from '../services/sharingService';
@@ -13,7 +13,7 @@ const TITLES = [
   { name: 'Santo', min: 5000, max: Infinity },
 ];
 
-export default function Profile() {
+export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: boolean; onOpenAdmin?: () => void }) {
   const { profile, badges, weeklyChallenge, updateProfile } = useGamification();
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -669,6 +669,16 @@ export default function Profile() {
                     'Sair da Conta'
                   )}
                 </button>
+
+                {isAdmin && onOpenAdmin && (
+                  <button
+                    onClick={() => { setIsEditModalOpen(false); onOpenAdmin(); }}
+                    className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Shield size={18} />
+                    Painel Admin
+                  </button>
+                )}
               </div>
             </motion.div>
           </motion.div>

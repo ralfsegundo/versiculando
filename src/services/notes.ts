@@ -20,6 +20,8 @@ export function useNotes(bookId: string) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
 
+  const localKey = (uid: string | null) => uid ? `${uid}_bible_notes` : 'bible_notes';
+
   useEffect(() => {
     const loadNotes = async () => {
       const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -49,8 +51,9 @@ export function useNotes(bookId: string) {
         }
       }
 
-      // Fallback to local storage
-      const storedNotes = localStorage.getItem('bible_notes');
+      // Fallback to local storage (prefixed by userId)
+      const uid = (await supabase.auth.getSession()).data.session?.user.id ?? null;
+      const storedNotes = localStorage.getItem(localKey(uid));
       if (storedNotes) {
         try {
           const allNotes: Note[] = JSON.parse(storedNotes);
@@ -94,11 +97,13 @@ export function useNotes(bookId: string) {
       }
     }
     
-    const storedNotes = localStorage.getItem('bible_notes');
-    const allNotes: Note[] = storedNotes ? JSON.parse(storedNotes) : [];
-    const updatedNotes = [...allNotes, newNote];
-    
-    localStorage.setItem('bible_notes', JSON.stringify(updatedNotes));
+    // Only write to localStorage as fallback (no Supabase)
+    if (!userId) {
+      const storedNotes = localStorage.getItem(localKey(userId));
+      const allNotes: Note[] = storedNotes ? JSON.parse(storedNotes) : [];
+      const updatedNotes = [...allNotes, newNote];
+      localStorage.setItem(localKey(userId), JSON.stringify(updatedNotes));
+    }
     setNotes(prev => [newNote, ...prev]);
   };
 
@@ -111,13 +116,13 @@ export function useNotes(bookId: string) {
       }
     }
     
-    const storedNotes = localStorage.getItem('bible_notes');
+    const storedNotes = localStorage.getItem(localKey(userId));
     if (storedNotes) {
       const allNotes: Note[] = JSON.parse(storedNotes);
       const updatedNotes = allNotes.filter(n => n.id !== id);
-      localStorage.setItem('bible_notes', JSON.stringify(updatedNotes));
-      setNotes(prev => prev.filter(n => n.id !== id));
+      localStorage.setItem(localKey(userId), JSON.stringify(updatedNotes));
     }
+    setNotes(prev => prev.filter(n => n.id !== id));
   };
 
   const updateNote = async (id: string, newText: string, color?: string) => {
@@ -131,21 +136,21 @@ export function useNotes(bookId: string) {
       }
     }
     
-    const storedNotes = localStorage.getItem('bible_notes');
+    const storedNotes = localStorage.getItem(localKey(userId));
     if (storedNotes) {
       const allNotes: Note[] = JSON.parse(storedNotes);
       const updatedNotes = allNotes.map(n => n.id === id ? { ...n, text: newText, color: color !== undefined ? color : n.color } : n);
-      localStorage.setItem('bible_notes', JSON.stringify(updatedNotes));
-      setNotes(prev => prev.map(n => n.id === id ? { ...n, text: newText, color: color !== undefined ? color : n.color } : n));
+      localStorage.setItem(localKey(userId), JSON.stringify(updatedNotes));
     }
+    setNotes(prev => prev.map(n => n.id === id ? { ...n, text: newText, color: color !== undefined ? color : n.color } : n));
   };
 
   const toggleShare = (id: string) => {
-    const storedNotes = localStorage.getItem('bible_notes');
+    const storedNotes = localStorage.getItem(localKey(userId));
     if (storedNotes) {
       const allNotes: Note[] = JSON.parse(storedNotes);
       const updatedNotes = allNotes.map(n => n.id === id ? { ...n, isShared: !n.isShared } : n);
-      localStorage.setItem('bible_notes', JSON.stringify(updatedNotes));
+      localStorage.setItem(localKey(userId), JSON.stringify(updatedNotes));
       setNotes(prev => prev.map(n => n.id === id ? { ...n, isShared: !n.isShared } : n));
       return updatedNotes.find(n => n.id === id)?.isShared;
     }
@@ -153,11 +158,11 @@ export function useNotes(bookId: string) {
   };
 
   const setAllShared = (shared: boolean) => {
-    const storedNotes = localStorage.getItem('bible_notes');
+    const storedNotes = localStorage.getItem(localKey(userId));
     if (storedNotes) {
       const allNotes: Note[] = JSON.parse(storedNotes);
       const updatedNotes = allNotes.map(n => n.bookId === bookId ? { ...n, isShared: shared } : n);
-      localStorage.setItem('bible_notes', JSON.stringify(updatedNotes));
+      localStorage.setItem(localKey(userId), JSON.stringify(updatedNotes));
       setNotes(prev => prev.map(n => ({ ...n, isShared: shared })));
     }
   };

@@ -115,10 +115,10 @@ export const getTitleByPoints = (points: number): string => {
 // --- Safe localStorage wrapper ---
 const safeStorage = {
   getItem: (key: string): string | null => {
-    try { return safeStorage.getItem(key); } catch { return null; }
+    try { return localStorage.getItem(key); } catch { return null; }
   },
   setItem: (key: string, value: string): void => {
-    try { safeStorage.setItem(key, value); } catch { /* ignore */ }
+    try { localStorage.setItem(key, value); } catch { /* ignore */ }
   }
 };
 
@@ -138,7 +138,7 @@ const getLocalProfile = (): UserProfile => {
   return {
     id: 'local-user',
     name: 'Peregrino',
-    email: 'ralfsegundo@gmail.com', // Default from context
+    email: '',
     avatarId: 'cruz',
     joinDate: new Date().toISOString(),
     weeklyActivity: [new Date().toISOString()],

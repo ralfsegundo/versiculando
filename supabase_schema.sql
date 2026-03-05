@@ -233,3 +233,155 @@ CROSS JOIN (VALUES
 ) AS d(day_number, title, reading, reflection, verse, verse_reference, practice, emoji)
 WHERE t.slug = 'infidelidade'
 ON CONFLICT (trail_id, day_number) DO NOTHING;
+
+-- ============================================================
+--  COMUNIDADE — Tabelas adicionais
+--  Execute no SQL Editor do Supabase (após o schema principal)
+-- ============================================================
+
+-- ── Conexões entre usuários ─────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.user_connections (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  from_email TEXT NOT NULL,
+  to_email TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(from_email, to_email)
+);
+
+ALTER TABLE public.user_connections ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Ver próprias conexões" ON public.user_connections
+  FOR SELECT USING (auth.jwt() ->> 'email' = from_email OR auth.jwt() ->> 'email' = to_email);
+CREATE POLICY "Criar conexão" ON public.user_connections
+  FOR INSERT WITH CHECK (auth.jwt() ->> 'email' = from_email);
+CREATE POLICY "Atualizar conexão recebida" ON public.user_connections
+  FOR UPDATE USING (auth.jwt() ->> 'email' = to_email);
+
+-- ── Grupos de estudo ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.community_groups (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  target_name TEXT NOT NULL,
+  members JSONB DEFAULT '[]'::jsonb,     -- GroupMember[]
+  messages JSONB DEFAULT '[]'::jsonb,    -- GroupMessage[]
+  materials JSONB DEFAULT '[]'::jsonb,   -- GroupMaterial[]
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.community_groups ENABLE ROW LEVEL SECURITY;
+-- Qualquer autenticado pode ler (filtragem é feita no app por membership)
+CREATE POLICY "Ler grupos" ON public.community_groups FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Criar grupo" ON public.community_groups
+  FOR INSERT WITH CHECK (auth.jwt() ->> 'email' = created_by);
+CREATE POLICY "Atualizar grupo" ON public.community_groups
+  FOR UPDATE USING (
+    members @> jsonb_build_array(jsonb_build_object('email', auth.jwt() ->> 'email'))
+  );
+CREATE POLICY "Excluir grupo" ON public.community_groups
+  FOR DELETE USING (auth.jwt() ->> 'email' = created_by);
+
+-- ── Convites de grupo ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.community_group_invites (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  group_id UUID REFERENCES public.community_groups(id) ON DELETE CASCADE,
+  group_name TEXT NOT NULL,
+  target_name TEXT NOT NULL,
+  from_email TEXT NOT NULL,
+  from_name TEXT NOT NULL,
+  from_avatar_id TEXT DEFAULT '',
+  to_email TEXT NOT NULL,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.community_group_invites ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Ver convites recebidos ou enviados" ON public.community_group_invites
+  FOR SELECT USING (auth.jwt() ->> 'email' = to_email OR auth.jwt() ->> 'email' = from_email);
+CREATE POLICY "Criar convite" ON public.community_group_invites
+  FOR INSERT WITH CHECK (auth.jwt() ->> 'email' = from_email);
+CREATE POLICY "Responder convite" ON public.community_group_invites
+  FOR UPDATE USING (auth.jwt() ->> 'email' = to_email);
+
+-- ── Feed da comunidade ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.community_feed (
+  id BIGSERIAL PRIMARY KEY,
+  user_name TEXT NOT NULL,
+  user_email TEXT NOT NULL,
+  avatar_id TEXT DEFAULT '',
+  action TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.community_feed ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Ler feed" ON public.community_feed FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Publicar no feed" ON public.community_feed
+  FOR INSERT WITH CHECK (auth.jwt() ->> 'email' = user_email);
+
+-- TTL: apagar feed com mais de 30 dias (opcional — rode periodicamente)
+-- DELETE FROM public.community_feed WHERE created_at < NOW() - INTERVAL '30 days';
+
+-- ── Pedidos de oração ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.community_prayers (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_name TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  user_email TEXT NOT NULL,
+  avatar_id TEXT DEFAULT '',
+  avatar_url TEXT,
+  request TEXT NOT NULL,
+  prayed_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.community_prayers ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Ler orações" ON public.community_prayers FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Criar pedido de oração" ON public.community_prayers
+  FOR INSERT WITH CHECK (auth.jwt() ->> 'email' = user_email);
+CREATE POLICY "Atualizar contagem de orações" ON public.community_prayers
+  FOR UPDATE TO authenticated USING (true);
+
+-- ── Votos de oração (quem orou) ──────────────────────────────
+CREATE TABLE IF NOT EXISTS public.community_prayer_votes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  prayer_id UUID REFERENCES public.community_prayers(id) ON DELETE CASCADE,
+  user_email TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(prayer_id, user_email)
+);
+
+ALTER TABLE public.community_prayer_votes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Ver votos" ON public.community_prayer_votes FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Registrar voto" ON public.community_prayer_votes
+  FOR INSERT WITH CHECK (auth.jwt() ->> 'email' = user_email);
+
+-- ── Notas compartilhadas ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.shared_notes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  note_id TEXT NOT NULL,
+  note_content JSONB,
+  shared_with_email TEXT,
+  is_public BOOLEAN DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(owner_id, note_id)
+);
+
+ALTER TABLE public.shared_notes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Ver notas compartilhadas" ON public.shared_notes
+  FOR SELECT USING (
+    auth.uid() = owner_id
+    OR is_public = true
+    OR shared_with_email = auth.jwt() ->> 'email'
+  );
+CREATE POLICY "Compartilhar nota" ON public.shared_notes
+  FOR INSERT WITH CHECK (auth.uid() = owner_id);
+CREATE POLICY "Atualizar compartilhamento" ON public.shared_notes
+  FOR UPDATE USING (auth.uid() = owner_id);
+CREATE POLICY "Remover compartilhamento" ON public.shared_notes
+  FOR DELETE USING (auth.uid() = owner_id);
+
+-- ── Habilitar Realtime para conexões ─────────────────────────
+-- Vá em Supabase Dashboard → Database → Replication
+-- e habilite "Realtime" para a tabela user_connections

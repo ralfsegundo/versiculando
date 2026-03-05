@@ -1,0 +1,653 @@
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { BEGINNER_PATH } from '../constants';
+import confetti from 'canvas-confetti';
+import { motion, AnimatePresence } from 'motion/react';
+import { sharingService } from './sharingService';
+import { supabase } from '../lib/supabase';
+
+// --- Types ---
+
+export const AVATARS = [
+  { id: 'cruz', emoji: '✝️', name: 'Cruz' },
+  { id: 'pomba', emoji: '🕊️', name: 'Pomba' },
+  { id: 'rosario', emoji: '📿', name: 'Rosário' },
+  { id: 'biblia', emoji: '📖', name: 'Bíblia' },
+  { id: 'calice', emoji: '🍷', name: 'Cálice' },
+  { id: 'peixe', emoji: '🐟', name: 'Peixe' },
+  { id: 'maria', emoji: '👑', name: 'Maria' },
+  { id: 'jose', emoji: '🔨', name: 'José' },
+  { id: 'francisco', emoji: '🐺', name: 'Francisco' },
+  { id: 'teresinha', emoji: '🌹', name: 'Teresinha' },
+  { id: 'anjo', emoji: '👼', name: 'Anjo' },
+  { id: 'joaopaulo', emoji: '🇻🇦', name: 'João Paulo II' },
+];
+
+export type BadgeId = 
+  | 'semente_fe' 
+  | 'leitor_pentateuco' 
+  | 'fogo_espirito' 
+  | 'pomba_paz' 
+  | 'servo_fiel' 
+  | 'escriba' 
+  | 'coracao_aberto' 
+  | 'madrugador' 
+  | 'peregrino' 
+  | 'doutor_fe';
+
+export interface Badge {
+  id: BadgeId;
+  title: string;
+  description: string;
+  emoji: string;
+  unlockedAt?: string;
+}
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  avatarId?: string;
+  email?: string;
+  joinDate?: string;
+  weeklyActivity?: string[];
+  points: number;
+  pointsBreakdown?: {
+    freeExploration: number;
+    discipleTrail: number;
+    bonus: number;
+  };
+  streak: number;
+  lastActiveDate: string;
+  title: string;
+  completedBooks: string[];
+  discipleCompletedBooks: string[]; // livros concluídos pela Trilha do Discípulo
+  visitedBooks?: string[];
+  readChapters?: Record<string, number[]>; // bookId -> chapter numbers read
+  notesCount: number;
+  favoritesCount: number;
+  dailyVerseCount: number;
+  completedPlans: number;
+}
+
+export interface WeeklyChallenge {
+  id: string;
+  title: string;
+  description: string;
+  target: number;
+  progress: number;
+  rewardPoints: number;
+  rewardBadge?: string;
+  deadline: string;
+  completed: boolean;
+}
+
+export type FloatingPointType = 'free' | 'disciple' | 'bonus_step' | 'bonus_trail';
+
+interface FloatingPoint {
+  id: number;
+  amount: number;
+  type: FloatingPointType;
+}
+
+// --- Constants ---
+
+export const BADGES: Record<BadgeId, Omit<Badge, 'unlockedAt'>> = {
+  semente_fe: { id: 'semente_fe', title: 'Semente da Fé', description: 'Estudou o primeiro livro', emoji: '🌱' },
+  leitor_pentateuco: { id: 'leitor_pentateuco', title: 'Leitor do Pentateuco', description: 'Completou os 5 primeiros livros', emoji: '📖' },
+  fogo_espirito: { id: 'fogo_espirito', title: 'Fogo do Espírito', description: 'Estudou 7 dias seguidos', emoji: '⚡' },
+  pomba_paz: { id: 'pomba_paz', title: 'Pomba da Paz', description: 'Completou todo o Novo Testamento', emoji: '🕊️' },
+  servo_fiel: { id: 'servo_fiel', title: 'Servo Fiel', description: 'Completou os 73 livros', emoji: '👑' },
+  escriba: { id: 'escriba', title: 'Escriba', description: 'Fez 10 anotações pessoais', emoji: '✍️' },
+  coracao_aberto: { id: 'coracao_aberto', title: 'Coração Aberto', description: 'Favoritou 20 versículos', emoji: '❤️' },
+  madrugador: { id: 'madrugador', title: 'Madrugador', description: 'Acessou o versículo do dia 30 vezes', emoji: '🌅' },
+  peregrino: { id: 'peregrino', title: 'Peregrino', description: 'Completou um plano de leitura inteiro', emoji: '🎯' },
+  doutor_fe: { id: 'doutor_fe', title: 'Doutor da Fé', description: 'Desbloqueou todas as conquistas', emoji: '🏆' },
+};
+
+export const getTitleByPoints = (points: number): string => {
+  if (points >= 5000) return 'Santo';
+  if (points >= 2001) return 'Profeta';
+  if (points >= 501) return 'Apóstolo';
+  if (points >= 101) return 'Discípulo';
+  return 'Iniciante';
+};
+
+// --- Safe localStorage wrapper ---
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    try { return safeStorage.getItem(key); } catch { return null; }
+  },
+  setItem: (key: string, value: string): void => {
+    try { safeStorage.setItem(key, value); } catch { /* ignore */ }
+  }
+};
+
+// --- Mock Data / Local Storage Fallback ---
+// In a real app, this would be entirely managed by Supabase.
+// We use local storage here to ensure the preview works without a real Supabase DB setup.
+
+const getLocalProfile = (): UserProfile => {
+  const stored = safeStorage.getItem('user_profile');
+  if (stored) {
+    const parsed = JSON.parse(stored);
+    // Migration: add discipleCompletedBooks if not present
+    if (!parsed.discipleCompletedBooks) parsed.discipleCompletedBooks = [];
+    if (!parsed.readChapters) parsed.readChapters = {};
+    return parsed;
+  }
+  return {
+    id: 'local-user',
+    name: 'Peregrino',
+    email: 'ralfsegundo@gmail.com', // Default from context
+    avatarId: 'cruz',
+    joinDate: new Date().toISOString(),
+    weeklyActivity: [new Date().toISOString()],
+    points: 0,
+    pointsBreakdown: {
+      freeExploration: 0,
+      discipleTrail: 0,
+      bonus: 0,
+    },
+    streak: 0,
+    lastActiveDate: new Date().toISOString(),
+    title: 'Iniciante',
+    completedBooks: [],
+    discipleCompletedBooks: [],
+    visitedBooks: [],
+    readChapters: {},
+    notesCount: 0,
+    favoritesCount: 0,
+    dailyVerseCount: 0,
+    completedPlans: 0,
+  };
+};
+
+const getLocalBadges = (): Badge[] => {
+  const stored = safeStorage.getItem('user_badges');
+  if (stored) return JSON.parse(stored);
+  return [];
+};
+
+// --- Context ---
+
+interface GamificationContextType {
+  profile: UserProfile;
+  badges: Badge[];
+  weeklyChallenge: WeeklyChallenge;
+  addPoints: (amount: number, reason: string, category?: 'freeExploration' | 'discipleTrail' | 'bonus') => void;
+  markBookCompleted: (bookId: string, isGps?: boolean) => void;
+  markBookVisited: (bookId: string) => void;
+  markChapterRead: (bookId: string, chapterNum: number, totalChapters: number) => void;
+  addNote: () => void;
+  addFavorite: () => void;
+  accessDailyVerse: () => void;
+  completePlan: () => void;
+  checkStreak: () => void;
+  updateProfile: (updates: Partial<UserProfile>) => void;
+  showFloatingPoints: (amount: number, type: FloatingPointType) => void;
+}
+
+export const GamificationContext = createContext<GamificationContextType | null>(null);
+
+export function GamificationProvider({ children }: { children: ReactNode }) {
+  const [profile, setProfile] = useState<UserProfile>(getLocalProfile());
+  const [badges, setBadges] = useState<Badge[]>(getLocalBadges());
+  const [floatingPoints, setFloatingPoints] = useState<FloatingPoint[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  const WEEKLY_CHALLENGES: Omit<WeeklyChallenge, 'id' | 'progress' | 'deadline' | 'completed'>[] = [
+    { title: 'Conclua 3 livros esta semana', description: 'Complete a leitura de qualquer 3 livros.', target: 3, rewardPoints: 100 },
+    { title: 'Conclua 5 livros esta semana', description: 'Complete a leitura de qualquer 5 livros.', target: 5, rewardPoints: 150 },
+    { title: 'Conclua 2 livros do NT esta semana', description: 'Leia e complete 2 livros do Novo Testamento.', target: 2, rewardPoints: 80 },
+    { title: 'Conclua 4 livros esta semana', description: 'Complete a leitura de qualquer 4 livros.', target: 4, rewardPoints: 120 },
+  ];
+
+  const getStoredChallenge = (): WeeklyChallenge => {
+    const stored = safeStorage.getItem('weekly_challenge');
+    if (stored) {
+      try {
+        const parsed: WeeklyChallenge = JSON.parse(stored);
+        // Still valid if deadline hasn't passed
+        if (new Date(parsed.deadline) > new Date()) return parsed;
+      } catch { /* ignore */ }
+    }
+    // Generate a new challenge
+    const template = WEEKLY_CHALLENGES[Math.floor(Math.random() * WEEKLY_CHALLENGES.length)];
+    const challenge: WeeklyChallenge = {
+      ...template,
+      id: `week-${Date.now()}`,
+      progress: 0,
+      deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      completed: false,
+    };
+    safeStorage.setItem('weekly_challenge', JSON.stringify(challenge));
+    return challenge;
+  };
+
+  const [weeklyChallenge, setWeeklyChallenge] = useState<WeeklyChallenge>(getStoredChallenge);
+
+  // Load from Supabase on mount/auth change
+  useEffect(() => {
+    const loadSupabaseData = async () => {
+      const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!hasSupabase) return;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUserId(session.user.id);
+        
+        // Load profile
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+          
+        if (profileData) {
+          setProfile(prev => ({
+            ...prev,
+            ...profileData,
+            completedBooks: profileData.completed_books || [],
+            discipleCompletedBooks: profileData.disciple_completed_books || [],
+            visitedBooks: profileData.visited_books || [],
+            readChapters: profileData.read_chapters || {},
+            pointsBreakdown: profileData.points_breakdown || prev.pointsBreakdown,
+            weeklyActivity: profileData.weekly_activity || [],
+            avatarId: profileData.avatar_id || prev.avatarId,
+            avatarUrl: profileData.avatar_url || prev.avatarUrl,
+            lastActiveDate: profileData.last_active_date || prev.lastActiveDate,
+            joinDate: profileData.join_date || prev.joinDate,
+            notesCount: profileData.notes_count || 0,
+            favoritesCount: profileData.favorites_count || 0,
+            dailyVerseCount: profileData.daily_verse_count || 0,
+            completedPlans: profileData.completed_plans || 0,
+          }));
+        }
+
+        // Load badges
+        const { data: badgesData } = await supabase
+          .from('user_badges')
+          .select('*')
+          .eq('user_id', session.user.id);
+          
+        if (badgesData && badgesData.length > 0) {
+          setBadges(badgesData.map(b => ({
+            id: b.badge_id as BadgeId,
+            title: b.title,
+            description: b.description,
+            emoji: b.emoji,
+            unlockedAt: b.unlocked_at
+          })));
+        }
+      }
+    };
+    
+    loadSupabaseData();
+  }, []);
+
+  const updateProfile = (updates: Partial<UserProfile>) => {
+    setProfile(prev => ({ ...prev, ...updates }));
+  };
+
+  useEffect(() => {
+    if (profile.email && userId) {
+      sharingService.register(profile);
+    }
+  }, [profile.email, profile.avatarId, profile.avatarUrl, profile.name, userId]);
+
+  // Save to local storage and Supabase whenever state changes
+  useEffect(() => {
+    safeStorage.setItem('user_profile', JSON.stringify(profile));
+    safeStorage.setItem('user_badges', JSON.stringify(badges));
+    safeStorage.setItem('weekly_challenge', JSON.stringify(weeklyChallenge));
+    
+    const saveToSupabase = async () => {
+      const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!hasSupabase || !userId || isSyncing) return;
+      setIsSyncing(true);
+      try {
+        await supabase.from('profiles').upsert({
+          id: userId,
+          name: profile.name,
+          email: profile.email,
+          avatar_id: profile.avatarId,
+          avatar_url: profile.avatarUrl,
+          join_date: profile.joinDate,
+          weekly_activity: profile.weeklyActivity,
+          points: profile.points,
+          points_breakdown: profile.pointsBreakdown,
+          streak: profile.streak,
+          last_active_date: profile.lastActiveDate,
+          title: profile.title,
+          completed_books: profile.completedBooks,
+          disciple_completed_books: profile.discipleCompletedBooks,
+          visited_books: profile.visitedBooks,
+          read_chapters: profile.readChapters,
+          notes_count: profile.notesCount,
+          favorites_count: profile.favoritesCount,
+          daily_verse_count: profile.dailyVerseCount,
+          completed_plans: profile.completedPlans,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Error syncing profile to Supabase', err);
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+    
+    saveToSupabase();
+  }, [profile, userId]);
+
+  const triggerConfetti = () => {
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ['#FFD700', '#FFA500', '#FF4500', '#87CEEB', '#32CD32']
+    });
+  };
+
+  const showFloatingPoints = useCallback((amount: number, type: FloatingPointType) => {
+    const id = Date.now() + Math.random();
+    setFloatingPoints(prev => [...prev, { id, amount, type }]);
+    setTimeout(() => {
+      setFloatingPoints(prev => prev.filter(fp => fp.id !== id));
+    }, 3000);
+  }, []);
+
+  const unlockBadge = async (badgeId: BadgeId) => {
+    if (!badges.find(b => b.id === badgeId)) {
+      const badgeDef = BADGES[badgeId];
+      const unlockedAt = new Date().toISOString();
+      const newBadge = { ...badgeDef, unlockedAt };
+      setBadges(prev => [...prev, newBadge]);
+      triggerConfetti();
+      
+      const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (userId && hasSupabase) {
+        try {
+          await supabase.from('user_badges').insert({
+            user_id: userId,
+            badge_id: badgeId,
+            title: badgeDef.title,
+            description: badgeDef.description,
+            emoji: badgeDef.emoji,
+            unlocked_at: unlockedAt
+          });
+        } catch (err) {
+          console.error('Error syncing badge to Supabase', err);
+        }
+      }
+    }
+  };
+
+  const checkBadges = (newProfile: UserProfile) => {
+    if (newProfile.completedBooks.length >= 1) unlockBadge('semente_fe');
+    
+    // Check Pentateuch (Gen, Exo, Lev, Num, Deu)
+    const pentateuch = ['gen', 'exo', 'lev', 'num', 'deu'];
+    if (pentateuch.every(id => newProfile.completedBooks.includes(id))) unlockBadge('leitor_pentateuco');
+    
+    if (newProfile.streak >= 7) unlockBadge('fogo_espirito');
+    
+    // Check NT (27 books) - simplified check here
+    const ntBooksCount = newProfile.completedBooks.filter(id => ['mat', 'mrk', 'luk', 'jhn', 'act', 'rom', '1co', '2co', 'gal', 'eph', 'php', 'col', '1th', '2th', '1ti', '2ti', 'tit', 'phm', 'heb', 'jas', '1pe', '2pe', '1jn', '2jn', '3jn', 'jud', 'rev'].includes(id)).length;
+    if (ntBooksCount >= 27) unlockBadge('pomba_paz');
+    
+    if (newProfile.completedBooks.length >= 73) unlockBadge('servo_fiel');
+    if (newProfile.notesCount >= 10) unlockBadge('escriba');
+    if (newProfile.favoritesCount >= 20) unlockBadge('coracao_aberto');
+    if (newProfile.dailyVerseCount >= 30) unlockBadge('madrugador');
+    if (newProfile.completedPlans >= 1) unlockBadge('peregrino');
+    
+    if (badges.length >= 9 && !badges.find(b => b.id === 'doutor_fe')) unlockBadge('doutor_fe');
+  };
+
+  const addPoints = (amount: number, reason: string, category?: 'freeExploration' | 'discipleTrail' | 'bonus') => {
+    setProfile(prev => {
+      const newPoints = prev.points + amount;
+      const newBreakdown = { ...(prev.pointsBreakdown || { freeExploration: 0, discipleTrail: 0, bonus: 0 }) };
+      if (category) {
+        newBreakdown[category] += amount;
+      }
+
+      const newProfile = {
+        ...prev,
+        points: newPoints,
+        pointsBreakdown: newBreakdown,
+        title: getTitleByPoints(newPoints)
+      };
+
+      // Log to localStorage event log for future Supabase sync
+      const eventLog = JSON.parse(safeStorage.getItem('points_event_log') || '[]');
+      eventLog.push({
+        type: reason,
+        points: amount,
+        category,
+        timestamp: new Date().toISOString()
+      });
+      safeStorage.setItem('points_event_log', JSON.stringify(eventLog));
+
+      return newProfile;
+    });
+  };
+
+  const checkStreak = () => {
+    const now = new Date();
+    const lastActive = new Date(profile.lastActiveDate);
+
+    // Compare by calendar date, not milliseconds
+    const toDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const diffDays = Math.round((toDay(now) - toDay(lastActive)) / (1000 * 60 * 60 * 24));
+
+    setProfile(prev => {
+      let newStreak = prev.streak;
+
+      if (diffDays === 0) {
+        // Same calendar day — just ensure streak is at least 1
+        if (newStreak === 0) newStreak = 1;
+        const newProfile = { ...prev, streak: newStreak, lastActiveDate: now.toISOString() };
+        checkBadges(newProfile);
+        return newProfile;
+      } else if (diffDays === 1) {
+        newStreak += 1; // Consecutive day
+      } else {
+        newStreak = 1; // Gap — reset but count today
+      }
+
+      const newProfile = {
+        ...prev,
+        streak: newStreak,
+        lastActiveDate: now.toISOString()
+      };
+      checkBadges(newProfile);
+      return newProfile;
+    });
+  };
+
+  const markBookCompleted = (bookId: string, isGps: boolean = false) => {
+    if (!profile.completedBooks.includes(bookId)) {
+      setProfile(prev => {
+        const newCompletedBooks = [...prev.completedBooks, bookId];
+        const newProfile = {
+          ...prev,
+          completedBooks: newCompletedBooks,
+          discipleCompletedBooks: isGps
+            ? [...(prev.discipleCompletedBooks || []), bookId]
+            : (prev.discipleCompletedBooks || []),
+        };
+        checkBadges(newProfile);
+        return newProfile;
+      });
+
+      // Update WeeklyChallenge progress if this book matches the challenge
+      setWeeklyChallenge(prev => {
+        if (prev.completed) return prev;
+        const newProgress = prev.progress + 1;
+        const completed = newProgress >= prev.target;
+        return { ...prev, progress: newProgress, completed };
+      });
+
+      if (isGps) {
+        addPoints(100, `Completou livro ${bookId} na Trilha do Discípulo`, 'discipleTrail');
+        showFloatingPoints(100, 'disciple');
+      } else {
+        addPoints(50, `Completou livro ${bookId} livremente`, 'freeExploration');
+        showFloatingPoints(50, 'free');
+      }
+
+      // Check if entire Trilha do Discípulo is now complete → trigger completePlan
+      const discipleBookIds = BEGINNER_PATH.flatMap(step => step.books);
+      const allDiscipleCompleted = discipleBookIds.every(
+        id => id === bookId || profile.completedBooks.includes(id)
+      );
+      if (allDiscipleCompleted) {
+        setProfile(prev => {
+          const newProfile = { ...prev, completedPlans: prev.completedPlans + 1 };
+          checkBadges(newProfile);
+          return newProfile;
+        });
+      }
+
+    } else if (isGps && !profile.discipleCompletedBooks?.includes(bookId)) {
+      // Book already completed freely, now completing via Trilha do Discipulo — register completion
+      setProfile(prev => ({
+        ...prev,
+        discipleCompletedBooks: [...(prev.discipleCompletedBooks || []), bookId],
+      }));
+      addPoints(50, `Reconquistou ${bookId} pela Trilha do Discípulo`, 'discipleTrail');
+      showFloatingPoints(50, 'disciple');
+    }
+  };
+
+  const markBookVisited = (bookId: string) => {
+    if (!profile.visitedBooks?.includes(bookId)) {
+      setProfile(prev => ({
+        ...prev,
+        visitedBooks: [...(prev.visitedBooks || []), bookId]
+      }));
+      addPoints(10, `Visitou livro ${bookId}`, 'freeExploration');
+      showFloatingPoints(10, 'free');
+    }
+  };
+
+  const markChapterRead = (bookId: string, chapterNum: number, _totalChapters: number) => {
+    setProfile(prev => {
+      const currentRead = prev.readChapters?.[bookId] || [];
+      const isAlreadyRead = currentRead.includes(chapterNum);
+      const updatedRead = isAlreadyRead
+        ? currentRead.filter(c => c !== chapterNum)
+        : [...currentRead, chapterNum];
+      return {
+        ...prev,
+        readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead }
+      };
+    });
+  };
+
+  const addNote = () => {
+    setProfile(prev => {
+      const newProfile = { ...prev, notesCount: prev.notesCount + 1 };
+      checkBadges(newProfile);
+      return newProfile;
+    });
+    addPoints(20, 'Fez uma anotação', 'freeExploration');
+  };
+
+  const addFavorite = () => {
+    setProfile(prev => {
+      const newProfile = { ...prev, favoritesCount: prev.favoritesCount + 1 };
+      checkBadges(newProfile);
+      return newProfile;
+    });
+    addPoints(5, 'Favoritou um versículo', 'freeExploration');
+  };
+
+  const accessDailyVerse = () => {
+    setProfile(prev => {
+      const newProfile = { ...prev, dailyVerseCount: prev.dailyVerseCount + 1 };
+      checkBadges(newProfile);
+      return newProfile;
+    });
+    addPoints(15, 'Acessou versículo do dia', 'freeExploration');
+  };
+
+  const completePlan = () => {
+    setProfile(prev => {
+      const newProfile = { ...prev, completedPlans: prev.completedPlans + 1 };
+      checkBadges(newProfile);
+      return newProfile;
+    });
+  };
+
+  // Check streak on mount
+  useEffect(() => {
+    checkStreak();
+  }, []);
+
+  return (
+    <GamificationContext.Provider value={{
+      profile,
+      badges,
+      weeklyChallenge,
+      addPoints,
+      markBookCompleted,
+      markBookVisited,
+      markChapterRead,
+      addNote,
+      addFavorite,
+      accessDailyVerse,
+      completePlan,
+      checkStreak,
+      updateProfile,
+      showFloatingPoints
+    }}>
+      {children}
+      
+      {/* Floating Points Overlay */}
+      <div className="fixed inset-0 pointer-events-none z-[100] flex items-center justify-center">
+        <AnimatePresence>
+          {floatingPoints.map(fp => (
+            <motion.div
+              key={fp.id}
+              initial={{ opacity: 0, y: 50, scale: 0.8 }}
+              animate={{ opacity: 1, y: -50, scale: 1 }}
+              exit={{ opacity: 0, y: -100, scale: 1.2 }}
+              transition={{ duration: 1.5, ease: "easeOut" }}
+              className="absolute"
+            >
+              {fp.type === 'free' && (
+                <div className="text-stone-900 font-bold text-2xl drop-shadow-md">
+                  +{fp.amount} pts
+                </div>
+              )}
+              {fp.type === 'disciple' && (
+                <div className="text-amber-500 font-bold text-3xl drop-shadow-lg flex items-center gap-2 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full border border-amber-200">
+                  +{fp.amount} pts ⭐
+                </div>
+              )}
+              {fp.type === 'bonus_step' && (
+                <div className="text-orange-500 font-black text-4xl drop-shadow-xl flex items-center gap-2 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full border-2 border-orange-300">
+                  +{fp.amount} pts BÔNUS!
+                </div>
+              )}
+              {fp.type === 'bonus_trail' && (
+                <div className="text-amber-400 font-black text-5xl drop-shadow-2xl flex items-center gap-3 bg-stone-900/90 backdrop-blur-md px-8 py-4 rounded-full border-4 border-amber-400">
+                  +{fp.amount} pts 🏆
+                </div>
+              )}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </GamificationContext.Provider>
+  );
+}
+
+export const useGamification = () => {
+  const context = useContext(GamificationContext);
+  if (!context) throw new Error('useGamification must be used within GamificationProvider');
+  return context;
+};

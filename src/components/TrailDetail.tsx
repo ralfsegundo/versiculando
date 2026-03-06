@@ -427,44 +427,63 @@ export default function TrailDetail({ trail, onBack }: TrailDetailProps) {
 
       {/* Day Completion Modal */}
       <AnimatePresence>
-        {showCompletionModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm"
-          >
+        {showCompletionModal && (() => {
+          const nextDayData = days.find(d => d.day_number === currentDay + 1);
+          const hoursUntilMidnight = 24 - new Date().getHours();
+          return (
             <motion.div
-              initial={{ y: 40, scale: 0.95 }}
-              animate={{ y: 0, scale: 1 }}
-              exit={{ y: 40, scale: 0.95 }}
-              transition={{ type: 'spring', damping: 22, stiffness: 280 }}
-              className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm"
             >
-              <div className="text-4xl mb-3">{dayData?.emoji || '✅'}</div>
-              <h3 className="font-serif font-bold text-xl text-stone-900 mb-1">
-                Dia {currentDay} concluído!
-              </h3>
-              <p className="text-stone-500 text-sm mb-5">
-                Você completou mais um dia da sua jornada. Continue amanhã!
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowCompletionModal(false)}
-                  className="flex-1 bg-stone-100 text-stone-700 font-bold py-3 rounded-xl hover:bg-stone-200 transition-colors"
-                >
-                  Fechar
-                </button>
-                <button
-                  onClick={goToNextDay}
-                  className={`flex-1 bg-gradient-to-r ${theme.gradient} text-white font-bold py-3 rounded-xl shadow-sm`}
-                >
-                  Próximo dia
-                </button>
-              </div>
+              <motion.div
+                initial={{ y: 40, scale: 0.95 }}
+                animate={{ y: 0, scale: 1 }}
+                exit={{ y: 40, scale: 0.95 }}
+                transition={{ type: 'spring', damping: 22, stiffness: 280 }}
+                className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
+              >
+                <div className="text-center mb-4">
+                  <div className="text-4xl mb-2">{dayData?.emoji || '✅'}</div>
+                  <h3 className="font-serif font-bold text-xl text-stone-900 mb-1">
+                    Dia {currentDay} concluído!
+                  </h3>
+                  <p className="text-stone-500 text-sm">
+                    Que esta palavra fique em seu coração hoje.
+                  </p>
+                </div>
+
+                {/* Next day preview */}
+                {nextDayData && (
+                  <div className="bg-stone-50 rounded-2xl p-4 mb-5 border border-stone-100">
+                    <p className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1">Amanhã — Dia {currentDay + 1}</p>
+                    <p className="font-serif font-bold text-stone-900 text-sm">{nextDayData.emoji} {nextDayData.title}</p>
+                    <p className="text-xs text-stone-500 mt-0.5">📖 {nextDayData.reading}</p>
+                    <div className="flex items-center gap-1.5 mt-2 text-amber-600">
+                      <span className="text-xs font-bold">⏰ Volte em ~{hoursUntilMidnight}h</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowCompletionModal(false)}
+                    className="flex-1 bg-stone-100 text-stone-700 font-bold py-3 rounded-xl hover:bg-stone-200 transition-colors text-sm"
+                  >
+                    Fechar
+                  </button>
+                  <button
+                    onClick={goToNextDay}
+                    className={`flex-1 bg-gradient-to-r ${theme.gradient} text-white font-bold py-3 rounded-xl shadow-sm text-sm`}
+                  >
+                    Ver Dia {currentDay + 1} →
+                  </button>
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
+          );
+        })()}
       </AnimatePresence>
 
       {/* Trail Complete Modal */}

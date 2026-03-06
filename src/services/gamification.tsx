@@ -214,7 +214,7 @@ interface GamificationContextType {
   updateProfile: (updates: Partial<UserProfile>) => void;
   showFloatingPoints: (amount: number, type: FloatingPointType) => void;
   useStreakFreeze: () => boolean;
-  completeDailyMission: (missionDate: string) => void;
+  completeDailyMission: (missionDate?: string) => void;
   addEcoReaction: (verseRef: string, emoji: string) => void;
   recordSaintEncounter: (saintKey: string) => void;
   completeFlashChallenge: () => void;
@@ -536,12 +536,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const checkStreak = () => {
     const now = new Date();
-    const lastActive = new Date(profile.lastActiveDate);
-
     const toDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    const diffDays = Math.round((toDay(now) - toDay(lastActive)) / (1000 * 60 * 60 * 24));
 
     setProfile(prev => {
+      const lastActive = new Date(prev.lastActiveDate);
+      const diffDays = Math.round((toDay(now) - toDay(lastActive)) / (1000 * 60 * 60 * 24));
+
       let newStreak = prev.streak;
       let newFreezes = prev.streakFreezes ?? 1;
 
@@ -591,7 +591,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   };
 
   // Completa missão diária
-  const completeDailyMission = (missionDate: string) => {
+  const completeDailyMission = (_missionDate?: string) => {
     const today = new Date().toISOString().split('T')[0];
     if (profile.lastDailyMissionDate === today) return; // já completou hoje
     setProfile(prev => {

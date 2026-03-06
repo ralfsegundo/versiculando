@@ -14,7 +14,7 @@ const TITLES = [
 ];
 
 export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: boolean; onOpenAdmin?: () => void }) {
-  const { profile, badges, weeklyChallenge, updateProfile } = useGamification();
+  const { profile, badges, weeklyChallenge, updateProfile, userId } = useGamification();
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editName, setEditName] = useState(profile.name);
@@ -47,13 +47,12 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
           if (authError) throw authError;
         }
 
-        // Update profile name
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
+        // Update profile name (usa userId já disponível no contexto)
+        if (userId) {
           const { error: profileError } = await supabase
             .from('profiles')
             .update({ name: editName, email: editEmail })
-            .eq('id', session.user.id);
+            .eq('id', userId);
           if (profileError) throw profileError;
         }
       }

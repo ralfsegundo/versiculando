@@ -222,6 +222,7 @@ interface GamificationContextType {
   markBookCompleted: (bookId: string, isGps?: boolean) => void;
   markBookVisited: (bookId: string) => void;
   markChapterRead: (bookId: string, chapterNum: number, totalChapters: number) => void;
+  markAllChaptersRead: (bookId: string, chapterNums: number[]) => void;
   addNote: () => void;
   addFavorite: () => void;
   accessDailyVerse: () => void;
@@ -524,7 +525,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     if (newProfile.dailyVerseCount >= 30) unlockBadge('madrugador');
     if (newProfile.completedPlans >= 1) unlockBadge('peregrino');
     
-    if (badges.length >= 9 && !badges.find(b => b.id === 'doutor_fe')) unlockBadge('doutor_fe');
+    // Doutor da Fé: desbloqueou todas as outras conquistas (14 badges no total, exceto o próprio doutor_fe)
+    const totalOtherBadges = Object.keys(BADGES).filter(id => id !== 'doutor_fe').length;
+    if (badges.length >= totalOtherBadges && !badges.find(b => b.id === 'doutor_fe')) unlockBadge('doutor_fe');
   };
 
   const addPoints = (amount: number, reason: string, category?: 'freeExploration' | 'discipleTrail' | 'bonus') => {
@@ -568,7 +571,10 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       let newFreezes = prev.streakFreezes ?? 1;
 
       // Ganhar 1 Graça por semana (máx 2)
-      const weekKey = `${now.getFullYear()}-W${Math.ceil(now.getDate() / 7)}`;
+      // ISO week-of-year: garante que a chave seja única por semana calendário real
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      const isoWeek = Math.ceil(((now.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7);
+      const weekKey = `${now.getFullYear()}-W${isoWeek}`;
       if (prev.lastFreezeEarnedWeek !== weekKey && newFreezes < 2) {
         newFreezes = Math.min(2, newFreezes + 1);
       }
@@ -615,10 +621,14 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   // Completa missão diária
   const completeDailyMission = (_missionDate?: string) => {
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
     if (profile.lastDailyMissionDate === today) return; // já completou hoje
     setProfile(prev => {
-      const newMissionStreak = (prev.lastDailyMissionDate === new Date(Date.now() - 86400000).toISOString().split('T')[0])
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const newMissionStreak = (prev.lastDailyMissionDate === yesterdayStr)
         ? prev.dailyMissionStreak + 1
         : 1;
       const newProfile = { ...prev, lastDailyMissionDate: today, dailyMissionStreak: newMissionStreak };
@@ -660,6 +670,10 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       const updated = [...existing, saintKey];
       safeStorage.setItem(key, JSON.stringify(updated));
       if (updated.length >= 10) unlockBadge('comunhao_santos');
+      // Dá XP pela descoberta do santo (a UI exibe "XP registrado")
+      const xp = applyMultiplier(10, profile.streak);
+      addPoints(xp, `Encontrou ${saintKey}`, 'freeExploration');
+      showFloatingPoints(xp, 'free');
     }
   };
 
@@ -753,15 +767,22 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       );
       if (allDiscipleCompleted) {
         setProfile(prev => {
+          // Guarda contra contagem dupla: se já completou a trilha antes, não incrementa
+          if (prev.completedPlans >= 1) return prev;
           const newProfile = { ...prev, completedPlans: prev.completedPlans + 1 };
           checkBadges(newProfile);
           return newProfile;
         });
         // Bônus épico pela conclusão da Trilha do Discípulo
-        setTimeout(() => {
-          addPoints(1000, 'Trilha do Discípulo completa! 🏆', 'bonus');
-          showFloatingPoints(1000, 'bonus_trail');
-        }, 500);
+        // Guarda via localStorage para evitar double-award entre gamification.tsx e Trails.tsx
+        const trailKey = `trail_disciple_xp_awarded_${userId || 'local'}`;
+        if (!safeStorage.getItem(trailKey)) {
+          safeStorage.setItem(trailKey, 'true');
+          setTimeout(() => {
+            addPoints(1000, 'Trilha do Discípulo completa! 🏆', 'bonus');
+            showFloatingPoints(1000, 'bonus_trail');
+          }, 500);
+        }
       }
 
     } else if (isGps && !profile.discipleCompletedBooks?.includes(bookId)) {
@@ -807,6 +828,25 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         }, 0);
       }
 
+      return {
+        ...prev,
+        readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead }
+      };
+    });
+  };
+
+  // Marca todos os capítulos de uma vez, gerando apenas 1 notificação de XP
+  const markAllChaptersRead = (bookId: string, chapterNums: number[]) => {
+    setProfile(prev => {
+      const currentRead = prev.readChapters?.[bookId] || [];
+      const newChapters = chapterNums.filter(n => !currentRead.includes(n));
+      if (newChapters.length === 0) return prev;
+      const updatedRead = [...currentRead, ...newChapters];
+      const totalXp = applyMultiplier(5 * newChapters.length, prev.streak);
+      setTimeout(() => {
+        addPoints(totalXp, `Marcou ${newChapters.length} capítulos de ${bookId}`, 'freeExploration');
+        showFloatingPoints(totalXp, 'free');
+      }, 0);
       return {
         ...prev,
         readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead }
@@ -868,6 +908,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       markBookCompleted,
       markBookVisited,
       markChapterRead,
+      markAllChaptersRead,
       addNote,
       addFavorite,
       accessDailyVerse,

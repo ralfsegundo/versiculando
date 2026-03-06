@@ -170,8 +170,6 @@ export default function App() {
           {currentTab === 'home' && (
             <Home
               onSelectBook={setSelectedBookId}
-              viewMode={homeViewMode}
-              onViewModeChange={setHomeViewMode}
               welcomeMessage={welcomeMessage}
               onDismissWelcome={() => {
                 setWelcomeMessage(null);
@@ -180,7 +178,7 @@ export default function App() {
             />
           )}
           {currentTab === 'journey'    && <JourneyMap onSelectBook={setSelectedBookId} />}
-          {currentTab === 'trails'     && <Trails onSelectTrail={setSelectedTrail} />}
+          {currentTab === 'trails'     && <Trails onSelectTrail={setSelectedTrail} onSelectBook={setSelectedBookId} />}
           {currentTab === 'community'  && <Community />}
           {currentTab === 'profile'    && (
             <Profile

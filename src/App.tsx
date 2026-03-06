@@ -12,9 +12,11 @@ import OfflineBanner from './components/OfflineBanner';
 import Admin from './components/Admin';
 import { GamificationProvider } from './services/gamification';
 import { supabase } from './lib/supabase';
+import { prefetchBooks } from './services/bookData';
 import Auth from './components/Auth';
 import { Session } from '@supabase/supabase-js';
 import { Trail } from './services/trails';
+import { BEGINNER_PATH, BIBLE_BOOKS } from './constants';
 
 // Email do administrador — só este usuário vê o acesso ao painel admin
 const ADMIN_EMAIL = 'ralfsegundo@gmail.com';
@@ -68,6 +70,16 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setIsInitializing(false);
+
+      // Pré-carrega os livros da Trilha do Discípulo em background
+      // Roda depois que a UI já está visível, sem bloquear nada
+      if (session?.user) {
+        const beginnerBookIds = BEGINNER_PATH.flatMap(step => step.books);
+        const beginnerBookNames = beginnerBookIds
+          .map(id => BIBLE_BOOKS.find(b => b.id === id)?.name)
+          .filter(Boolean) as string[];
+        setTimeout(() => prefetchBooks(beginnerBookNames), 1500);
+      }
     }).catch(() => {
       setIsInitializing(false);
     });

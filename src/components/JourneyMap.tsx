@@ -42,7 +42,9 @@ export default function JourneyMap({ onSelectBook }: JourneyMapProps) {
   const discipleOrder = BEGINNER_PATH.flatMap((step: any) => step.books);
   const nextDiscipleBookId = discipleOrder.find((id: string) => !profile.completedBooks.includes(id));
 
-  let globalIndex = 0;
+  // Pré-computa o índice global de cada livro para exibição correta
+  const globalIndexMap = new Map<string, number>();
+  BIBLE_BOOKS.forEach((book, idx) => globalIndexMap.set(book.id, idx + 1));
 
   return (
     <div className="min-h-screen bg-[#fdfbf7] text-stone-900 font-sans pb-28 pt-5 md:pt-8">
@@ -118,7 +120,7 @@ export default function JourneyMap({ onSelectBook }: JourneyMapProps) {
                 <div className="absolute left-[22px] top-0 bottom-0 w-0.5 bg-stone-100 z-0" />
                 <div className="space-y-2">
                   {section.books.map((book, bookIdx) => {
-                    const nodeNum = ++globalIndex;
+                    const nodeNum = globalIndexMap.get(book.id) ?? bookIdx + 1;
                     const isCompleted = profile.completedBooks.includes(book.id);
                     const isVisited = profile.visitedBooks?.includes(book.id) && !isCompleted;
                     const isNext = book.id === nextDiscipleBookId;

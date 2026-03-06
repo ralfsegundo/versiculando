@@ -145,7 +145,7 @@ export async function generateBookSummary(
   const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>;
 
   if (error || !data?.data) {
-    throw new Error(`Livro "${bookName}" não encontrado no banco de dados.`);
+    throw new Error(`Livro "${bookName}" não encontrado. Verifique sua conexão e tente novamente.`);
   }
 
   const result = data.data as BookData;

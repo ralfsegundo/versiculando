@@ -5,6 +5,7 @@ import { fetchTrails, fetchUserProgress, getTrailCompletedDays, Trail, UserTrail
 import { useGamification } from '../services/gamification';
 import { BIBLE_BOOKS, BEGINNER_PATH } from '../constants';
 import confetti from 'canvas-confetti';
+import BibleGames from './BibleGames';
 
 interface TrailsProps {
   onSelectTrail: (trail: Trail) => void;
@@ -298,7 +299,7 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
           </button>
           <button onClick={() => setActiveTab('tematicas')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all active:scale-95 ${activeTab === 'tematicas' ? 'bg-white text-stone-900 shadow-md' : 'text-stone-400 hover:text-stone-600'}`}>
-            💛 Trilhas Temáticas
+            🎮 Jogos Bíblicos
           </button>
         </div>
 
@@ -428,117 +429,9 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
           </div>
         )}
 
-        {/* ══ TAB: TRILHAS TEMÁTICAS ══ */}
+        {/* ══ TAB: JOGOS BÍBLICOS ══ */}
         {activeTab === 'tematicas' && (
-          <div>
-            {(startedCount > 0 || finishedCount > 0) && (
-              <div className="flex gap-3 mb-6">
-                {startedCount > 0 && (
-                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 shadow-sm">
-                    <Flame size={14} className="text-amber-500" />
-                    <span className="text-xs font-bold text-amber-800">{startedCount} em andamento</span>
-                  </div>
-                )}
-                {finishedCount > 0 && (
-                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 shadow-sm">
-                    <CheckCircle2 size={14} className="text-emerald-500" />
-                    <span className="text-xs font-bold text-emerald-800">{finishedCount} concluída{finishedCount > 1 ? 's' : ''}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide -mx-4 px-4 pt-1">
-              {categories.map((cat: any) => {
-                const meta = cat === 'todos' ? null : CATEGORY_META[cat as keyof typeof CATEGORY_META] || DEFAULT_META;
-                const isActive = activeCategory === cat;
-                const Icon = meta?.icon;
-                return (
-                  <button key={cat} onClick={() => setActiveCategory(cat)}
-                    className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all active:scale-95 border
-                      ${isActive 
-                        ? cat === 'todos' ? 'bg-stone-900 text-white border-stone-900 shadow-md' : `bg-gradient-to-r ${meta?.gradient} text-white border-transparent shadow-md` 
-                        : 'bg-white text-stone-500 border-stone-200 hover:border-stone-300 hover:text-stone-700'}`}>
-                    {cat === 'todos' ? '✨ Todas' : <>{Icon && <Icon size={11} />}{meta?.label || cat}</>}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="space-y-4">
-              <AnimatePresence mode="popLayout">
-                {filtered.map((trail, index) => {
-                  const meta = CATEGORY_META[trail.category] || DEFAULT_META;
-                  const { completed, total } = getTrailProgress(trail);
-                  const started = isStarted(trail);
-                  const finished = isFinished(trail);
-                  const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
-                  return (
-                    <motion.div key={trail.id} layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ delay: index * 0.05 }}>
-                      <button onClick={() => !trail.is_premium && onSelectTrail(trail)}
-                        className={`w-full text-left rounded-2xl border overflow-hidden transition-all active:scale-[0.99] shadow-sm hover:shadow-md ${trail.is_premium ? 'opacity-75 cursor-default' : 'cursor-pointer'} ${meta.border} bg-white`}>
-                        <div className={`h-1.5 w-full bg-gradient-to-r ${meta.gradient}`} />
-                        <div className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className={`w-11 h-11 rounded-xl ${meta.bg} flex items-center justify-center shrink-0`}><span className="text-xl">{trail.emoji}</span></div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 mb-0.5">
-                                    <span className={`text-[10px] font-bold uppercase tracking-wider ${meta.bg.replace('bg-', 'text-').replace('-50', '-600')}`}>{meta.label}</span>
-                                    {trail.is_premium && <span className="flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full"><Lock size={9} /> Premium</span>}
-                                    {finished && <span className="flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full"><CheckCircle2 size={9} /> Concluída</span>}
-                                  </div>
-                                  <h3 className="font-serif font-bold text-stone-900 text-base leading-tight">{trail.title}</h3>
-                                  <p className="text-xs text-stone-500 mt-1 leading-relaxed line-clamp-2">{trail.description}</p>
-                                </div>
-                                {!trail.is_premium ? (
-                                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br ${meta.gradient} text-white shadow-sm mt-0.5`}><ChevronRight size={16} /></div>
-                                ) : (
-                                  <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-stone-100 text-stone-400 mt-0.5"><Lock size={14} /></div>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-3 mt-2.5">
-                                <div className="flex items-center gap-1 text-[11px] text-stone-400 font-medium"><Clock size={11} />{trail.duration_days} dias</div>
-                                {started && !finished && <div className="flex items-center gap-1 text-[11px] font-bold text-amber-600"><Flame size={11} />{completed}/{total} dias</div>}
-                              </div>
-                              {started && (
-                                <div className="mt-2">
-                                  <div className="w-full h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                                    <motion.div initial={{ width: 0 }} animate={{ width: `${progressPct}%` }} transition={{ duration: 0.8, ease: 'easeOut' }} className={`h-full rounded-full bg-gradient-to-r ${meta.gradient}`} />
-                                  </div>
-                                </div>
-                              )}
-                              {!trail.is_premium ? (
-                                <div className={`mt-2.5 text-[11px] font-bold ${meta.bg.replace('bg-', 'text-').replace('-50', '-600')}`}>
-                                  {finished ? '✓ Trilha concluída · Ver novamente' : started ? 'Continuar trilha →' : 'Começar trilha →'}
-                                </div>
-                              ) : (
-                                <div className="mt-2.5 text-[11px] font-bold text-stone-400">Em breve</div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-
-            {filtered.length === 0 && (
-              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-                className="text-center py-16 bg-stone-50 rounded-3xl border border-stone-100">
-                <div className="text-4xl mb-3">🌿</div>
-                <p className="text-sm font-bold text-stone-500">Nenhuma trilha nesta categoria ainda.</p>
-                <p className="text-xs text-stone-400 mt-1">Novas trilhas são adicionadas regularmente.</p>
-              </motion.div>
-            )}
-
-            <div className="mt-10 text-center bg-stone-50 rounded-2xl p-4 border border-stone-100">
-              <p className="text-xs text-stone-400 leading-relaxed">✝️ Novas trilhas são adicionadas regularmente.<br />Todo conteúdo é baseado na Bíblia Católica.</p>
-            </div>
-          </div>
+          <BibleGames />
         )}
       </div>
 

@@ -1,14 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { BIBLE_BOOKS, GROUP_COLORS } from '../constants';
-import { Book, Library, Search, BookOpen, Sun, CheckCircle2, ArrowRight, Info, Download, X, Navigation, Zap, Star, Shield } from 'lucide-react';
+import { Book, Library, Search, BookOpen, Sun, CheckCircle2, ArrowRight, Info, Download, X, Navigation, Zap, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useGamification } from '../services/gamification';
+import { useGamification, getStreakMultiplier, applyMultiplier } from '../services/gamification';
 
 interface HomeProps {
   onSelectBook: (bookId: string) => void;
   welcomeMessage?: string | null;
   onDismissWelcome?: () => void;
 }
+
+// ── Constantes estáticas do dia (calculadas uma vez por sessão) ──
+const _now = new Date();
+const _startOfYear = new Date(_now.getFullYear(), 0, 1);
+export const DAY_OF_YEAR = Math.floor((_now.getTime() - _startOfYear.getTime()) / 86400000);
+export const TODAY_STR = _now.toISOString().split('T')[0];
+const WEEK_OF_YEAR = Math.floor(DAY_OF_YEAR / 7);
 
 // PWA Install Hook
 function usePWAInstall() {
@@ -56,11 +63,7 @@ function usePWAInstall() {
 
 export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }: HomeProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const { profile, accessDailyVerse, showFloatingPoints, userId, useStreakFreeze, completeDailyMission, recordSaintEncounter, completeFlashChallenge } = useGamification();
-
-  // ── Dados do dia (determinísticos por dia do ano) ──────────
-  const DAY_OF_YEAR = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
-  const TODAY_STR = new Date().toISOString().split('T')[0];
+  const { profile, accessDailyVerse, addPoints, showFloatingPoints, userId, useStreakFreeze, completeDailyMission, recordSaintEncounter, completeFlashChallenge } = useGamification();
 
   // 1. Versículo do dia rotativo
   const DAILY_VERSES = [
@@ -163,16 +166,20 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     { id: 'efesios', text: 'Leia Efésios inteiro antes de amanhã', bookId: 'eph', hours: 36 },
     { id: 'discurso_montanha', text: 'Leia o Sermão da Montanha (Mt 5-7)', bookId: 'mat', hours: 24 },
   ];
-  const weekOfYear = Math.floor(DAY_OF_YEAR / 7);
-  const flashChallenge = FLASH_CHALLENGES[weekOfYear % FLASH_CHALLENGES.length];
-  const flashDayOfWeek = DAY_OF_YEAR % 7; // Aparece nos dias 0-1 da semana (48h)
+  const flashChallenge = FLASH_CHALLENGES[WEEK_OF_YEAR % FLASH_CHALLENGES.length];
+  const flashDayOfWeek = DAY_OF_YEAR % 7;
   const showFlashChallenge = flashDayOfWeek < 2;
-  const flashDismissed = localStorage.getItem(`flash_dismissed_${weekOfYear}`) === 'true';
-  const flashCompleted = localStorage.getItem(`flash_done_${weekOfYear}`) === 'true';
-  const [flashVisible, setFlashVisible] = useState(showFlashChallenge && !flashDismissed);
+  const flashDismissed = localStorage.getItem(`flash_dismissed_${WEEK_OF_YEAR}`) === 'true';
+  // Bug 2 fix: flashCompleted como state para re-render correto
+  const [flashCompleted, setFlashCompleted] = useState(() => localStorage.getItem(`flash_done_${WEEK_OF_YEAR}`) === 'true');
+  const [flashVisible, setFlashVisible] = useState(showFlashChallenge && !flashDismissed && !flashCompleted);
 
   // Santo do dia — expandido ou não
   const [saintExpanded, setSaintExpanded] = useState(false);
+  // Bug 3 fix: saintSeen como state para re-render correto após clique
+  const [saintSeen, setSaintSeen] = useState(() => localStorage.getItem(`saint_seen_${TODAY_STR}`) === 'true');
+  // Bug 4 fix: lectioDone como state para evitar XP infinito e re-render correto
+  const [lectioDone, setLectioDone] = useState(() => localStorage.getItem(`lectio_done_${TODAY_STR}`) === 'true');
 
   // Streak freeze state
   const [showFreezeUsed, setShowFreezeUsed] = useState(false);
@@ -400,13 +407,32 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   return (
     <div className="min-h-screen bg-[#fdfbf7] text-stone-900 font-sans pb-28">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 md:pt-8">
-        <header className="mb-4 md:mb-8 flex items-center justify-center gap-2.5 md:flex-col pr-10 md:pr-0">
-          <div className="w-8 h-8 md:w-9 md:h-9 bg-stone-900 text-[#fdfbf7] rounded-xl flex items-center justify-center shadow-md shrink-0">
-            <Library size={16} />
+        <header className="mb-4 md:mb-6 flex items-center justify-between gap-3 pr-10 md:pr-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-stone-900 text-[#fdfbf7] rounded-xl flex items-center justify-center shadow-md shrink-0">
+              <Library size={16} />
+            </div>
+            <div>
+              <h1 className="text-base md:text-2xl font-serif font-bold tracking-tight text-stone-900 leading-none">
+                {profile.name ? `Olá, ${profile.name.split(' ')[0]}!` : 'Versiculando'}
+              </h1>
+              {profile.title && (
+                <p className="text-[10px] text-stone-400 font-bold mt-0.5 hidden md:block">{profile.title} · {profile.points} XP</p>
+              )}
+            </div>
           </div>
-          <h1 className="text-lg md:text-4xl font-serif font-bold tracking-tight text-stone-900">
-            Versiculando
-          </h1>
+          <div className="flex items-center gap-2">
+            {profile.streak >= 1 && (
+              <div className="flex items-center gap-1 bg-orange-50 border border-orange-200 px-2.5 py-1 rounded-full">
+                <span className="text-sm">🔥</span>
+                <span className="text-xs font-black text-orange-600">{profile.streak}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+              <Star size={11} className="text-amber-500 fill-amber-500" />
+              <span className="text-xs font-black text-amber-600">{profile.points}</span>
+            </div>
+          </div>
         </header>
 
         {/* Banner de boas-vindas personalizado (pós-onboarding) */}
@@ -515,12 +541,25 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                     );
                   })()}
                 </div>
-                {/* Graças */}
-                <div className="flex flex-col items-center bg-white/25 rounded-xl px-2.5 py-1.5 gap-0.5 shrink-0">
+                {/* Graças — clicável quando streak quebrou */}
+                <button
+                  onClick={() => {
+                    if ((profile.streakFreezes ?? 0) > 0) {
+                      const used = useStreakFreeze();
+                      if (used) {
+                        setShowFreezeUsed(true);
+                        setTimeout(() => setShowFreezeUsed(false), 4000);
+                      }
+                    }
+                  }}
+                  disabled={(profile.streakFreezes ?? 0) === 0}
+                  className="flex flex-col items-center bg-white/25 hover:bg-white/35 active:scale-95 transition-all rounded-xl px-2.5 py-1.5 gap-0.5 shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
+                  title={(profile.streakFreezes ?? 0) > 0 ? 'Usar Graça do Dia para proteger o streak' : 'Sem Graças disponíveis'}
+                >
                   <span className="text-base leading-none">🕊️</span>
                   <span className="text-white font-black text-xs leading-none">{profile.streakFreezes ?? 0}</span>
                   <span className="text-white/70 text-[8px] font-bold uppercase leading-none">graças</span>
-                </div>
+                </button>
               </div>
             </div>
             {showFreezeUsed && (
@@ -539,8 +578,8 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               className="max-w-xl mx-auto mb-4">
               <div className="bg-gradient-to-r from-violet-600 to-purple-700 rounded-2xl p-4 shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-                <button onClick={() => { localStorage.setItem(`flash_dismissed_${weekOfYear}`, 'true'); setFlashVisible(false); }}
-                  className="absolute top-3 right-3 text-white/50 hover:text-white transition-colors z-10">
+                      <button onClick={() => { localStorage.setItem(`flash_dismissed_${WEEK_OF_YEAR}`, 'true'); setFlashVisible(false); }}
+                        className="absolute top-3 right-3 text-white/50 hover:text-white transition-colors z-10">
                   <X size={16} />
                 </button>
                 <div className="flex items-start gap-3 relative z-10">
@@ -558,7 +597,8 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         </button>
                       )}
                       <button onClick={() => {
-                        localStorage.setItem(`flash_done_${weekOfYear}`, 'true');
+                        localStorage.setItem(`flash_done_${WEEK_OF_YEAR}`, 'true');
+                        setFlashCompleted(true);
                         completeFlashChallenge();
                         setFlashVisible(false);
                       }} className="bg-yellow-400 text-stone-900 font-bold text-xs px-4 py-1.5 rounded-full active:scale-95 transition-all">
@@ -605,7 +645,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                       </p>
                       {!missionDone && (
                         <span className="text-[10px] font-black text-amber-500 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full shrink-0">
-                          +25 XP
+                          +{applyMultiplier(50, profile.streak)} XP{getStreakMultiplier(profile.streak) > 1 ? ` 🔥` : ''}
                         </span>
                       )}
                     </div>
@@ -658,80 +698,122 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
             { ref: 'Mc 1,14-20', title: 'Seguir a Jesus', text: 'Depois que João foi preso, Jesus foi para a Galileia pregar o Evangelho de Deus...', bookId: 'mrk', reflection: 'O que precisaria largar para seguir Jesus mais de perto?' },
           ];
           const lectio = LECTIO[DAY_OF_YEAR % LECTIO.length];
-          const lectioKey = `lectio_done_${TODAY_STR}`;
-          const lectioDone = localStorage.getItem(lectioKey) === 'true';
+          const lectioXP = applyMultiplier(20, profile.streak);
 
           return (
-            <div className="max-w-xl mx-auto mb-4">
-              <div className="bg-stone-50 border border-stone-200 rounded-2xl overflow-hidden shadow-sm">
-                <div className="bg-gradient-to-r from-stone-800 to-stone-900 px-4 py-2.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <BookOpen size={14} className="text-amber-400" />
-                    <span className="text-amber-400 text-[10px] font-bold uppercase tracking-widest">Lectio Divina · {lectio.ref}</span>
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.07 }}
+              className="max-w-xl mx-auto mb-4"
+            >
+              <div className={`rounded-2xl overflow-hidden border-2 transition-all shadow-sm ${lectioDone ? 'border-indigo-200 bg-indigo-50' : 'border-stone-200 bg-white hover:border-indigo-200 hover:shadow-md'}`}>
+                <div className={`h-1.5 w-full ${lectioDone ? 'bg-indigo-400' : 'bg-gradient-to-r from-indigo-500 to-violet-500'}`} />
+                <div className="p-4 flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl ${lectioDone ? 'bg-indigo-100' : 'bg-indigo-50 border border-indigo-100'}`}>
+                    {lectioDone ? '✅' : '📖'}
                   </div>
-                  {lectioDone && <span className="text-emerald-400 text-[10px] font-bold">✓ Lida hoje</span>}
-                </div>
-                <div className="p-4">
-                  <h4 className="font-serif font-bold text-stone-900 text-base mb-1">{lectio.title}</h4>
-                  <p className="text-stone-600 text-sm italic leading-relaxed mb-3">"{lectio.text}"</p>
-                  <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 mb-3">
-                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-0.5">Pergunta para meditação</p>
-                    <p className="text-sm text-stone-700 leading-snug">{lectio.reflection}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => onSelectBook(lectio.bookId)}
-                      className="flex-1 bg-stone-900 text-white font-bold text-xs py-2 rounded-xl active:scale-95 transition-all">
-                      Ler o trecho completo →
-                    </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-0.5 gap-2">
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${lectioDone ? 'text-indigo-600' : 'text-indigo-500'}`}>
+                        Lectio Divina · {lectio.ref}
+                      </p>
+                      {!lectioDone && (
+                        <span className="text-[10px] font-black text-indigo-500 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full shrink-0">
+                          +{lectioXP} XP{getStreakMultiplier(profile.streak) > 1 ? ' 🔥' : ''}
+                        </span>
+                      )}
+                    </div>
+                    <h4 className={`font-serif font-bold text-base leading-tight mb-1 ${lectioDone ? 'text-indigo-800 line-through opacity-60' : 'text-stone-900'}`}>
+                      {lectio.title}
+                    </h4>
                     {!lectioDone && (
-                      <button onClick={() => {
-                        localStorage.setItem(lectioKey, 'true');
-                        // pequeno bônus
-                        window.dispatchEvent(new CustomEvent('lectio-done'));
-                      }}
-                        className="bg-stone-100 text-stone-700 font-bold text-xs py-2 px-3 rounded-xl border border-stone-200 active:scale-95 transition-all">
-                        Meditei ✓
-                      </button>
+                      <>
+                        <p className="text-stone-500 text-xs italic leading-relaxed mb-2">"{lectio.text}"</p>
+                        <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 mb-3">
+                          <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider mb-0.5">Meditação</p>
+                          <p className="text-xs text-stone-700 leading-snug">{lectio.reflection}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => onSelectBook(lectio.bookId)}
+                            className="flex-1 bg-stone-900 text-white font-bold text-xs py-2 rounded-xl active:scale-95 transition-all">
+                            Ler o trecho →
+                          </button>
+                          <button onClick={() => {
+                            if (lectioDone) return; // guard duplo
+                            localStorage.setItem(`lectio_done_${TODAY_STR}`, 'true');
+                            setLectioDone(true);
+                            addPoints(lectioXP, 'freeExploration');
+                            showFloatingPoints(lectioXP, 'challenge');
+                          }}
+                            className="bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs py-2 px-3 rounded-xl active:scale-95 transition-all">
+                            Meditei +{lectioXP} XP
+                          </button>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           );
         })()}
 
         {/* ── Santo do Dia ✨ ──────────────────────────────── */}
         {(() => {
-          const saintKey = `saint_seen_${TODAY_STR}`;
-          const saintSeen = localStorage.getItem(saintKey) === 'true';
           return (
             <div className="max-w-xl mx-auto mb-4">
               <button onClick={() => {
                 setSaintExpanded(v => !v);
                 if (!saintSeen) {
-                  localStorage.setItem(saintKey, 'true');
+                  localStorage.setItem(`saint_seen_${TODAY_STR}`, 'true');
+                  setSaintSeen(true);
                   recordSaintEncounter(todaySaint.key);
                 }
               }}
-                className="w-full bg-white border border-stone-200 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-all text-left">
-                <span className="text-2xl">{todaySaint.emoji}</span>
-                <div className="flex-1">
-                  <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Santo do Dia</p>
-                  <p className="font-serif font-bold text-stone-900 text-sm">{todaySaint.name}</p>
+                className={`w-full rounded-2xl border-2 px-4 py-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-all text-left ${
+                  saintExpanded ? 'bg-rose-50 border-rose-200 rounded-b-none' : 'bg-white border-stone-200 hover:border-rose-200'
+                }`}>
+                <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-xl shrink-0">
+                  {todaySaint.emoji}
                 </div>
-                <span className={`text-stone-400 transition-transform ${saintExpanded ? 'rotate-180' : ''}`}>▾</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Santo do Dia</p>
+                  <p className="font-serif font-bold text-stone-900 text-sm leading-tight">{todaySaint.name}</p>
+                  <p className="text-[10px] text-stone-400 font-medium">Festa: {todaySaint.date}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {!saintSeen && (
+                    <motion.span
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="text-[9px] font-black bg-rose-500 text-white px-2 py-0.5 rounded-full"
+                    >
+                      NOVO
+                    </motion.span>
+                  )}
+                  <span className={`text-stone-400 transition-transform duration-200 ${saintExpanded ? 'rotate-180' : ''}`}>▾</span>
+                </div>
               </button>
               <AnimatePresence>
                 {saintExpanded && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
                     className="overflow-hidden">
-                    <div className="bg-white border border-t-0 border-stone-200 rounded-b-2xl px-4 pb-4 pt-3">
-                      <p className="text-stone-500 text-xs mb-2">Festa: {todaySaint.date}</p>
-                      <blockquote className="border-l-4 border-amber-400 pl-3 italic text-stone-700 text-sm leading-relaxed">
+                    <div className="bg-rose-50 border-2 border-t-0 border-rose-200 rounded-b-2xl px-4 pb-4 pt-3">
+                      <blockquote className="border-l-4 border-rose-400 pl-3 italic text-stone-700 text-sm leading-relaxed mb-2">
                         "{todaySaint.phrase}"
                       </blockquote>
-                      {!saintSeen && (
-                        <p className="text-[10px] text-emerald-600 font-bold mt-2">✨ Novo santo encontrado!</p>
+                      {!saintSeen ? (
+                        <motion.p
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="text-[10px] text-rose-600 font-black bg-rose-100 border border-rose-200 rounded-full px-3 py-1 inline-block"
+                        >
+                          ✨ Novo santo encontrado! XP registrado
+                        </motion.p>
+                      ) : (
+                        <p className="text-[10px] text-stone-400 font-medium">✓ Santo já encontrado hoje</p>
                       )}
                     </div>
                   </motion.div>
@@ -763,8 +845,11 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           const hasAccessedAnyBook = (profile.visitedBooks?.length || 0) > 0 || profile.completedBooks.length > 0;
           if (!hasAccessedAnyBook) return null;
 
-          const inProgressBookId = profile.visitedBooks?.slice().reverse().find(id => !profile.completedBooks.includes(id)) 
-            || BIBLE_BOOKS.find(b => !profile.completedBooks.includes(b.id))?.id;
+          // Prioridade: último visitado não-concluído → último visitado (mesmo concluído) → primeiro não-lido canônico
+          const inProgressBookId =
+            profile.visitedBooks?.slice().reverse().find(id => !profile.completedBooks.includes(id)) ??
+            profile.visitedBooks?.at(-1) ??
+            BIBLE_BOOKS.find(b => !profile.completedBooks.includes(b.id))?.id;
           const inProgressBook = BIBLE_BOOKS.find(b => b.id === inProgressBookId);
           if (!inProgressBook) return null;
 
@@ -790,7 +875,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               >
                 {/* Decoração */}
                 <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-amber-100/50 to-transparent pointer-events-none" />
-                <div className={`w-13 h-13 w-12 h-12 rounded-xl flex items-center justify-center shrink-0 text-2xl font-bold shadow-sm ${GROUP_COLORS[inProgressBook.group] || 'bg-stone-100'}`}>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 text-2xl font-bold shadow-sm ${GROUP_COLORS[inProgressBook.group] || 'bg-stone-100'}`}>
                   <BookOpen size={22} className="opacity-60" />
                 </div>
                 <div className="flex-1 min-w-0 relative z-10">

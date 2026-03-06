@@ -381,6 +381,22 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
             <span className="text-sm font-bold leading-tight">{profile.favoritesCount}</span>
             <span className="text-[10px] font-medium text-stone-500 uppercase tracking-wide mt-0.5 leading-tight text-center">Favoritos</span>
           </div>
+
+          <div className="bg-white rounded-xl p-2.5 border border-stone-100 shadow-sm flex flex-col items-center justify-center text-center">
+            <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center mb-1">
+              <span className="text-sm">🔊</span>
+            </div>
+            <span className="text-sm font-bold leading-tight">{Object.keys(profile.ecoReactions || {}).length}</span>
+            <span className="text-[10px] font-medium text-stone-500 uppercase tracking-wide mt-0.5 leading-tight text-center">Ecos</span>
+          </div>
+
+          <div className="bg-white rounded-xl p-2.5 border border-stone-100 shadow-sm flex flex-col items-center justify-center text-center">
+            <div className="w-7 h-7 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center mb-1">
+              <span className="text-sm">🕊️</span>
+            </div>
+            <span className="text-sm font-bold leading-tight">{profile.streakFreezes ?? 0}/2</span>
+            <span className="text-[10px] font-medium text-stone-500 uppercase tracking-wide mt-0.5 leading-tight text-center">Graças</span>
+          </div>
         </div>
 
         {/* Next Achievement Card */}

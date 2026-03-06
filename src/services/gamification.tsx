@@ -723,6 +723,13 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         if (prev.completed) return prev;
         const newProgress = prev.progress + 1;
         const completed = newProgress >= prev.target;
+        if (completed) {
+          // Recompensa XP do desafio semanal (adiado para nao colidir com setState)
+          setTimeout(() => {
+            addPoints(prev.rewardPoints, `Desafio semanal concluido: ${prev.title}`, 'bonus');
+            showFloatingPoints(prev.rewardPoints, 'bonus_trail');
+          }, 300);
+        }
         return { ...prev, progress: newProgress, completed };
       });
 

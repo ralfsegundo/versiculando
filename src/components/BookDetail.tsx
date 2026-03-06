@@ -18,7 +18,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
   React.useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) setUserId(session.user.id);
-    });
+    }).catch(() => {});
   }, []);
   const book = BIBLE_BOOKS.find(b => b.id === bookId);
   const [data, setData] = useState<BookData | null>(null);

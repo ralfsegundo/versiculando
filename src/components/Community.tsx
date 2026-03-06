@@ -75,7 +75,7 @@ interface Group {
 }
 
 export default function Community() {
-  const { profile } = useGamification();
+  const { profile, addPoints, showFloatingPoints } = useGamification();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -937,33 +937,69 @@ export default function Community() {
   const handlePray = async (id: string) => {
     if (!profile.email) return;
     const prayer = mockPrayers.find(p => p.id === id);
-    if (!prayer || prayer.hasPrayed) return;
+    if (!prayer) return;
 
-    // Optimistically update UI first
+    // Não pode orar por si mesmo — oração é intercessão pelos outros
+    if (prayer.userId === profile.id) return;
+
+    const isUndoing = prayer.hasPrayed;
+
+    // Atualização otimista
     setMockPrayers(prev => prev.map(p =>
-      p.id === id ? { ...p, prayedCount: p.prayedCount + 1, hasPrayed: true } : p
+      p.id === id
+        ? { ...p, prayedCount: isUndoing ? p.prayedCount - 1 : p.prayedCount + 1, hasPrayed: !isUndoing }
+        : p
     ));
 
-    // Register vote
-    const { error: voteError } = await supabase.from('community_prayer_votes').upsert(
-      { prayer_id: id, user_email: profile.email },
-      { onConflict: 'prayer_id,user_email' }
-    );
-    if (voteError) {
-      // Rollback optimistic update on error
-      setMockPrayers(prev => prev.map(p =>
-        p.id === id ? { ...p, prayedCount: prayer.prayedCount, hasPrayed: false } : p
-      ));
-      return;
-    }
+    if (isUndoing) {
+      // Desfazer oração — remove o voto
+      const { error } = await supabase
+        .from('community_prayer_votes')
+        .delete()
+        .eq('prayer_id', id)
+        .eq('user_email', profile.email);
 
-    // Use server-side increment to avoid race conditions
-    await supabase.rpc('increment_prayer_count', { prayer_id: id }).catch(async () => {
-      // Fallback: manual increment if RPC not available
+      if (error) {
+        // Rollback
+        setMockPrayers(prev => prev.map(p =>
+          p.id === id ? { ...p, prayedCount: prayer.prayedCount, hasPrayed: true } : p
+        ));
+        return;
+      }
+
+      // Decrementa contador no banco
       await supabase.from('community_prayers')
-        .update({ prayed_count: prayer.prayedCount + 1 })
+        .update({ prayed_count: Math.max(0, prayer.prayedCount - 1) })
         .eq('id', id);
-    });
+
+    } else {
+      // Nova oração — registra voto
+      const { error: voteError } = await supabase.from('community_prayer_votes').upsert(
+        { prayer_id: id, user_email: profile.email },
+        { onConflict: 'prayer_id,user_email' }
+      );
+
+      if (voteError) {
+        // Rollback
+        setMockPrayers(prev => prev.map(p =>
+          p.id === id ? { ...p, prayedCount: prayer.prayedCount, hasPrayed: false } : p
+        ));
+        return;
+      }
+
+      // Incrementa contador
+      await supabase.rpc('increment_prayer_count', { prayer_id: id }).catch(async () => {
+        await supabase.from('community_prayers')
+          .update({ prayed_count: prayer.prayedCount + 1 })
+          .eq('id', id);
+      });
+
+      // XP para quem intercede pelos outros — com multiplicador de streak
+      const { applyMultiplier } = await import('../services/gamification');
+      const xp = applyMultiplier(20, profile.streak);
+      addPoints(xp, 'Orou por alguém da comunidade', 'bonus');
+      showFloatingPoints(xp, 'bonus_step');
+    }
   };
   useEffect(() => {
     // Carrega sempre — ranking e feed são públicos mesmo sem login
@@ -2221,7 +2257,7 @@ export default function Community() {
                         {isPromotion && pos > myPosition && <span className="text-[9px] text-emerald-600 font-bold mr-1">↑ sobe</span>}
                         {isRelegation && <span className="text-[9px] text-red-500 font-bold mr-1">↓</span>}
                         <div className={`font-mono font-bold text-sm ${user.isMe ? 'text-indigo-600' : 'text-stone-500'}`}>
-                          {user.points} XP
+                          {user.points} pts
                         </div>
                       </div>
                     );
@@ -2230,7 +2266,7 @@ export default function Community() {
 
                 {myPosition > 5 && (
                   <p className="text-center text-xs text-stone-500 bg-amber-50 border border-amber-100 rounded-xl py-2.5 px-4">
-                    🎯 Você está na {myPosition}ª posição. Precisa de <strong>{allEntries[4].points - myPoints + 1} XP</strong> para entrar no top 5!
+                    🎯 Você está na {myPosition}ª posição. Precisa de <strong>{allEntries[4].points - myPoints + 1} pts</strong> para entrar no top 5!
                   </p>
                 )}
               </div>
@@ -2595,18 +2631,21 @@ export default function Community() {
                           <Heart size={11} className="text-rose-400" />
                           {prayer.prayedCount} {prayer.prayedCount === 1 ? 'pessoa orou' : 'pessoas oraram'}
                         </span>
-                        <button 
-                          onClick={() => handlePray(prayer.id)}
-                          disabled={prayer.hasPrayed}
-                          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
-                            prayer.hasPrayed 
-                              ? 'bg-rose-50 text-rose-600 border border-rose-200' 
-                              : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50 shadow-sm'
-                          }`}
-                        >
-                          <Heart size={13} className={prayer.hasPrayed ? 'fill-rose-500 text-rose-500' : ''} />
-                          {prayer.hasPrayed ? 'Orei 🙏' : 'Vou orar'}
-                        </button>
+                        {prayer.userId === profile.id ? (
+                          <span className="text-xs text-stone-400 italic px-3 py-2">seu pedido 🙏</span>
+                        ) : (
+                          <button
+                            onClick={() => handlePray(prayer.id)}
+                            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                              prayer.hasPrayed
+                                ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                                : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50 shadow-sm'
+                            }`}
+                          >
+                            <Heart size={13} className={prayer.hasPrayed ? 'fill-rose-500 text-rose-500' : ''} />
+                            {prayer.hasPrayed ? 'Orei 🙏' : 'Vou orar'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </motion.div>

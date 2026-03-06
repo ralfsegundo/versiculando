@@ -116,23 +116,23 @@ class SharingService {
   }
 
   async getConnections(email: string): Promise<Connection[]> {
-    // Busca as conexões sem depender de foreign key join (a tabela usa TEXT, não FK para profiles)
+    // Fetch all non-rejected connections involving this user
     const { data, error } = await supabase
       .from('user_connections')
       .select('id, from_email, to_email, status')
       .or(`from_email.eq.${email},to_email.eq.${email}`)
-      .neq('status', 'rejected');
+      .in('status', ['pending', 'accepted']); // Explicitly whitelist valid statuses
 
     if (error) throw error;
     if (!data || data.length === 0) return [];
 
-    // Coleta todos os emails dos outros usuários para buscar perfis em lote
+    // Collect all other users' emails for a batch profile lookup
     const otherEmails = data.map((row: any) =>
       row.from_email === email ? row.to_email : row.from_email
     );
     const uniqueEmails = [...new Set(otherEmails)];
 
-    // Busca perfis em lote (uma única query)
+    // Batch fetch profiles (single query)
     const { data: profiles } = await supabase
       .from('profiles')
       .select('id, name, email, avatar_id, avatar_url')
@@ -152,7 +152,7 @@ class SharingService {
           avatarId: other?.avatar_id,
           avatarUrl: other?.avatar_url,
         },
-        status: row.status,
+        status: row.status as 'pending' | 'accepted',
         isRequester,
       };
     });

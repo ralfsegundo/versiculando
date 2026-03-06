@@ -1155,7 +1155,7 @@ export default function Community() {
         {/* Tabs */}
         {!activeGroup && (
           <div className="relative mb-4">
-            <div ref={tabsScrollRef} onScroll={handleTabsScroll} className="flex overflow-x-auto hide-scrollbar gap-2 pb-1">
+            <div ref={tabsScrollRef} onScroll={handleTabsScroll} className="flex overflow-x-auto hide-scrollbar gap-2 pb-1 pt-2 px-0.5">
               {[
                 { id: 'groups', label: 'Grupos', emoji: '👥' },
                 { id: 'feed', label: 'Feed', emoji: '⚡' },
@@ -1189,7 +1189,7 @@ export default function Community() {
                         setUnreadPrayersCount(0);
                       }
                     }}
-                    className={`relative flex items-center gap-2 px-4 py-2.5 rounded-2xl whitespace-nowrap text-xs font-bold transition-all flex-shrink-0 active:scale-95 ${
+                    className={`relative overflow-visible flex items-center gap-2 px-4 py-2.5 rounded-2xl whitespace-nowrap text-xs font-bold transition-all flex-shrink-0 active:scale-95 ${
                       isActive
                         ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
                         : 'bg-white text-stone-500 hover:bg-stone-50 border border-stone-200 hover:border-indigo-200'

@@ -277,7 +277,19 @@ CREATE POLICY "Criar grupo" ON public.community_groups
   FOR INSERT WITH CHECK (auth.jwt() ->> 'email' = created_by);
 CREATE POLICY "Atualizar grupo" ON public.community_groups
   FOR UPDATE USING (
+    -- Membros existentes podem atualizar (ex: enviar mensagens, reagir)
     members @> jsonb_build_array(jsonb_build_object('email', auth.jwt() ->> 'email'))
+    OR
+    -- Usuário convidado pode atualizar ao aceitar convite (ainda não está em members)
+    EXISTS (
+      SELECT 1 FROM public.community_group_invites
+      WHERE group_id = community_groups.id
+        AND to_email = auth.jwt() ->> 'email'
+        AND status = 'pending'
+    )
+    OR
+    -- Criador do grupo sempre pode atualizar
+    auth.jwt() ->> 'email' = created_by
   );
 CREATE POLICY "Excluir grupo" ON public.community_groups
   FOR DELETE USING (auth.jwt() ->> 'email' = created_by);

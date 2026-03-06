@@ -3,7 +3,6 @@ import { BIBLE_BOOKS, GROUP_COLORS } from '../constants';
 import { Book, Library, Search, BookOpen, Sun, CheckCircle2, ArrowRight, Info, MapPin, Lock, Trophy, Download, X, Navigation } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGamification } from '../services/gamification';
-import { supabase } from '../lib/supabase';
 
 interface HomeProps {
   onSelectBook: (bookId: string) => void;
@@ -56,14 +55,8 @@ function usePWAInstall() {
 }
 
 export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }: HomeProps) {
-  const [userId, setUserId] = useState<string>('anonymous');
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) setUserId(session.user.id);
-    });
-  }, []);
   const [searchTerm, setSearchTerm] = useState('');
-  const { profile, accessDailyVerse, showFloatingPoints } = useGamification();
+  const { profile, accessDailyVerse, showFloatingPoints, userId } = useGamification();
   const [dailyVerseRead, setDailyVerseRead] = useState<boolean>(() => {
     // Only "read" if it was already read TODAY
     const lastRead = localStorage.getItem('daily_verse_last_read');

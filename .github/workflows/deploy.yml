@@ -34,5 +34,5 @@ jobs:
             echo "NODE_ENV=production" >> .env
             npm ci
             npm run build
-            pm2 restart versiculando --update-env
+            pm2 reload versiculando
             pm2 save

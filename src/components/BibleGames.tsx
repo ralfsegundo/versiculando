@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Zap, Trophy, RotateCcw, ChevronRight, Star, X } from 'lucide-react';
-import { useGamification } from '../services/gamification';
+import { useGamification, getStreakMultiplier } from '../services/gamification';
 
 // ─── GAME DATA ────────────────────────────────────────────────────────────────
 
@@ -128,7 +128,7 @@ function ScoreFlash({ points, correct }: { points: number; correct: boolean }) {
       transition={{ duration: 0.6 }}
       className={`fixed top-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-4 py-2 rounded-full font-black text-xl shadow-lg ${correct ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}
     >
-      {correct ? `+${points} ✨` : '✗ Errou!'}
+      {correct ? `+${points} XP ✨` : '✗ Errou!'}
     </motion.div>
   );
 }
@@ -153,7 +153,7 @@ function CompleteVerse({ onResult, onEnd }: { onResult: (r: GameResult) => void;
     if (selected) return;
     setSelected(opt);
     const correct = opt === q.answer;
-    const pts = correct ? (20 + combo * 5) : 0;
+    const pts = correct ? (40 + combo * 10) : 0;
     if (correct) setCombo(c => c + 1); else setCombo(0);
     setScore(s => s + pts);
     setShowFlash({ correct, points: pts });
@@ -192,7 +192,7 @@ function CompleteVerse({ onResult, onEnd }: { onResult: (r: GameResult) => void;
         </div>
         <div className="flex items-center gap-2">
           {combo >= 2 && <div className="flex items-center gap-1 bg-amber-100 text-amber-700 text-xs font-black px-2 py-1 rounded-full"><Zap size={11} /> {combo}x combo</div>}
-          <div className="flex items-center gap-1 bg-violet-100 text-violet-700 text-xs font-black px-2 py-1 rounded-full"><Star size={11} /> {score} pts</div>
+          <div className="flex items-center gap-1 bg-violet-100 text-violet-700 text-xs font-black px-2 py-1 rounded-full"><Star size={11} /> {score} XP</div>
         </div>
       </div>
 
@@ -257,7 +257,7 @@ function BookQuiz({ onResult, onEnd }: { onResult: (r: GameResult) => void; onEn
     if (selected) return;
     setSelected(opt);
     const correct = opt === q.answer;
-    const pts = correct ? (25 + combo * 8) : 0;
+    const pts = correct ? (50 + combo * 15) : 0;
     if (correct) setCombo(c => c + 1); else setCombo(0);
     setScore(s => s + pts);
     setShowFlash({ correct, points: pts });
@@ -293,7 +293,7 @@ function BookQuiz({ onResult, onEnd }: { onResult: (r: GameResult) => void; onEn
         </div>
         <div className="flex items-center gap-2">
           {combo >= 2 && <div className="flex items-center gap-1 bg-amber-100 text-amber-700 text-xs font-black px-2 py-1 rounded-full"><Zap size={11} /> {combo}x</div>}
-          <div className="flex items-center gap-1 bg-sky-100 text-sky-700 text-xs font-black px-2 py-1 rounded-full"><Star size={11} /> {score} pts</div>
+          <div className="flex items-center gap-1 bg-sky-100 text-sky-700 text-xs font-black px-2 py-1 rounded-full"><Star size={11} /> {score} XP</div>
         </div>
       </div>
 
@@ -365,7 +365,7 @@ function WordScramble({ onResult, onEnd }: { onResult: (r: GameResult) => void; 
     if (newTyped.length === currentWord.length) {
       const attempt = newTyped.join('');
       const correct = attempt === currentWord;
-      const pts = correct ? 30 : 0;
+      const pts = correct ? 60 : 0;
       setScore(s => s + pts);
       setShowFlash({ correct, points: pts });
       onResult({ correct, points: pts });
@@ -405,7 +405,7 @@ function WordScramble({ onResult, onEnd }: { onResult: (r: GameResult) => void; 
           </div>
         </div>
         <div className="flex items-center gap-1 bg-amber-100 text-amber-700 text-xs font-black px-2 py-1 rounded-full">
-          <Star size={11} /> {score} pts
+          <Star size={11} /> {score} XP
         </div>
       </div>
 
@@ -509,7 +509,7 @@ function WordSearch({ onResult, onEnd }: { onResult: (r: GameResult) => void; on
     );
 
     if (match) {
-      const pts = 50;
+      const pts = 80;
       setScore(s => s + pts);
       setFound(f => new Set([...f, match.word]));
       setFoundCells(fc => {
@@ -595,7 +595,7 @@ const GAME_META: Record<Exclude<GameId, 'menu'>, {
     gradient: 'from-violet-500 to-purple-600',
     light: 'from-violet-50 to-purple-50',
     border: 'border-violet-200',
-    pts: '+20~50 pts',
+    pts: '+40~90 XP',
   },
   'book-quiz': {
     title: 'Qual é o Livro?',
@@ -604,7 +604,7 @@ const GAME_META: Record<Exclude<GameId, 'menu'>, {
     gradient: 'from-sky-500 to-blue-600',
     light: 'from-sky-50 to-blue-50',
     border: 'border-sky-200',
-    pts: '+25~65 pts',
+    pts: '+50~110 XP',
   },
   'word-scramble': {
     title: 'Palavra Embaralhada',
@@ -613,7 +613,7 @@ const GAME_META: Record<Exclude<GameId, 'menu'>, {
     gradient: 'from-amber-500 to-orange-500',
     light: 'from-amber-50 to-orange-50',
     border: 'border-amber-200',
-    pts: '+30 pts',
+    pts: '+60 XP',
   },
   'word-search': {
     title: 'Caça-Palavras',
@@ -622,14 +622,14 @@ const GAME_META: Record<Exclude<GameId, 'menu'>, {
     gradient: 'from-emerald-500 to-teal-600',
     light: 'from-emerald-50 to-teal-50',
     border: 'border-emerald-200',
-    pts: '+50 pts/palavra',
+    pts: '+80 XP/palavra',
   },
 };
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export default function BibleGames() {
-  const { addPoints, showFloatingPoints } = useGamification();
+  const { addPoints, showFloatingPoints, profile } = useGamification();
   const [activeGame, setActiveGame] = useState<GameId>('menu');
   const [sessionScore, setSessionScore] = useState(0);
   const [sessionCorrect, setSessionCorrect] = useState(0);
@@ -640,11 +640,12 @@ export default function BibleGames() {
     setSessionTotal(t => t + 1);
     if (correct) {
       setSessionCorrect(c => c + 1);
-      setSessionScore(s => s + points);
-      addPoints(points, 'Jogo Bíblico', 'bonus');
-      showFloatingPoints(points, 'bonus_step');
+      const xp = Math.round(points * getStreakMultiplier(profile.streak));
+      setSessionScore(s => s + xp);
+      addPoints(xp, 'Jogo Bíblico', 'bonus');
+      showFloatingPoints(xp, 'bonus_step');
     }
-  }, [addPoints, showFloatingPoints]);
+  }, [addPoints, showFloatingPoints, profile.streak]);
 
   const handleEnd = useCallback(() => {
     setGameEnded(true);

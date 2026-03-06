@@ -33,7 +33,10 @@ const FALLBACK_TRAILS: Trail[] = [
   { id: 'luto', slug: 'luto', title: 'Luto — A Esperança da Ressurreição', description: 'Percorra o caminho da perda com a promessa cristã da vida eterna.', duration_days: 7, category: 'sofrimento', emoji: '🌿', is_premium: true, order_index: 6 },
 ];
 
-const DISCIPLE_PATH_LENGTH = 6;
+// O Caminho do Discípulo cobre os 6 primeiros passos do BEGINNER_PATH (NT + introdução ao VT).
+// Os passos 7-12 formam a "Jornada Profunda" (VT completo + Paulo completo).
+// Se BEGINNER_PATH crescer, ajuste este valor.
+const DISCIPLE_PATH_LENGTH = Math.min(6, BEGINNER_PATH.length);
 
 export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
   const { profile, addPoints, showFloatingPoints, userId } = useGamification();
@@ -83,8 +86,8 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
           const wasGraduated = localStorage.getItem(`${userId}_disciple_trail_graduated`);
           if (!wasGraduated) {
             localStorage.setItem(`${userId}_disciple_trail_graduated`, 'true');
-            addPoints(1000, 'Concluiu a Trilha do Discípulo!', 'bonus');
-            showFloatingPoints(1000, 'bonus_trail');
+            // XP de conclusão gerenciado pelo gamification.tsx (com guard anti-duplicação)
+            // Aqui apenas dispara o confetti e modal de graduação
             setTimeout(() => {
               confetti({ particleCount: 200, spread: 100, origin: { y: 0.5 }, colors: ['#f59e0b', '#10b981', '#3b82f6', '#a855f7', '#ef4444'] });
               setTimeout(() => confetti({ particleCount: 150, spread: 120, origin: { y: 0.6 }, angle: 60, colors: ['#f59e0b', '#fcd34d'] }), 400);

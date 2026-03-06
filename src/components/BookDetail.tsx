@@ -266,10 +266,10 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
 }
 
 function MainVersesGrid({ verses, bookName, colorClass }: { verses: BookData['mainVerses'], bookName: string, colorClass: string }) {
-  const baseColor = colorClass.split(' ')[0]; // e.g., bg-purple-100
+  const baseColor = colorClass.split(' ')[0];
   const textColor = colorClass.split(' ').find(c => c.startsWith('text-')) || 'text-stone-900';
   const borderColor = colorClass.split(' ').find(c => c.startsWith('border-')) || 'border-stone-200';
-  const { addFavorite } = useGamification();
+  const { addFavorite, userId } = useGamification();
   const [favorites, setFavorites] = useState<Record<string, boolean>>(() => {
     try {
       const stored = localStorage.getItem(`${userId}_bible_favorites`);
@@ -365,8 +365,8 @@ function VisualMindMap({ data, book, theme, onNavigateToChapter }: { data: MindM
   const [noteText, setNoteText] = useState('');
   const [noteSaved, setNoteSaved] = useState(false);
   const [selectedColor, setSelectedColor] = useState(NOTE_COLORS[0].id);
-  const { notes, addNote: saveNote, deleteNote, updateNote } = useNotes(book.id);
-  const pillsScrollRef = useRef<HTMLDivElement>(null);
+  const { addNote: addGamificationNote, userId } = useGamification();
+  const { notes, addNote: saveNote, deleteNote, updateNote } = useNotes(book.id, userId);
   const [pillsScroll, setPillsScroll] = useState({ left: false, right: true });
 
   const handlePillsScroll = () => {
@@ -377,7 +377,6 @@ function VisualMindMap({ data, book, theme, onNavigateToChapter }: { data: MindM
       right: el.scrollLeft < el.scrollWidth - el.clientWidth - 8,
     });
   };
-  const { addNote: addGamificationNote } = useGamification();
   const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -1000,8 +999,8 @@ function ChapterCard({
   const [selectedColor, setSelectedColor] = useState(NOTE_COLORS[0].id);
   const [saved, setSaved] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { notes, addNote: saveNote } = useNotes(bookId);
-  const { addNote: addGamificationNote } = useGamification();
+  const { addNote: addGamificationNote, userId } = useGamification();
+  const { notes, addNote: saveNote } = useNotes(bookId, userId);
 
   // Notes for this specific chapter
   const chapterNotes = notes.filter(n => n.context?.chapter === chapterNum || n.context?.chapter === ch.chapter.toString());
@@ -1254,9 +1253,8 @@ const NOTE_COLORS = [
 ];
 
 function NotesSection({ bookId, bookName, colorClass, initialContext, onClearContext, onNavigateToChapter }: { bookId: string, bookName: string, colorClass: string, initialContext: NoteContext | null, onClearContext: () => void, onNavigateToChapter: (chapter: string | number) => void }) {
-  const { profile } = useGamification();
-  const { notes, addNote: saveNote, deleteNote, updateNote, toggleShare, setAllShared } = useNotes(bookId);
-  const { addNote: addGamificationNote } = useGamification();
+  const { profile, userId, addNote: addGamificationNote } = useGamification();
+  const { notes, addNote: saveNote, deleteNote, updateNote, toggleShare, setAllShared } = useNotes(bookId, userId);
   const [newNote, setNewNote] = useState('');
   const [selectedColor, setSelectedColor] = useState(NOTE_COLORS[0].id);
   const [currentContext, setCurrentContext] = useState<NoteContext | null>(initialContext);

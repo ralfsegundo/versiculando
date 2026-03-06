@@ -47,23 +47,32 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
   const [showGraduationModal, setShowGraduationModal] = useState(false);
 
   useEffect(() => {
+    // Obtém sessão uma vez via cache do supabase (não faz nova chamada de rede)
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         setUserId(session.user.id);
         setShowDeepJourney(localStorage.getItem(`${session.user.id}_sage_journey_unlocked`) === 'true');
       }
-    });
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const [fetchedTrails, session] = await Promise.all([fetchTrails(), supabase.auth.getSession()]);
+        // Busca trilhas e sessão em paralelo, com timeout de segurança
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('load timeout')), 10000)
+        );
+        const [fetchedTrails, sessionResult] = await Promise.race([
+          Promise.all([fetchTrails(), supabase.auth.getSession()]),
+          timeout,
+        ]) as [typeof FALLBACK_TRAILS, Awaited<ReturnType<typeof supabase.auth.getSession>>];
+
         const trailsToUse = fetchedTrails.length > 0 ? fetchedTrails : FALLBACK_TRAILS;
         setTrails(trailsToUse);
-        if (session.data.session?.user) {
-          const prog = await fetchUserProgress(session.data.session.user.id);
+        if (sessionResult.data.session?.user) {
+          const prog = await fetchUserProgress(sessionResult.data.session.user.id);
           setProgress(prog);
         }
       } catch {

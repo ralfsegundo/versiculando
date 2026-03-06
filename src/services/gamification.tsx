@@ -233,20 +233,26 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
       if (!hasSupabase) return;
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUserId(session.user.id);
-        
-        // Load profile
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
+      try {
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('session timeout')), 5000)),
+        ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>;
 
-        // Email do auth é a fonte de verdade — garante que nunca fique vazio
+        const session = sessionResult?.data?.session;
+        if (!session?.user) return;
+
+        setUserId(session.user.id);
         const authEmail = session.user.email || '';
-          
+
+        // Load profile
+        const { data: profileData } = await Promise.race([
+          supabase.from('profiles').select('*').eq('id', session.user.id).single(),
+          new Promise<{ data: null; error: Error }>((resolve) =>
+            setTimeout(() => resolve({ data: null, error: new Error('timeout') }), 6000)
+          ),
+        ]) as any;
+
         if (profileData) {
           setProfile(prev => ({
             ...prev,
@@ -268,18 +274,19 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             completedPlans: profileData.completed_plans || 0,
           }));
         } else {
-          // Perfil ainda não existe no banco — seta email do auth no estado
           setProfile(prev => ({ ...prev, email: authEmail }));
         }
 
         // Load badges
-        const { data: badgesData } = await supabase
-          .from('user_badges')
-          .select('*')
-          .eq('user_id', session.user.id);
-          
+        const { data: badgesData } = await Promise.race([
+          supabase.from('user_badges').select('*').eq('user_id', session.user.id),
+          new Promise<{ data: null; error: Error }>((resolve) =>
+            setTimeout(() => resolve({ data: null, error: new Error('timeout') }), 5000)
+          ),
+        ]) as any;
+
         if (badgesData && badgesData.length > 0) {
-          setBadges(badgesData.map(b => ({
+          setBadges(badgesData.map((b: any) => ({
             id: b.badge_id as BadgeId,
             title: b.title,
             description: b.description,
@@ -287,6 +294,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             unlockedAt: b.unlocked_at
           })));
         }
+      } catch (e) {
+        console.warn('[gamification] loadSupabaseData error:', e);
       }
     };
     

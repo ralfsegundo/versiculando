@@ -62,6 +62,7 @@ export interface UserProfile {
     bonus: number;
   };
   streak: number;
+  longestStreak: number;
   lastActiveDate: string;
   title: string;
   completedBooks: string[];
@@ -170,6 +171,7 @@ const getLocalProfile = (): UserProfile => {
     if (parsed.streakFreezes === undefined) parsed.streakFreezes = 1; // começa com 1 graça
     if (parsed.dailyMissionStreak === undefined) parsed.dailyMissionStreak = 0;
     if (!parsed.ecoReactions) parsed.ecoReactions = {};
+    if (parsed.longestStreak === undefined) parsed.longestStreak = parsed.streak || 0;
     return parsed;
   }
   return {
@@ -186,6 +188,7 @@ const getLocalProfile = (): UserProfile => {
       bonus: 0,
     },
     streak: 0,
+    longestStreak: 0,
     lastActiveDate: new Date().toISOString(),
     title: 'Iniciante',
     completedBooks: [],
@@ -360,6 +363,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             dailyVerseCount: profileData.daily_verse_count || 0,
             completedPlans: profileData.completed_plans || 0,
             streakFreezes: profileData.streak_freezes ?? prev.streakFreezes ?? 1,
+            longestStreak: profileData.longest_streak ?? prev.longestStreak ?? 0,
             ecoReactions: profileData.eco_reactions || prev.ecoReactions || {},
           }));
         } else {
@@ -435,6 +439,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           points: profile.points,
           points_breakdown: profile.pointsBreakdown,
           streak: profile.streak,
+          longest_streak: profile.longestStreak || 0,
           streak_freezes: profile.streakFreezes,
           last_active_date: profile.lastActiveDate,
           title: profile.title,
@@ -570,7 +575,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
       if (diffDays === 0) {
         if (newStreak === 0) newStreak = 1;
-        const newProfile = { ...prev, streak: newStreak, streakFreezes: newFreezes, lastFreezeEarnedWeek: weekKey, lastActiveDate: now.toISOString() };
+        const newProfile = { ...prev, streak: newStreak, longestStreak: Math.max(prev.longestStreak || 0, newStreak), streakFreezes: newFreezes, lastFreezeEarnedWeek: weekKey, lastActiveDate: now.toISOString() };
         checkBadges(newProfile);
         return newProfile;
       } else if (diffDays === 1) {
@@ -587,6 +592,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       const newProfile = {
         ...prev,
         streak: newStreak,
+        longestStreak: Math.max(prev.longestStreak || 0, newStreak),
         streakFreezes: newFreezes,
         lastFreezeEarnedWeek: weekKey,
         lastActiveDate: now.toISOString()

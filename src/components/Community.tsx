@@ -1106,41 +1106,51 @@ export default function Community() {
     <div className="min-h-screen bg-[#fdfbf7] text-stone-900 font-sans pb-28 pt-6 md:pt-12 overflow-x-hidden">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         
-        <header className="mb-4 flex items-center gap-3 md:flex-col md:text-center md:items-center pr-10 md:pr-0">
-          <div className="w-9 h-9 md:w-12 md:h-12 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shadow-sm shrink-0">
-            <Users size={18} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg md:text-4xl font-serif font-bold tracking-tight text-stone-900">
-              Comunidade
-            </h1>
-            <p className="text-stone-500 text-xs md:text-sm">Conecte-se e compartilhe sua jornada</p>
+        <header className="mb-5 relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 p-4 md:p-6 text-white shadow-lg">
+          {/* decorative circles */}
+          <div className="absolute -top-6 -right-6 w-28 h-28 bg-white/5 rounded-full" />
+          <div className="absolute -bottom-4 -left-4 w-20 h-20 bg-white/5 rounded-full" />
+          <div className="flex items-center gap-3 md:gap-4 relative">
+            <div className="w-11 h-11 md:w-14 md:h-14 bg-white/15 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-sm shrink-0 border border-white/20">
+              <Users size={22} className="text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl md:text-3xl font-serif font-bold tracking-tight text-white leading-tight">
+                Comunidade
+              </h1>
+              <p className="text-indigo-200 text-xs md:text-sm mt-0.5">Conecte-se e compartilhe sua jornada</p>
+            </div>
+            <div className="hidden sm:flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-400/30 px-3 py-1.5 rounded-full shrink-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[11px] font-bold text-emerald-300">Ao Vivo</span>
+            </div>
           </div>
         </header>
 
         {/* Tabs */}
         {!activeGroup && (
           <div className="relative mb-4">
-            <div ref={tabsScrollRef} onScroll={handleTabsScroll} className="flex overflow-x-auto hide-scrollbar gap-1.5 pb-1">
+            <div ref={tabsScrollRef} onScroll={handleTabsScroll} className="flex overflow-x-auto hide-scrollbar gap-2 pb-1">
               {[
-                { id: 'groups', label: 'Grupos', icon: BookOpen },
-                { id: 'feed', label: 'Feed', icon: Activity },
-                { id: 'ranking', label: 'Ranking', icon: Trophy },
-                { id: 'prayers', label: 'Orações', icon: Heart },
-                { id: 'friends', label: 'Amigos', icon: Users },
+                { id: 'groups', label: 'Grupos', icon: BookOpen, emoji: '👥' },
+                { id: 'feed', label: 'Feed', icon: Activity, emoji: '⚡' },
+                { id: 'ranking', label: 'Ranking', icon: Trophy, emoji: '🏆' },
+                { id: 'prayers', label: 'Orações', icon: Heart, emoji: '🙏' },
+                { id: 'friends', label: 'Amigos', icon: Users, emoji: '✨' },
               ].map(tab => {
                 const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
                 return (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full whitespace-nowrap text-xs font-bold transition-all flex-shrink-0 active:scale-95 ${
-                      activeTab === tab.id 
-                        ? 'bg-indigo-600 text-white shadow-md' 
-                        : 'bg-white text-stone-500 hover:bg-stone-100 border border-stone-200'
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl whitespace-nowrap text-xs font-bold transition-all flex-shrink-0 active:scale-95 ${
+                      isActive
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
+                        : 'bg-white text-stone-500 hover:bg-stone-50 border border-stone-200 hover:border-indigo-200'
                     }`}
                   >
-                    <Icon size={14} />
+                    <span className="text-sm">{tab.emoji}</span>
                     {tab.label}
                   </button>
                 );
@@ -1156,10 +1166,21 @@ export default function Community() {
         <div className="bg-white rounded-2xl p-3 sm:p-6 md:p-8 border border-stone-100 shadow-sm mb-8 overflow-x-hidden">
           
           {isLoadingCommunity && !activeGroup ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
-              <p className="text-sm text-stone-400">Carregando comunidade...</p>
-              <p className="text-xs text-stone-300">Se demorar muito, verifique sua conexão.</p>
+            <div className="py-6 space-y-4 animate-pulse">
+              <div className="flex gap-3 items-center">
+                <div className="w-10 h-10 rounded-full bg-stone-200" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3 bg-stone-200 rounded-full w-1/3" />
+                  <div className="h-2.5 bg-stone-100 rounded-full w-1/2" />
+                </div>
+              </div>
+              <div className="h-24 bg-stone-100 rounded-2xl" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="h-20 bg-stone-100 rounded-2xl" />
+                <div className="h-20 bg-stone-100 rounded-2xl" />
+              </div>
+              <div className="h-16 bg-stone-100 rounded-2xl" />
+              <p className="text-center text-xs text-stone-400 pt-2">Carregando comunidade...</p>
             </div>
           ) : !profile.email ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
@@ -1190,18 +1211,20 @@ export default function Community() {
               </div>
 
               {/* Collective Progress */}
-              <div className="bg-indigo-50 rounded-xl p-3.5 border border-indigo-100">
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100">
                 <div className="flex justify-between items-center mb-2">
-                  <h3 className="font-bold text-indigo-900 text-sm">Progresso Coletivo</h3>
-                  <span className="text-lg font-bold text-indigo-600">{calculateGroupProgress(activeGroup.members, activeGroup.targetId)}%</span>
+                  <h3 className="font-bold text-indigo-900 text-sm flex items-center gap-2">🎯 Progresso Coletivo</h3>
+                  <span className="text-xl font-black text-indigo-600">{calculateGroupProgress(activeGroup.members, activeGroup.targetId)}%</span>
                 </div>
-                <div className="h-2 bg-white rounded-full overflow-hidden border border-indigo-100">
+                <div className="h-3 bg-white rounded-full overflow-hidden border border-indigo-100 shadow-inner">
                   <div 
-                    className="h-full bg-indigo-500 rounded-full transition-all duration-1000" 
+                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-1000 relative" 
                     style={{ width: `${calculateGroupProgress(activeGroup.members, activeGroup.targetId)}%` }}
-                  />
+                  >
+                    <div className="absolute inset-0 bg-white/20 rounded-full" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)' }} />
+                  </div>
                 </div>
-                <p className="text-[10px] text-indigo-400 mt-1.5">
+                <p className="text-[10px] text-indigo-400 mt-1.5 font-medium">
                   {activeGroup.members.length} membro{activeGroup.members.length !== 1 ? 's' : ''} · baseado em livros completados
                 </p>
               </div>
@@ -1975,28 +1998,45 @@ export default function Community() {
             </motion.div>
           ) : activeTab === 'feed' && (
             <div className="space-y-2">
-              <h4 className="text-[11px] font-bold text-stone-400 uppercase tracking-wider px-1 mb-2">Atividades Recentes</h4>
+              <h4 className="text-[11px] font-bold text-stone-400 uppercase tracking-wider px-1 mb-3">⚡ Atividades Recentes</h4>
               {mockFeed.length === 0 ? (
-                <div className="text-center py-14 bg-stone-50 rounded-3xl border border-dashed border-stone-200">
-                  <Activity size={32} className="mx-auto text-stone-300 mb-3" />
-                  <p className="text-stone-500 font-medium">Nenhuma atividade ainda.</p>
+                <div className="text-center py-16 bg-gradient-to-b from-stone-50 to-white rounded-3xl border border-dashed border-stone-200">
+                  <div className="text-4xl mb-3">⚡</div>
+                  <p className="text-stone-600 font-bold">Nenhuma atividade ainda.</p>
                   <p className="text-sm text-stone-400 mt-1">As ações da comunidade aparecerão aqui.</p>
                 </div>
-              ) : mockFeed.map(item => (
-                <div key={item.id} className="flex items-center gap-2.5 p-2.5 bg-stone-50 rounded-xl border border-stone-100">
-                  <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-base border border-stone-200 shrink-0">
-                    {AVATARS.find(a => a.id === item.avatarId)?.emoji || '👤'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-stone-800 text-sm leading-snug">
-                      <span className="font-bold text-stone-900">{item.user}</span> {item.action}
-                    </p>
-                    <p className="text-[11px] text-stone-400 flex items-center gap-1 mt-0.5">
-                      <Clock size={9} /> {item.time}
-                    </p>
-                  </div>
-                </div>
-              ))}
+              ) : mockFeed.map((item, idx) => {
+                // Determine icon color based on action text
+                const isVerse = item.action.includes('versículo') || item.action.includes('leu');
+                const isPrayer = item.action.includes('oração') || item.action.includes('orou');
+                const isTrophy = item.action.includes('pontos') || item.action.includes('conquist');
+                const dotColor = isPrayer ? 'bg-rose-400' : isTrophy ? 'bg-amber-400' : 'bg-indigo-400';
+                return (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.04 }}
+                    className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-stone-100 hover:border-indigo-100 hover:shadow-sm transition-all"
+                  >
+                    <div className="relative shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-stone-50 flex items-center justify-center text-base border border-stone-200 overflow-hidden">
+                        {AVATARS.find(a => a.id === item.avatarId)?.emoji || '👤'}
+                      </div>
+                      <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${dotColor}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-stone-800 text-sm leading-snug">
+                        <span className="font-bold text-stone-900">{item.user}</span>{' '}
+                        <span className="text-stone-600">{item.action}</span>
+                      </p>
+                      <p className="text-[11px] text-stone-400 flex items-center gap-1 mt-0.5">
+                        <Clock size={9} /> {item.time}
+                      </p>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
           )}
 
@@ -2209,12 +2249,15 @@ export default function Community() {
               )}
 
               <div className="flex justify-between items-center px-2 mb-4">
-                <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider">Meus Grupos</h4>
+                <h4 className="text-sm font-bold text-stone-700 flex items-center gap-2">
+                  <span>👥</span> Meus Grupos
+                  {mockGroups.length > 0 && <span className="text-xs font-medium text-stone-400">({mockGroups.length})</span>}
+                </h4>
                 <button 
                   onClick={() => setIsCreatingGroup(true)}
-                  className="text-sm font-bold text-indigo-600 hover:text-indigo-700"
+                  className="flex items-center gap-1.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2 rounded-xl shadow-sm active:scale-95 transition-all"
                 >
-                  Criar Grupo
+                  <Plus size={15} /> Criar Grupo
                 </button>
               </div>
               
@@ -2308,9 +2351,29 @@ export default function Community() {
               )}
 
               <div className="grid gap-3 sm:grid-cols-2">
-                {mockGroups.map(group => (
-                  <div 
-                    key={group.id} 
+                {mockGroups.length === 0 && !isCreatingGroup && (
+                  <div className="col-span-2 text-center py-16 bg-gradient-to-b from-indigo-50/50 to-white rounded-3xl border border-dashed border-indigo-200">
+                    <div className="text-5xl mb-3">👥</div>
+                    <p className="text-stone-700 font-bold text-base">Nenhum grupo ainda</p>
+                    <p className="text-sm text-stone-400 mt-1 mb-4">Crie um grupo e convide seus amigos para estudar juntos.</p>
+                    <button
+                      onClick={() => setIsCreatingGroup(true)}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 active:scale-95 transition-all shadow-sm"
+                    >
+                      <Plus size={16} /> Criar meu primeiro grupo
+                    </button>
+                  </div>
+                )}
+                {mockGroups.map((group, groupIdx) => {
+                  const groupProgress = calculateGroupProgress(group.members, group.targetId);
+                  const bgColors = ['from-indigo-500 to-indigo-600', 'from-purple-500 to-purple-600', 'from-emerald-500 to-emerald-600', 'from-rose-500 to-rose-600', 'from-amber-500 to-amber-600'];
+                  const accentColor = bgColors[group.name.charCodeAt(0) % bgColors.length];
+                  return (
+                  <motion.div
+                    key={group.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: groupIdx * 0.05 }}
                     onClick={async () => {
                       // Reset estado do grupo anterior
                       setReplyingToId(null);
@@ -2340,8 +2403,11 @@ export default function Community() {
                         setActiveGroup(group);
                       }
                     }}
-                    className="p-4 bg-white rounded-2xl border border-stone-200 hover:border-indigo-200 hover:shadow-md transition-all cursor-pointer group"
+                    className="relative overflow-hidden rounded-2xl border border-stone-200 hover:border-indigo-200 hover:shadow-lg transition-all cursor-pointer group bg-white"
                   >
+                    {/* Colored top bar */}
+                    <div className={`h-1.5 bg-gradient-to-r ${accentColor} w-full`} />
+                    <div className="p-4">
                     {/* Nome + livro */}
                     <div className="mb-3">
                       <h3 className="font-bold text-stone-900 text-base leading-tight group-hover:text-indigo-600 transition-colors">{group.name}</h3>
@@ -2350,7 +2416,18 @@ export default function Community() {
                       </p>
                     </div>
 
-                    {/* Avatares + membros + progresso numa linha */}
+                    {/* Progress bar */}
+                    <div className="mb-3">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] text-stone-400 font-medium">Progresso coletivo</span>
+                        <span className="text-[10px] font-bold text-indigo-600">{groupProgress}%</span>
+                      </div>
+                      <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                        <div className={`h-full bg-gradient-to-r ${accentColor} rounded-full transition-all duration-700`} style={{ width: `${groupProgress}%` }} />
+                      </div>
+                    </div>
+
+                    {/* Avatares + membros */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <div className="flex -space-x-1.5">
@@ -2371,17 +2448,12 @@ export default function Community() {
                         </div>
                         <span className="text-xs text-stone-400 font-medium">{group.members.length} membros</span>
                       </div>
-
-                      {/* Progresso compacto */}
-                      <div className="flex items-center gap-2 flex-1 max-w-[120px]">
-                        <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${calculateGroupProgress(group.members, group.targetId)}%` }}></div>
-                        </div>
-                        <span className="text-xs font-bold text-stone-500 shrink-0">{calculateGroupProgress(group.members, group.targetId)}%</span>
-                      </div>
+                      <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg">Entrar →</span>
                     </div>
-                  </div>
-                ))}
+                    </div>
+                  </motion.div>
+                );
+                })}
               </div>
             </div>
           )}
@@ -2389,71 +2461,99 @@ export default function Community() {
           {activeTab === 'prayers' && !activeGroup && (
             <div className="space-y-3">
               <div className="flex justify-between items-center px-1 mb-3">
-                <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider">Pedidos de Oração</h4>
+                <h4 className="text-sm font-bold text-stone-700 flex items-center gap-2">
+                  <span>🙏</span> Pedidos de Oração
+                  {mockPrayers.length > 0 && <span className="text-xs text-stone-400 font-medium">({mockPrayers.length})</span>}
+                </h4>
                 <button 
                   onClick={() => setIsCreatingPrayer(true)}
-                  className="text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 active:scale-95 transition-all"
+                  className="text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 px-3 py-1.5 rounded-xl active:scale-95 transition-all shadow-sm flex items-center gap-1"
                 >
-                  + Novo Pedido
+                  <Heart size={12} /> Novo Pedido
                 </button>
               </div>
 
               {isCreatingPrayer && (
-                <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 mb-3">
-                  <h5 className="font-bold text-indigo-900 mb-2 text-sm">Novo Pedido de Oração</h5>
+                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="p-4 bg-rose-50 rounded-2xl border border-rose-100 mb-3">
+                  <h5 className="font-bold text-rose-900 mb-2 text-sm flex items-center gap-2">🙏 Novo Pedido de Oração</h5>
                   <div className="flex flex-col gap-2">
                     <textarea 
                       placeholder="Pelo que devemos orar?..."
                       value={newPrayerRequest}
                       onChange={(e) => setNewPrayerRequest(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-none h-20 text-sm"
+                      className="w-full px-3 py-2.5 rounded-xl border border-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-500/20 resize-none h-20 text-sm bg-white"
                     />
                     <div className="flex justify-end gap-2">
                       <button 
                         onClick={() => setIsCreatingPrayer(false)}
-                        className="px-3 py-2 text-stone-500 hover:bg-indigo-100 rounded-xl font-medium text-sm"
+                        className="px-3 py-2 text-stone-500 hover:bg-rose-100 rounded-xl font-medium text-sm"
                       >
                         Cancelar
                       </button>
                       <button 
                         onClick={handleCreatePrayer}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 text-sm active:scale-95 transition-all"
+                        className="px-4 py-2 bg-rose-500 text-white rounded-xl font-bold hover:bg-rose-600 text-sm active:scale-95 transition-all"
                       >
                         Publicar
                       </button>
                     </div>
                   </div>
+                </motion.div>
+              )}
+
+              {mockPrayers.length === 0 && !isCreatingPrayer && (
+                <div className="text-center py-16 bg-gradient-to-b from-rose-50/50 to-white rounded-3xl border border-dashed border-rose-200">
+                  <div className="text-5xl mb-3">🙏</div>
+                  <p className="text-stone-700 font-bold">Nenhum pedido de oração ainda.</p>
+                  <p className="text-sm text-stone-400 mt-1 mb-4">Compartilhe e a comunidade irá orar com você.</p>
+                  <button
+                    onClick={() => setIsCreatingPrayer(true)}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-rose-500 text-white rounded-xl font-bold text-sm hover:bg-rose-600 active:scale-95 transition-all"
+                  >
+                    <Heart size={15} /> Fazer um Pedido
+                  </button>
                 </div>
               )}
 
               <div className="space-y-3">
-                {mockPrayers.map(prayer => (
-                  <div key={prayer.id} className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm">
-                    <div className="flex items-center gap-2.5 mb-2.5">
-                      <div className="w-8 h-8 rounded-full bg-stone-50 flex items-center justify-center text-sm border border-stone-200 shrink-0">
-                        {AVATARS.find(a => a.id === prayer.avatarId)?.emoji || '👤'}
+                {mockPrayers.map((prayer, idx) => (
+                  <motion.div
+                    key={prayer.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    className="relative overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm hover:shadow-md transition-all"
+                  >
+                    {/* left accent */}
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-rose-400 to-rose-500 rounded-l-2xl" />
+                    <div className="pl-5 pr-4 pt-4 pb-3">
+                      <div className="flex items-center gap-2.5 mb-2.5">
+                        <div className="w-8 h-8 rounded-full bg-rose-50 flex items-center justify-center text-sm border border-rose-100 shrink-0">
+                          {prayer.avatarUrl ? <img src={prayer.avatarUrl} alt={prayer.user} className="w-full h-full object-cover rounded-full" referrerPolicy="no-referrer" /> : (AVATARS.find(a => a.id === prayer.avatarId)?.emoji || '👤')}
+                        </div>
+                        <p className="font-bold text-stone-900 text-sm">{prayer.user}</p>
                       </div>
-                      <p className="font-bold text-stone-900 text-sm">{prayer.user}</p>
+                      <p className="text-stone-700 text-sm mb-3 leading-relaxed">{prayer.request}</p>
+                      <div className="flex items-center justify-between border-t border-stone-100 pt-2.5">
+                        <span className="text-xs font-medium text-stone-400 flex items-center gap-1">
+                          <Heart size={11} className="text-rose-400" />
+                          {prayer.prayedCount} {prayer.prayedCount === 1 ? 'pessoa orou' : 'pessoas oraram'}
+                        </span>
+                        <button 
+                          onClick={() => handlePray(prayer.id)}
+                          disabled={prayer.hasPrayed}
+                          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                            prayer.hasPrayed 
+                              ? 'bg-rose-50 text-rose-600 border border-rose-200' 
+                              : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50 shadow-sm'
+                          }`}
+                        >
+                          <Heart size={13} className={prayer.hasPrayed ? 'fill-rose-500 text-rose-500' : ''} />
+                          {prayer.hasPrayed ? 'Orei 🙏' : 'Vou orar'}
+                        </button>
+                      </div>
                     </div>
-                    <p className="text-stone-700 text-sm mb-3 leading-relaxed">{prayer.request}</p>
-                    <div className="flex items-center justify-between border-t border-stone-100 pt-2.5">
-                      <span className="text-xs font-medium text-stone-400">
-                        {prayer.prayedCount} {prayer.prayedCount === 1 ? 'pessoa orou' : 'pessoas oraram'}
-                      </span>
-                      <button 
-                        onClick={() => handlePray(prayer.id)}
-                        disabled={prayer.hasPrayed}
-                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
-                          prayer.hasPrayed 
-                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' 
-                            : 'bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100'
-                        }`}
-                      >
-                        <Heart size={13} className={prayer.hasPrayed ? 'fill-emerald-500' : ''} />
-                        {prayer.hasPrayed ? 'Orei por isso 🙏' : 'Vou orar'}
-                      </button>
-                    </div>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
             </div>
@@ -2619,23 +2719,30 @@ export default function Community() {
               {/* Lista de Amigos */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between px-2">
-                  <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider">
-                    Meus Amigos {connections.filter(c => c.status === 'accepted').length > 0 && `(${connections.filter(c => c.status === 'accepted').length})`}
+                  <h4 className="text-sm font-bold text-stone-700 flex items-center gap-2">
+                    <span>✨</span> Meus Amigos
+                    {connections.filter(c => c.status === 'accepted').length > 0 && <span className="text-xs text-stone-400 font-medium">({connections.filter(c => c.status === 'accepted').length})</span>}
                   </h4>
                   {isLoadingConnections && <span className="w-4 h-4 border-2 border-stone-200 border-t-indigo-500 rounded-full animate-spin" />}
                 </div>
                 {connections.filter(c => c.status === 'accepted').length === 0 ? (
-                  <div className="text-center py-12 bg-stone-50 rounded-3xl border border-dashed border-stone-200">
-                    <Users size={32} className="mx-auto text-stone-300 mb-3" />
-                    <p className="text-stone-500 font-medium">Você ainda não tem amigos conectados.</p>
+                  <div className="text-center py-14 bg-gradient-to-b from-indigo-50/40 to-white rounded-3xl border border-dashed border-indigo-200">
+                    <div className="text-5xl mb-3">✨</div>
+                    <p className="text-stone-700 font-bold">Nenhum amigo conectado ainda.</p>
                     <p className="text-sm text-stone-400 mt-1">Busque por nome ou email acima para começar.</p>
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {connections.filter(c => c.status === 'accepted').map((conn) => (
-                      <div key={conn.user.email} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md transition-shadow group">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-full bg-stone-50 flex items-center justify-center text-2xl border border-stone-200 overflow-hidden">
+                    {connections.filter(c => c.status === 'accepted').map((conn, idx) => (
+                      <motion.div
+                        key={conn.user.email}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.05 }}
+                        className="flex items-center justify-between p-4 bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-11 h-11 rounded-full bg-stone-50 flex items-center justify-center text-xl border border-stone-200 overflow-hidden shrink-0">
                             {conn.user.avatarUrl ? (
                               <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
@@ -2643,18 +2750,18 @@ export default function Community() {
                             )}
                           </div>
                           <div>
-                            <p className="font-bold text-stone-900 text-base">{conn.user.name || conn.user.email}</p>
-                            <p className="text-sm text-stone-400">{conn.user.email}</p>
+                            <p className="font-bold text-stone-900">{conn.user.name || conn.user.email}</p>
+                            <p className="text-xs text-stone-400">{conn.user.email}</p>
                           </div>
                         </div>
                         <button
                           onClick={() => handleRemoveFriend(conn.user.email, conn.user.name)}
-                          className="sm:opacity-0 sm:group-hover:opacity-100 p-2.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-all"
+                          className="sm:opacity-0 sm:group-hover:opacity-100 p-2 text-stone-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
                           title="Remover amigo"
                         >
-                          <UserMinus size={18} />
+                          <UserMinus size={16} />
                         </button>
-                      </div>
+                      </motion.div>
                     ))}
                   </div>
                 )}

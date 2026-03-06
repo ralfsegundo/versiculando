@@ -35,14 +35,32 @@ export function useNotes(bookId: string, userId: string | null = null) {
             .order('timestamp', { ascending: false });
 
           if (!error && data) {
-            setNotes(data.map(n => ({
-              id: n.id,
-              bookId: n.book_id,
-              text: n.text,
-              createdAt: n.timestamp,
-              color: n.color,
-              context: { chapter: n.chapter }
-            })));
+            // Carrega o cache local para recuperar chapterTitle (não armazenado no Supabase)
+            let localByTimestamp: Record<string, Note> = {};
+            try {
+              const storedNotes = localStorage.getItem(localKey(userId));
+              if (storedNotes) {
+                const allLocal: Note[] = JSON.parse(storedNotes);
+                allLocal.filter(n => n.bookId === bookId).forEach(n => {
+                  localByTimestamp[n.createdAt] = n;
+                });
+              }
+            } catch { /* ignora */ }
+
+            setNotes(data.map(n => {
+              const localMatch = localByTimestamp[n.timestamp];
+              return {
+                id: n.id,
+                bookId: n.book_id,
+                text: n.text,
+                createdAt: n.timestamp,
+                color: n.color,
+                context: {
+                  chapter: n.chapter,
+                  chapterTitle: localMatch?.context?.chapterTitle,
+                },
+              };
+            }));
             return;
           }
         } catch (e) {
@@ -93,11 +111,11 @@ export function useNotes(bookId: string, userId: string | null = null) {
       } catch (err) {
         console.warn('[notes] addNote error:', err);
       }
-    } else {
-      const storedNotes = localStorage.getItem(localKey(userId));
-      const allNotes: Note[] = storedNotes ? JSON.parse(storedNotes) : [];
-      localStorage.setItem(localKey(userId), JSON.stringify([...allNotes, newNote]));
     }
+    // Sempre salva no localStorage como backup offline (independente do Supabase)
+    const storedNotes = localStorage.getItem(localKey(userId));
+    const allNotes: Note[] = storedNotes ? JSON.parse(storedNotes) : [];
+    localStorage.setItem(localKey(userId), JSON.stringify([...allNotes, newNote]));
     setNotes(prev => [newNote, ...prev]);
   };
 

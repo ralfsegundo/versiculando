@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { BIBLE_BOOKS, GROUP_COLORS } from '../constants';
-import { Book, Library, Search, BookOpen, Sun, CheckCircle2, ArrowRight, Info, MapPin, Lock, Trophy, Download, X, Navigation, Zap, Star, Shield, Cross } from 'lucide-react';
+import { Book, Library, Search, BookOpen, Sun, CheckCircle2, ArrowRight, Info, Download, X, Navigation, Zap, Star, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGamification } from '../services/gamification';
 
@@ -793,7 +793,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
             </div>
           </div>
         )}
-        <>
+          <>
             {/* Search Bar */}
             <div className="mb-4">
               <div className="relative w-full max-w-xl mx-auto shadow-md shadow-stone-200/50 rounded-xl">
@@ -904,38 +904,38 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
             )}
           </>
 
-        {/* Extra Resources Section */}
-        <section className="mt-20 pt-12 border-t border-stone-200">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl md:text-3xl font-serif font-bold text-stone-900 mb-3">Recursos Extras para sua Fé</h2>
-            <p className="text-stone-600">Aprofunde seus conhecimentos com nossos guias visuais complementares.</p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-stone-200 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-center gap-6">
-              <div className="w-16 h-16 bg-rose-100 text-rose-700 rounded-2xl flex items-center justify-center shrink-0">
-                <BookOpen size={32} />
-              </div>
-              <div>
-                <h3 className="text-xl font-serif font-bold text-stone-900 mb-2">Manual dos Sacramentos</h3>
-                <p className="text-stone-600 text-sm leading-relaxed">Entenda de forma simples e visual cada um dos sete sacramentos, sua origem bíblica e sentido espiritual.</p>
-                <button className="mt-4 text-rose-700 font-bold text-sm uppercase tracking-wider hover:underline">Em breve</button>
-              </div>
+          {/* Extra Resources Section */}
+          <section className="mt-20 pt-12 border-t border-stone-200">
+            <div className="text-center mb-10">
+              <h2 className="text-2xl md:text-3xl font-serif font-bold text-stone-900 mb-3">Recursos Extras para sua Fé</h2>
+              <p className="text-stone-600">Aprofunde seus conhecimentos com nossos guias visuais complementares.</p>
             </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-stone-200 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-center gap-6">
+                <div className="w-16 h-16 bg-rose-100 text-rose-700 rounded-2xl flex items-center justify-center shrink-0">
+                  <BookOpen size={32} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-serif font-bold text-stone-900 mb-2">Manual dos Sacramentos</h3>
+                  <p className="text-stone-600 text-sm leading-relaxed">Entenda de forma simples e visual cada um dos sete sacramentos, sua origem bíblica e sentido espiritual.</p>
+                  <button className="mt-4 text-rose-700 font-bold text-sm uppercase tracking-wider hover:underline">Em breve</button>
+                </div>
+              </div>
 
-            <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-stone-200 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-center gap-6">
-              <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0">
-                <Library size={32} />
-              </div>
-              <div>
-                <h3 className="text-xl font-serif font-bold text-stone-900 mb-2">Manual da Missa</h3>
-                <p className="text-stone-600 text-sm leading-relaxed">Um guia didático que explica passo a passo o significado de cada momento da celebração eucarística.</p>
-                <button className="mt-4 text-indigo-600 font-bold text-sm uppercase tracking-wider hover:underline">Em breve</button>
+              <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-stone-200 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-center gap-6">
+                <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0">
+                  <Library size={32} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-serif font-bold text-stone-900 mb-2">Manual da Missa</h3>
+                  <p className="text-stone-600 text-sm leading-relaxed">Um guia didático que explica passo a passo o significado de cada momento da celebração eucarística.</p>
+                  <button className="mt-4 text-indigo-600 font-bold text-sm uppercase tracking-wider hover:underline">Em breve</button>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
-      </div>
+          </section>
+        </div>
 
     </div>
   );

@@ -6,11 +6,12 @@ import html2canvas from 'html2canvas';
 import { sharingService, Connection } from '../services/sharingService';
 
 const TITLES = [
-  { name: 'Iniciante', min: 0, max: 100 },
-  { name: 'Discípulo', min: 101, max: 500 },
-  { name: 'Apóstolo', min: 501, max: 2000 },
-  { name: 'Profeta', min: 2001, max: 4999 },
-  { name: 'Santo', min: 5000, max: Infinity },
+  { name: 'Iniciante',  min: 0,     max: 199 },
+  { name: 'Discípulo',  min: 200,   max: 799 },
+  { name: 'Apóstolo',   min: 800,   max: 2499 },
+  { name: 'Profeta',    min: 2500,  max: 5999 },
+  { name: 'Doutor',     min: 6000,  max: 14999 },
+  { name: 'Santo',      min: 15000, max: Infinity },
 ];
 
 export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: boolean; onOpenAdmin?: () => void }) {
@@ -310,7 +311,7 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
                 className="bg-stone-100 text-stone-600 px-2.5 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 hover:bg-stone-200 transition-colors"
               >
                 <Star size={12} className="text-amber-500 fill-amber-500" />
-                {profile.points} pts
+                {profile.points} XP
               </button>
               <AnimatePresence>
                 {showPointsBreakdown && pointsButtonRect && (
@@ -330,7 +331,7 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
                         <div className="flex justify-between items-center gap-4"><span className="text-stone-400">Exploração livre</span><span className="font-bold">{profile.pointsBreakdown?.freeExploration || 0} pts</span></div>
                         <div className="flex justify-between items-center gap-4"><span className="text-stone-400">Trilha do Discípulo</span><span className="font-bold text-amber-400">{profile.pointsBreakdown?.discipleTrail || 0} pts</span></div>
                         <div className="flex justify-between items-center gap-4"><span className="text-stone-400">Bônus de fases</span><span className="font-bold text-orange-400">{profile.pointsBreakdown?.bonus || 0} pts</span></div>
-                        <div className="pt-2 border-t border-stone-700 flex justify-between items-center gap-4"><span className="font-bold text-white">Total</span><span className="font-black text-amber-400">{profile.points} pts</span></div>
+                        <div className="pt-2 border-t border-stone-700 flex justify-between items-center gap-4"><span className="font-bold text-white">Total</span><span className="font-black text-amber-400">{profile.points} XP</span></div>
                       </div>
                     </motion.div>
                   </>
@@ -344,7 +345,7 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
                 <motion.div initial={{ width: 0 }} animate={{ width: `${titleProgress}%` }} transition={{ duration: 1, ease: "easeOut" }} className="h-full bg-amber-400 rounded-full" />
               </div>
               <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-40">
-                {profile.points} / {nextTitle.min} pts para {nextTitle.name}
+                {profile.points} / {nextTitle.min} XP para {nextTitle.name}
               </div>
             </div>
           )}
@@ -816,7 +817,7 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
               </span>
               <span className="bg-stone-100 text-stone-600 px-6 py-2 rounded-full text-2xl font-medium flex items-center gap-2">
                 <Star size={32} className="text-amber-500 fill-amber-500" />
-                {profile.points} pts
+                {profile.points} XP
               </span>
             </div>
 

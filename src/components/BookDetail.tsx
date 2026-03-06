@@ -317,13 +317,21 @@ function MainVersesGrid({ verses, bookName, colorClass }: { verses: BookData['ma
   const baseColor = colorClass.split(' ')[0];
   const textColor = colorClass.split(' ').find(c => c.startsWith('text-')) || 'text-stone-900';
   const borderColor = colorClass.split(' ').find(c => c.startsWith('border-')) || 'border-stone-200';
-  const { addFavorite, userId } = useGamification();
+  const { addFavorite, userId, addEcoReaction, profile } = useGamification();
   const [favorites, setFavorites] = useState<Record<string, boolean>>(() => {
     try {
       const stored = localStorage.getItem(`${userId}_bible_favorites`);
       return stored ? JSON.parse(stored) : {};
     } catch { return {}; }
   });
+  const [ecoOpen, setEcoOpen] = useState<string | null>(null);
+
+  const ECO_EMOJIS = [
+    { emoji: '🙏', label: 'Me tocou' },
+    { emoji: '💡', label: 'Aprendi algo' },
+    { emoji: '😢', label: 'Me consolou' },
+    { emoji: '🔥', label: 'Me desafiou' },
+  ];
 
   const handleFavorite = (reference: string) => {
     const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -334,7 +342,6 @@ function MainVersesGrid({ verses, bookName, colorClass }: { verses: BookData['ma
       if (!hasSupabase) localStorage.setItem(`${userId}_bible_favorites`, JSON.stringify(updated));
       addFavorite();
     } else {
-      // Toggle off — remove from favorites (don't decrement counter, already counted)
       const updated = { ...favorites };
       delete updated[reference];
       setFavorites(updated);
@@ -394,6 +401,35 @@ function MainVersesGrid({ verses, bookName, colorClass }: { verses: BookData['ma
                   <span className="font-bold text-stone-800 mr-1">Significado:</span>
                   {verse.explanation}
                 </p>
+              </div>
+
+              {/* Eco Reactions */}
+              <div className="mt-3 flex items-center gap-1.5">
+                {ECO_EMOJIS.map(({ emoji, label }) => {
+                  const isSelected = profile.ecoReactions?.[verse.reference] === emoji;
+                  return (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        addEcoReaction(verse.reference, emoji);
+                        setEcoOpen(null);
+                      }}
+                      title={label}
+                      className={`text-base rounded-full px-2 py-0.5 border transition-all active:scale-95 ${
+                        isSelected
+                          ? 'bg-amber-100 border-amber-300 ring-1 ring-amber-300'
+                          : 'bg-stone-50 border-stone-200 hover:border-amber-200 hover:bg-amber-50'
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  );
+                })}
+                {profile.ecoReactions?.[verse.reference] && (
+                  <span className="text-[10px] text-stone-400 ml-1 italic">
+                    {ECO_EMOJIS.find(e => e.emoji === profile.ecoReactions?.[verse.reference])?.label}
+                  </span>
+                )}
               </div>
             </div>
           </motion.div>

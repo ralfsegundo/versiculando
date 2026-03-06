@@ -102,6 +102,12 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     normalize(book.group).includes(normalize(searchTerm))
   );
 
+  // Para iniciantes (experience=never/little), mostra NT antes do VT
+  const onboardingExperience = (() => {
+    try { return JSON.parse(localStorage.getItem('onboarding_profile') || '{}').experience; } catch { return null; }
+  })();
+  const showNTFirst = onboardingExperience === 'never' || onboardingExperience === 'little';
+
   const vtBooks = filteredBooks.filter(b => b.testament === 'VT');
   const ntBooks = filteredBooks.filter(b => b.testament === 'NT');
 
@@ -397,6 +403,16 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           const inProgressBook = BIBLE_BOOKS.find(b => b.id === inProgressBookId);
           if (!inProgressBook) return null;
 
+          // Personaliza o rótulo pelo objetivo do onboarding
+          let continueLabel = 'Continue estudando';
+          try {
+            const op = JSON.parse(localStorage.getItem('onboarding_profile') || '{}');
+            if (op.goal === 'prayer') continueLabel = 'Ore com a Palavra hoje';
+            else if (op.goal === 'knowledge') continueLabel = 'Continue aprendendo';
+            else if (op.goal === 'complete') continueLabel = `${profile.completedBooks.length}/73 livros — continue!`;
+            else if (op.goal === 'faith') continueLabel = 'Aprofunde sua fé hoje';
+          } catch { /* ignora */ }
+
           return (
             <div className="max-w-xl mx-auto mb-6">
               <button 
@@ -408,7 +424,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                     <BookOpen size={20} className="opacity-70" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-0.5">Continue estudando</p>
+                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-0.5">{continueLabel}</p>
                     <h4 className="font-serif font-bold text-stone-900 text-lg leading-tight group-hover:text-amber-700 transition-colors">{inProgressBook.name}</h4>
                   </div>
                 </div>
@@ -538,6 +554,24 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                 <span>Via Trilha do Discípulo</span>
               </div>
             </div>
+            {/* Para iniciantes: NT primeiro (mais acessível). Para experientes: ordem canônica VT→NT */}
+            {showNTFirst && ntBooks.length > 0 && (
+              <section className="mb-10 md:mb-12">
+                <div className="flex items-center gap-2 mb-1 border-b border-stone-200 pb-2.5">
+                  <Book className="text-stone-400 w-4 h-4 shrink-0" />
+                  <h2 className="text-sm md:text-2xl font-serif font-semibold text-stone-800">Novo Testamento</h2>
+                  <div className="ml-auto shrink-0">
+                    {(() => {
+                      const totalNtCompleted = BIBLE_BOOKS.filter(b => b.testament === 'NT' && profile.completedBooks.includes(b.id)).length;
+                      return <span className={`text-xs font-bold ${totalNtCompleted === 27 ? 'text-amber-600' : 'text-stone-400'}`}>{totalNtCompleted}/27</span>;
+                    })()}
+                  </div>
+                </div>
+                <p className="text-xs text-stone-400 mb-4 italic">Recomendado para quem está começando — mais direto e acessível.</p>
+                {renderBookGrid(ntBooks)}
+              </section>
+            )}
+
             {vtBooks.length > 0 && (
               <section className="mb-10 md:mb-12">
                 <div className="flex items-center gap-2 mb-4 border-b border-stone-200 pb-2.5">
@@ -559,7 +593,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               </section>
             )}
 
-            {ntBooks.length > 0 && (
+            {!showNTFirst && ntBooks.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 mb-4 border-b border-stone-200 pb-2.5">
                   <Book className="text-stone-400 w-4 h-4 shrink-0" />

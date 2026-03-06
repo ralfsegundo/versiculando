@@ -95,9 +95,11 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     }
   }, [profile.visitedBooks, profile.completedBooks]);
 
+  const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
   const filteredBooks = BIBLE_BOOKS.filter(book =>
-    book.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    book.group.toLowerCase().includes(searchTerm.toLowerCase())
+    normalize(book.name).includes(normalize(searchTerm)) ||
+    normalize(book.group).includes(normalize(searchTerm))
   );
 
   const vtBooks = filteredBooks.filter(b => b.testament === 'VT');
@@ -348,6 +350,43 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           )}
         </AnimatePresence>
 
+        {/* Streak banner — aparece quando streak >= 2 */}
+        {profile.streak >= 2 && (
+          <div className="max-w-xl mx-auto mb-4">
+            <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-sm">
+              <span className="text-2xl">🔥</span>
+              <div className="flex-1">
+                <p className="text-white font-bold text-sm leading-tight">
+                  {profile.streak} dias seguidos!
+                </p>
+                <p className="text-orange-100 text-xs">
+                  {profile.streak < 7 ? `Mais ${7 - profile.streak} dia${7 - profile.streak > 1 ? 's' : ''} para a conquista Fogo do Espírito ⚡` :
+                   profile.streak < 30 ? `Incrível! Continue para ${30 - profile.streak} dias ainda mais!` :
+                   'Você é uma inspiração! 30+ dias seguidos! 🏆'}
+                </p>
+              </div>
+              <div className="text-white font-black text-2xl">{profile.streak}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Card "Por onde começar" — só para usuários sem nenhuma visita */}
+        {(profile.visitedBooks?.length || 0) === 0 && profile.completedBooks.length === 0 && (
+          <div className="max-w-xl mx-auto mb-6">
+            <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-5 text-center shadow-sm">
+              <div className="text-3xl mb-2">📖</div>
+              <h3 className="font-serif font-bold text-stone-900 text-lg mb-1">Por onde começar?</h3>
+              <p className="text-stone-500 text-sm mb-4">Recomendamos começar pela primeira carta de São João — curta, profunda e perfeita para iniciantes.</p>
+              <button
+                onClick={() => onSelectBook('1jn')}
+                className="bg-amber-500 hover:bg-amber-400 text-white font-bold px-6 py-3 rounded-xl shadow-sm active:scale-95 transition-all flex items-center gap-2 mx-auto"
+              >
+                Começar por 1 João <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Continue Where You Left Off Card */}
         {(() => {
           const hasAccessedAnyBook = (profile.visitedBooks?.length || 0) > 0 || profile.completedBooks.length > 0;
@@ -382,24 +421,64 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
         })()}
 
         {/* Daily Verse Card — some ao marcar como lido */}
-        {!dailyVerseRead && <div className="max-w-xl mx-auto mb-4">
-          <div className="bg-stone-900 rounded-xl p-3 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-2 opacity-5"><Sun size={60} /></div>
-            <div className="relative z-10 flex items-center gap-2.5">
-              <Sun size={16} className="text-amber-400 shrink-0" />
-              <p className="flex-1 text-sm font-serif italic text-stone-100 leading-snug">
-                "O Senhor é o meu pastor; nada me faltará."
-                <span className="not-italic font-bold text-amber-400 ml-1.5 text-[11px]">Sl 23:1</span>
-              </p>
-              <button
-                onClick={handleReadDailyVerse}
-                className="px-3 py-1.5 rounded-full font-bold text-xs bg-amber-400 hover:bg-amber-300 text-stone-900 shadow-sm active:scale-95 shrink-0 transition-all"
-              >
-                +15 pts
-              </button>
+        {!dailyVerseRead && (() => {
+          // Versículo diferente a cada dia do ano (determinístico — mesmo para todos os usuários)
+          const DAILY_VERSES = [
+            { text: 'O Senhor é o meu pastor; nada me faltará.', ref: 'Sl 23,1' },
+            { text: 'Tudo posso naquele que me fortalece.', ref: 'Fl 4,13' },
+            { text: 'Não temas, porque eu sou contigo.', ref: 'Is 41,10' },
+            { text: 'O amor é paciente, o amor é bondoso.', ref: '1Cor 13,4' },
+            { text: 'Buscai primeiro o Reino de Deus e a sua justiça.', ref: 'Mt 6,33' },
+            { text: 'Sede fortes e corajosos. Não temais.', ref: 'Dt 31,6' },
+            { text: 'Confia no Senhor de todo o teu coração.', ref: 'Pv 3,5' },
+            { text: 'No começo, Deus criou os céus e a terra.', ref: 'Gn 1,1' },
+            { text: 'Amarás o teu próximo como a ti mesmo.', ref: 'Mt 22,39' },
+            { text: 'Deus é amor.', ref: '1Jo 4,8' },
+            { text: 'Alegrai-vos sempre no Senhor.', ref: 'Fl 4,4' },
+            { text: 'A fé sem obras é morta.', ref: 'Tg 2,26' },
+            { text: 'Eu sou o caminho, a verdade e a vida.', ref: 'Jo 14,6' },
+            { text: 'Sede a luz do mundo.', ref: 'Mt 5,14' },
+            { text: 'A misericórdia do Senhor dura para sempre.', ref: 'Sl 136,1' },
+            { text: 'Vós sois o sal da terra.', ref: 'Mt 5,13' },
+            { text: 'Nada vos separe do amor de Deus.', ref: 'Rm 8,39' },
+            { text: 'Orai sem cessar.', ref: '1Ts 5,17' },
+            { text: 'A sabedoria começa pelo temor do Senhor.', ref: 'Pv 9,10' },
+            { text: 'Sede misericordiosos como vosso Pai é misericordioso.', ref: 'Lc 6,36' },
+            { text: 'Não vos conformeis com este século.', ref: 'Rm 12,2' },
+            { text: 'Com Deus nada é impossível.', ref: 'Lc 1,37' },
+            { text: 'Bem-aventurados os puros de coração.', ref: 'Mt 5,8' },
+            { text: 'O Senhor é minha luz e minha salvação.', ref: 'Sl 27,1' },
+            { text: 'Sede santos, pois eu sou santo.', ref: '1Pd 1,16' },
+            { text: 'Onde está o teu tesouro, lá está o teu coração.', ref: 'Mt 6,21' },
+            { text: 'Jesus Cristo é o mesmo, ontem, hoje e sempre.', ref: 'Hb 13,8' },
+            { text: 'O coração do homem planeja o seu caminho, mas o Senhor dirige os seus passos.', ref: 'Pv 16,9' },
+            { text: 'Derramai diante dele o vosso coração.', ref: 'Sl 62,9' },
+            { text: 'Posso tudo naquele que me fortalece.', ref: 'Fl 4,13' },
+            { text: 'Sede fortes no Senhor e na força do seu poder.', ref: 'Ef 6,10' },
+          ];
+          const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+          const verse = DAILY_VERSES[dayOfYear % DAILY_VERSES.length];
+          return (
+            <div className="max-w-xl mx-auto mb-4">
+              <div className="bg-stone-900 rounded-xl p-3 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-2 opacity-5"><Sun size={60} /></div>
+                <div className="relative z-10 flex items-center gap-2.5">
+                  <Sun size={16} className="text-amber-400 shrink-0" />
+                  <p className="flex-1 text-sm font-serif italic text-stone-100 leading-snug">
+                    "{verse.text}"
+                    <span className="not-italic font-bold text-amber-400 ml-1.5 text-[11px]">{verse.ref}</span>
+                  </p>
+                  <button
+                    onClick={handleReadDailyVerse}
+                    className="px-3 py-1.5 rounded-full font-bold text-xs bg-amber-400 hover:bg-amber-300 text-stone-900 shadow-sm active:scale-95 shrink-0 transition-all"
+                  >
+                    +15 pts
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>}
+          );
+        })()}
 
         {/* Global Progress Bar */}
         {profile.completedBooks.length > 0 && (

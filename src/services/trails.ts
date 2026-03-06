@@ -36,39 +36,54 @@ export interface UserTrailProgress {
   completed_at: string;
 }
 
+// Helper: query com timeout de segurança
+async function withTimeout<T>(promise: Promise<T>, ms = 8000): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Supabase query timeout')), ms)
+  );
+  return Promise.race([promise, timeout]);
+}
+
 // Busca todas as trilhas ativas
 export async function fetchTrails(): Promise<Trail[]> {
-  const { data, error } = await supabase
-    .from('trails')
-    .select('*')
-    .eq('is_active', true)
-    .order('order_index');
-
-  if (error || !data) return [];
-  return data as Trail[];
+  try {
+    const { data, error } = await withTimeout(
+      supabase.from('trails').select('*').eq('is_active', true).order('order_index')
+    );
+    if (error) { console.warn('[trails] fetchTrails:', error.message); return []; }
+    return (data || []) as Trail[];
+  } catch (e) {
+    console.warn('[trails] fetchTrails exception:', e);
+    return [];
+  }
 }
 
 // Busca os dias de uma trilha
 export async function fetchTrailDays(trailId: string): Promise<TrailDay[]> {
-  const { data, error } = await supabase
-    .from('trail_days')
-    .select('*')
-    .eq('trail_id', trailId)
-    .order('day_number');
-
-  if (error || !data) return [];
-  return data as TrailDay[];
+  try {
+    const { data, error } = await withTimeout(
+      supabase.from('trail_days').select('*').eq('trail_id', trailId).order('day_number')
+    );
+    if (error) { console.warn('[trails] fetchTrailDays:', error.message); return []; }
+    return (data || []) as TrailDay[];
+  } catch (e) {
+    console.warn('[trails] fetchTrailDays exception:', e);
+    return [];
+  }
 }
 
 // Busca o progresso do usuário em todas as trilhas
 export async function fetchUserProgress(userId: string): Promise<UserTrailProgress[]> {
-  const { data, error } = await supabase
-    .from('user_trail_progress')
-    .select('trail_id, day_number, completed_at')
-    .eq('user_id', userId);
-
-  if (error || !data) return [];
-  return data as UserTrailProgress[];
+  try {
+    const { data, error } = await withTimeout(
+      supabase.from('user_trail_progress').select('trail_id, day_number, completed_at').eq('user_id', userId)
+    );
+    if (error) { console.warn('[trails] fetchUserProgress:', error.message); return []; }
+    return (data || []) as UserTrailProgress[];
+  } catch (e) {
+    console.warn('[trails] fetchUserProgress exception:', e);
+    return [];
+  }
 }
 
 // Marca um dia como concluído
@@ -77,16 +92,21 @@ export async function completeTrailDay(
   trailId: string,
   dayNumber: number
 ): Promise<boolean> {
-  const { error } = await supabase
-    .from('user_trail_progress')
-    .upsert({
-      user_id: userId,
-      trail_id: trailId,
-      day_number: dayNumber,
-      completed_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,trail_id,day_number' });
-
-  return !error;
+  try {
+    const { error } = await withTimeout(
+      supabase.from('user_trail_progress').upsert({
+        user_id: userId,
+        trail_id: trailId,
+        day_number: dayNumber,
+        completed_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,trail_id,day_number' })
+    );
+    if (error) { console.warn('[trails] completeTrailDay:', error.message); return false; }
+    return true;
+  } catch (e) {
+    console.warn('[trails] completeTrailDay exception:', e);
+    return false;
+  }
 }
 
 // Retorna quantos dias de uma trilha o usuário completou

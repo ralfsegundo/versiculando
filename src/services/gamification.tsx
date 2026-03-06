@@ -207,6 +207,40 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     { title: 'Conclua 4 livros esta semana', description: 'Complete a leitura de qualquer 4 livros.', target: 4, rewardPoints: 120 },
   ];
 
+  // Desafios personalizados por tempo disponível (do onboarding)
+  const getPersonalizedChallenges = (): typeof WEEKLY_CHALLENGES => {
+    try {
+      const saved = localStorage.getItem('onboarding_profile');
+      if (!saved) return WEEKLY_CHALLENGES;
+      const { timePerDay, goal } = JSON.parse(saved);
+      if (timePerDay === '5') {
+        return [
+          { title: 'Leia 1 livro esta semana', description: 'Pequenos passos levam longe. Conclua qualquer 1 livro.', target: 1, rewardPoints: 50 },
+          { title: 'Acesse o versículo do dia 5 vezes', description: 'Uma dose diária da Palavra. 5 dias seguidos.', target: 5, rewardPoints: 60 },
+        ];
+      }
+      if (timePerDay === '15') {
+        return [
+          { title: 'Conclua 2 livros esta semana', description: '15 minutos por dia, resultados reais.', target: 2, rewardPoints: 75 },
+          { title: 'Conclua 3 livros esta semana', description: 'Continue no ritmo. Mais 3 livros!', target: 3, rewardPoints: 100 },
+        ];
+      }
+      if (timePerDay === '60') {
+        return [
+          { title: 'Conclua 7 livros esta semana', description: 'Você tem tempo e disposição. Use os dois!', target: 7, rewardPoints: 200 },
+          { title: 'Conclua 5 livros esta semana', description: 'Semana intensa. Bora lá!', target: 5, rewardPoints: 150 },
+        ];
+      }
+      if (goal === 'complete') {
+        return [
+          { title: 'Conclua 5 livros esta semana', description: 'Rumo aos 73! Mais 5 livros.', target: 5, rewardPoints: 150 },
+          { title: 'Conclua 4 livros esta semana', description: 'Cada livro é um passo para a meta.', target: 4, rewardPoints: 120 },
+        ];
+      }
+    } catch { /* ignora */ }
+    return WEEKLY_CHALLENGES;
+  };
+
   const getStoredChallenge = (): WeeklyChallenge => {
     const stored = safeStorage.getItem('weekly_challenge');
     if (stored) {
@@ -216,8 +250,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         if (new Date(parsed.deadline) > new Date()) return parsed;
       } catch { /* ignore */ }
     }
-    // Generate a new challenge
-    const template = WEEKLY_CHALLENGES[Math.floor(Math.random() * WEEKLY_CHALLENGES.length)];
+    // Generate a new challenge using personalized pool
+    const pool = getPersonalizedChallenges();
+    const template = pool[Math.floor(Math.random() * pool.length)];
     const challenge: WeeklyChallenge = {
       ...template,
       id: `week-${Date.now()}`,

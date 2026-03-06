@@ -333,18 +333,16 @@ function MainVersesGrid({ verses, bookName, colorClass }: { verses: BookData['ma
   ];
 
   const handleFavorite = (reference: string) => {
-    const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-    
     if (!favorites[reference]) {
       const updated = { ...favorites, [reference]: true };
       setFavorites(updated);
-      if (!hasSupabase) localStorage.setItem(`${userId}_bible_favorites`, JSON.stringify(updated));
+      localStorage.setItem(`${userId}_bible_favorites`, JSON.stringify(updated));
       addFavorite();
     } else {
       const updated = { ...favorites };
       delete updated[reference];
       setFavorites(updated);
-      if (!hasSupabase) localStorage.setItem(`${userId}_bible_favorites`, JSON.stringify(updated));
+      localStorage.setItem(`${userId}_bible_favorites`, JSON.stringify(updated));
     }
   };
 

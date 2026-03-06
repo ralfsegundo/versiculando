@@ -148,7 +148,22 @@ export async function generateBookSummary(
     throw new Error(`Livro "${bookName}" não encontrado. Verifique sua conexão e tente novamente.`);
   }
 
-  const result = data.data as BookData;
+  const raw = data.data as any;
+
+  // Normaliza estrutura: o banco salva { mindmap: {...}, chapters: [...], ... }
+  // mas o código espera os campos de mindmap na raiz do BookData.
+  let result: BookData;
+  if (raw?.mindmap) {
+    result = {
+      ...raw.mindmap,
+      chapters:   raw.chapters   ?? [],
+      timeline:   raw.timeline   ?? [],
+      mainVerses: raw.mainVerses ?? [],
+    } as BookData;
+  } else {
+    result = raw as BookData;
+  }
+
   memoryCache[bookName] = result;
   setLocalCache(bookName, result);
   return result;
@@ -170,7 +185,13 @@ export async function prefetchBooks(bookNames: string[]): Promise<void> {
     if (error || !data) return;
 
     data.forEach(row => {
-      const bookData = row.data as BookData;
+      const rawBook = row.data as any;
+      const bookData: BookData = rawBook?.mindmap ? {
+        ...rawBook.mindmap,
+        chapters:   rawBook.chapters   ?? [],
+        timeline:   rawBook.timeline   ?? [],
+        mainVerses: rawBook.mainVerses ?? [],
+      } as BookData : rawBook as BookData;
       memoryCache[row.book_name] = bookData;
       setLocalCache(row.book_name, bookData);
     });

@@ -116,22 +116,39 @@ class SharingService {
   }
 
   async getConnections(email: string): Promise<Connection[]> {
+    // Busca as conexões sem depender de foreign key join (a tabela usa TEXT, não FK para profiles)
     const { data, error } = await supabase
       .from('user_connections')
-      .select('id, from_email, to_email, status, from_profile:profiles!user_connections_from_email_fkey(id, name, email, avatar_id, avatar_url), to_profile:profiles!user_connections_to_email_fkey(id, name, email, avatar_id, avatar_url)')
+      .select('id, from_email, to_email, status')
       .or(`from_email.eq.${email},to_email.eq.${email}`)
       .neq('status', 'rejected');
 
     if (error) throw error;
+    if (!data || data.length === 0) return [];
 
-    return (data || []).map((row: any) => {
+    // Coleta todos os emails dos outros usuários para buscar perfis em lote
+    const otherEmails = data.map((row: any) =>
+      row.from_email === email ? row.to_email : row.from_email
+    );
+    const uniqueEmails = [...new Set(otherEmails)];
+
+    // Busca perfis em lote (uma única query)
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, name, email, avatar_id, avatar_url')
+      .in('email', uniqueEmails);
+
+    const profileMap = new Map((profiles || []).map((p: any) => [p.email, p]));
+
+    return data.map((row: any) => {
       const isRequester = row.from_email === email;
-      const other = isRequester ? row.to_profile : row.from_profile;
+      const otherEmail = isRequester ? row.to_email : row.from_email;
+      const other = profileMap.get(otherEmail);
       return {
         user: {
           id: other?.id || '',
-          name: other?.name || '',
-          email: isRequester ? row.to_email : row.from_email,
+          name: other?.name || otherEmail,
+          email: otherEmail,
           avatarId: other?.avatar_id,
           avatarUrl: other?.avatar_url,
         },

@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BIBLE_BOOKS, GROUP_COLORS, GROUP_THEMES, BEGINNER_PATH } from '../constants';
 import { generateBookSummary, BookData, MindMapData } from '../services/bookData';
 import { ArrowLeft, Loader2, Map, List, BookOpen, Search, FileText, Clock, Heart, Lightbulb, Key, Hash, Users, CheckCircle2, Trash2, Navigation, Pencil, Palette, Copy, Sparkles, Check, MapPin, X, ArrowRight, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGamification, AVATARS } from '../services/gamification';
-import { supabase } from '../lib/supabase';
 import { useNotes, NoteContext } from '../services/notes';
 import { sharingService } from '../services/sharingService';
 
@@ -14,12 +13,7 @@ interface BookDetailProps {
 }
 
 export default function BookDetail({ bookId, onBack }: BookDetailProps) {
-  const [userId, setUserId] = React.useState<string>('anonymous');
-  React.useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) setUserId(session.user.id);
-    }).catch(() => {});
-  }, []);
+  const { addPoints, markBookCompleted, markBookVisited, markChapterRead, profile, addNote, userId } = useGamification();
   const book = BIBLE_BOOKS.find(b => b.id === bookId);
   const [data, setData] = useState<BookData | null>(null);
   const [loading, setLoading] = useState(true);

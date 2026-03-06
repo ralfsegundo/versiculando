@@ -475,34 +475,62 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           )}
         </AnimatePresence>
 
-        {/* Streak banner — aparece quando streak >= 2 */}
-        {profile.streak >= 2 && (
-          <div className="max-w-xl mx-auto mb-4">
-            <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-sm">
-              <span className="text-2xl">🔥</span>
-              <div className="flex-1">
-                <p className="text-white font-bold text-sm leading-tight">
-                  {profile.streak} dias seguidos!
-                </p>
-                <p className="text-orange-100 text-xs">
-                  {profile.streak < 7 ? `Mais ${7 - profile.streak} dia${7 - profile.streak > 1 ? 's' : ''} para Fogo do Espírito ⚡` :
-                   profile.streak < 30 ? `Rumo a 30 dias! Faltam ${30 - profile.streak}.` :
-                   'Você é uma inspiração! 30+ dias seguidos! 🏆'}
-                </p>
-              </div>
-              {/* Graças disponíveis */}
-              <div className="flex items-center gap-1 bg-white/20 rounded-lg px-2 py-1">
-                <Shield size={12} className="text-white" />
-                <span className="text-white font-bold text-xs">{profile.streakFreezes ?? 0}</span>
+        {/* ── Streak Card — estilo Duolingo ── */}
+        {profile.streak >= 1 && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-xl mx-auto mb-4"
+          >
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-400 p-[2px] shadow-lg shadow-orange-200/50">
+              <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-400 rounded-[14px] px-4 py-3 flex items-center gap-3">
+                {/* Chama animada */}
+                <motion.div
+                  animate={{ rotate: [-5, 5, -5], scale: [1, 1.1, 1] }}
+                  transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
+                  className="text-3xl leading-none select-none"
+                >
+                  🔥
+                </motion.div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-black text-base leading-tight">
+                    {profile.streak} {profile.streak === 1 ? 'dia' : 'dias'} seguidos!
+                  </p>
+                  {/* Mini progress para próximo marco */}
+                  {(() => {
+                    const next = profile.streak < 3 ? 3 : profile.streak < 7 ? 7 : profile.streak < 14 ? 14 : profile.streak < 30 ? 30 : 60;
+                    const prev = profile.streak < 3 ? 1 : profile.streak < 7 ? 3 : profile.streak < 14 ? 7 : profile.streak < 30 ? 14 : 30;
+                    const pct = Math.min(100, ((profile.streak - prev) / (next - prev)) * 100);
+                    return (
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-1.5 bg-white/30 rounded-full overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 1, ease: 'easeOut', delay: 0.2 }}
+                            className="h-full bg-white rounded-full"
+                          />
+                        </div>
+                        <span className="text-white/80 text-[10px] font-bold whitespace-nowrap">{next}🔥</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+                {/* Graças */}
+                <div className="flex flex-col items-center bg-white/25 rounded-xl px-2.5 py-1.5 gap-0.5 shrink-0">
+                  <span className="text-base leading-none">🕊️</span>
+                  <span className="text-white font-black text-xs leading-none">{profile.streakFreezes ?? 0}</span>
+                  <span className="text-white/70 text-[8px] font-bold uppercase leading-none">graças</span>
+                </div>
               </div>
             </div>
             {showFreezeUsed && (
               <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="text-center text-xs text-orange-600 font-bold mt-1">
+                className="text-center text-xs text-orange-600 font-bold mt-1.5">
                 🕊️ Graça do Dia usada! Seu streak foi protegido.
               </motion.p>
             )}
-          </div>
+          </motion.div>
         )}
 
         {/* ── Desafio Relâmpago ⚡ (48h, 1x por semana) ──────── */}
@@ -549,32 +577,58 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
         {(() => {
           const missionDone = profile.lastDailyMissionDate === TODAY_STR;
           return (
-            <div className="max-w-xl mx-auto mb-4">
-              <div className={`rounded-2xl p-4 border transition-all ${missionDone ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-stone-200 shadow-sm'}`}>
-                <div className="flex items-start gap-3">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${missionDone ? 'bg-emerald-100' : 'bg-amber-100'}`}>
-                    {missionDone ? <CheckCircle2 size={18} className="text-emerald-600" /> : <Star size={18} className="text-amber-600" />}
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 }}
+              className="max-w-xl mx-auto mb-4"
+            >
+              <div className={`rounded-2xl border-2 transition-all overflow-hidden ${
+                missionDone
+                  ? 'bg-emerald-50 border-emerald-200'
+                  : 'bg-white border-stone-200 shadow-sm hover:border-amber-200 hover:shadow-md'
+              }`}>
+                {/* Top bar colorida */}
+                <div className={`h-1.5 w-full ${missionDone ? 'bg-emerald-400' : 'bg-gradient-to-r from-amber-400 to-yellow-400'}`} />
+                <div className="p-4 flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl ${
+                    missionDone ? 'bg-emerald-100' : 'bg-amber-50 border border-amber-100'
+                  }`}>
+                    {missionDone ? '✅' : '⭐'}
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <p className={`text-[10px] font-bold uppercase tracking-widest ${missionDone ? 'text-emerald-600' : 'text-amber-600'}`}>
-                        Missão do Dia {profile.dailyMissionStreak > 1 ? `· ${profile.dailyMissionStreak} dias 🔥` : ''}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-0.5 gap-2">
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${missionDone ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        Missão do Dia
+                        {profile.dailyMissionStreak > 1 && (
+                          <span className="ml-1.5 text-orange-500">· {profile.dailyMissionStreak} 🔥</span>
+                        )}
                       </p>
-                      {!missionDone && <span className="text-[10px] text-stone-400 font-medium">+25 pts</span>}
+                      {!missionDone && (
+                        <span className="text-[10px] font-black text-amber-500 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full shrink-0">
+                          +25 XP
+                        </span>
+                      )}
                     </div>
-                    <p className={`text-sm font-medium leading-snug ${missionDone ? 'text-emerald-700 line-through opacity-60' : 'text-stone-900'}`}>
+                    <p className={`text-sm font-semibold leading-snug ${
+                      missionDone ? 'text-emerald-700 line-through opacity-60' : 'text-stone-800'
+                    }`}>
                       {todayMission.text}
                     </p>
                     {!missionDone && (
-                      <div className="flex items-center gap-2 mt-2.5">
+                      <div className="flex items-center gap-2 mt-3">
                         {todayMission.bookId && (
-                          <button onClick={() => onSelectBook(todayMission.bookId!)}
-                            className="text-xs text-amber-700 font-bold bg-amber-50 border border-amber-200 px-3 py-1 rounded-full active:scale-95 transition-all">
-                            Abrir livro →
+                          <button
+                            onClick={() => onSelectBook(todayMission.bookId!)}
+                            className="text-xs text-amber-700 font-bold bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-full active:scale-95 transition-all flex items-center gap-1"
+                          >
+                            Abrir livro <ArrowRight size={11} />
                           </button>
                         )}
-                        <button onClick={() => completeDailyMission(TODAY_STR)}
-                          className="text-xs text-stone-700 font-bold bg-stone-100 hover:bg-stone-200 border border-stone-200 px-3 py-1 rounded-full active:scale-95 transition-all">
+                        <button
+                          onClick={() => completeDailyMission(TODAY_STR)}
+                          className="text-xs text-white font-bold bg-stone-800 hover:bg-stone-700 px-3 py-1.5 rounded-full active:scale-95 transition-all"
+                        >
                           Concluí ✓
                         </button>
                       </div>
@@ -582,7 +636,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           );
         })()}
 
@@ -715,8 +769,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           const inProgressBook = BIBLE_BOOKS.find(b => b.id === inProgressBookId);
           if (!inProgressBook) return null;
 
-          // Personaliza o rótulo pelo objetivo do onboarding
-          let continueLabel = 'Continue estudando';
+          let continueLabel = 'Continue de onde parou';
           try {
             const op = JSON.parse(localStorage.getItem('onboarding_profile') || '{}');
             if (op.goal === 'prayer') continueLabel = 'Ore com a Palavra hoje';
@@ -726,72 +779,103 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           } catch { /* ignora */ }
 
           return (
-            <div className="max-w-xl mx-auto mb-6">
-              <button 
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.08 }}
+              className="max-w-xl mx-auto mb-5"
+            >
+              <button
                 onClick={() => onSelectBook(inProgressBook.id)}
-                className="w-full bg-[#fdf8ed] border border-amber-200/60 rounded-2xl p-4 flex items-center justify-between shadow-sm hover:shadow-md transition-all group text-left"
+                className="w-full group relative overflow-hidden bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 hover:border-amber-300 rounded-2xl p-4 flex items-center gap-4 shadow-sm hover:shadow-md transition-all text-left active:scale-[0.99]"
               >
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${GROUP_COLORS[inProgressBook.group] || 'bg-stone-100'}`}>
-                    <BookOpen size={20} className="opacity-70" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-0.5">{continueLabel}</p>
-                    <h4 className="font-serif font-bold text-stone-900 text-lg leading-tight group-hover:text-amber-700 transition-colors">{inProgressBook.name}</h4>
-                  </div>
+                {/* Decoração */}
+                <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-amber-100/50 to-transparent pointer-events-none" />
+                <div className={`w-13 h-13 w-12 h-12 rounded-xl flex items-center justify-center shrink-0 text-2xl font-bold shadow-sm ${GROUP_COLORS[inProgressBook.group] || 'bg-stone-100'}`}>
+                  <BookOpen size={22} className="opacity-60" />
                 </div>
-                <div className="flex items-center gap-2 text-sm font-bold text-amber-600 bg-amber-100/50 px-3 py-1.5 rounded-lg group-hover:bg-amber-100 transition-colors shrink-0">
-                  <span className="hidden sm:inline">Continuar</span> <ArrowRight size={16} />
+                <div className="flex-1 min-w-0 relative z-10">
+                  <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-0.5">{continueLabel}</p>
+                  <h4 className="font-serif font-bold text-stone-900 text-lg leading-tight group-hover:text-amber-700 transition-colors truncate">{inProgressBook.name}</h4>
+                  <p className="text-xs text-stone-400 mt-0.5">{inProgressBook.chapters} capítulos</p>
+                </div>
+                <div className="relative z-10 shrink-0">
+                  <div className="bg-stone-900 group-hover:bg-amber-500 transition-colors text-white font-black text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm">
+                    Ir <ArrowRight size={14} />
+                  </div>
                 </div>
               </button>
-            </div>
+            </motion.div>
           );
         })()}
 
-        {/* Daily Verse Card — some ao marcar como lido */}
+        {/* Daily Verse Card — mais visual */}
         {!dailyVerseRead && (() => {
           return (
-            <div className="max-w-xl mx-auto mb-4">
-              <div className="bg-stone-900 rounded-xl p-3 shadow-sm relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-2 opacity-5"><Sun size={60} /></div>
-                <div className="relative z-10 flex items-center gap-2.5">
-                  <Sun size={16} className="text-amber-400 shrink-0" />
-                  <p className="flex-1 text-sm font-serif italic text-stone-100 leading-snug">
-                    "{todayVerse.text}"
-                    <span className="not-italic font-bold text-amber-400 ml-1.5 text-[11px]">{todayVerse.ref}</span>
-                  </p>
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="max-w-xl mx-auto mb-4"
+            >
+              <div className="relative overflow-hidden rounded-2xl bg-stone-900 shadow-lg">
+                {/* Orb decorativo */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/10 rounded-full translate-x-8 -translate-y-8 pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-20 h-20 bg-amber-400/5 rounded-full -translate-x-4 translate-y-4 pointer-events-none" />
+                <div className="relative z-10 p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-400/20 rounded-xl flex items-center justify-center shrink-0">
+                    <Sun size={18} className="text-amber-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-amber-400 text-[9px] font-black uppercase tracking-widest mb-1">Versículo do Dia</p>
+                    <p className="text-stone-100 text-sm font-serif italic leading-snug">
+                      "{todayVerse.text}"
+                    </p>
+                    <p className="text-amber-400 text-[11px] font-bold mt-1">{todayVerse.ref}</p>
+                  </div>
                   <button
                     onClick={handleReadDailyVerse}
-                    className="px-3 py-1.5 rounded-full font-bold text-xs bg-amber-400 hover:bg-amber-300 text-stone-900 shadow-sm active:scale-95 shrink-0 transition-all"
+                    className="shrink-0 bg-amber-400 hover:bg-amber-300 active:scale-95 text-stone-900 font-black text-xs px-3 py-2 rounded-xl shadow-sm transition-all"
                   >
-                    +15 pts
+                    +15 XP
                   </button>
                 </div>
               </div>
-            </div>
+            </motion.div>
           );
         })()}
 
-        {/* Global Progress Bar */}
+        {/* Global Progress Bar — mais impactante */}
         {profile.completedBooks.length > 0 && (
-          <div className="max-w-xl mx-auto mb-4">
-            <div className="flex justify-between items-center mb-1.5 px-0.5">
-              <span className="text-xs font-medium text-stone-500">
-                <strong className="text-stone-800">{profile.completedBooks.length}</strong> de 73 livros estudados
-              </span>
-              <span className="text-xs font-bold text-amber-600">
-                {Math.round((profile.completedBooks.length / 73) * 100)}%
-              </span>
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="max-w-xl mx-auto mb-4"
+          >
+            <div className="bg-white border border-stone-100 rounded-2xl p-3.5 shadow-sm">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-stone-700">
+                  📚 Jornada pelos 73 livros
+                </span>
+                <span className="text-xs font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                  {profile.completedBooks.length}/73 · {Math.round((profile.completedBooks.length / 73) * 100)}%
+                </span>
+              </div>
+              <div className="w-full h-3 bg-stone-100 rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(profile.completedBooks.length / 73) * 100}%` }}
+                  transition={{ duration: 1.2, ease: 'easeOut', delay: 0.2 }}
+                  className="h-full rounded-full relative"
+                  style={{ background: 'linear-gradient(90deg, #f59e0b, #fbbf24, #fcd34d)' }}
+                >
+                  {/* Brilho animado */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse rounded-full" />
+                </motion.div>
+              </div>
             </div>
-            <div className="w-full h-2 bg-stone-200 rounded-full overflow-hidden">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${(profile.completedBooks.length / 73) * 100}%` }}
-                transition={{ duration: 1, ease: "easeOut" }}
-                className="h-full bg-amber-400 rounded-full"
-              />
-            </div>
-          </div>
+          </motion.div>
         )}
           <>
             {/* Search Bar */}

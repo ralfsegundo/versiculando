@@ -57,10 +57,15 @@ export default function TrailDetail({ trail, onBack }: TrailDetailProps) {
     async function load() {
       setLoading(true);
       try {
-        const [fetchedDays, session] = await Promise.all([
-          fetchTrailDays(trail.id),
-          supabase.auth.getSession(),
-        ]);
+        // Timeout de segurança para o load inteiro
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('load timeout')), 10000)
+        );
+
+        const [fetchedDays, session] = await Promise.race([
+          Promise.all([fetchTrailDays(trail.id), supabase.auth.getSession()]),
+          timeout,
+        ]) as [TrailDay[], Awaited<ReturnType<typeof supabase.auth.getSession>>];
 
         const daysToUse = fetchedDays.length > 0
           ? fetchedDays

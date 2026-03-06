@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Heart, Brain, Users, Zap, Wind, Moon, ArrowRight, Lock, CheckCircle2, Clock, Flame, ChevronRight, MapPin, BookOpen, Compass, Star, Trophy, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchTrails, fetchUserProgress, getTrailCompletedDays, Trail, UserTrailProgress } from '../services/trails';
-import { supabase } from '../lib/supabase';
 import { useGamification } from '../services/gamification';
 import { BIBLE_BOOKS, BEGINNER_PATH } from '../constants';
 import confetti from 'canvas-confetti';
@@ -35,44 +34,28 @@ const FALLBACK_TRAILS: Trail[] = [
 const DISCIPLE_PATH_LENGTH = 6;
 
 export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
-  const { profile, addPoints, showFloatingPoints } = useGamification();
+  const { profile, addPoints, showFloatingPoints, userId } = useGamification();
   const [trails, setTrails] = useState<Trail[]>([]);
   const [progress, setProgress] = useState<UserTrailProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string>('todos');
   const [activeTab, setActiveTab] = useState<'caminho' | 'tematicas'>('caminho');
-  const [userId, setUserId] = useState<string>('anonymous');
-  const [showDeepJourney, setShowDeepJourney] = useState(false);
+  const [showDeepJourney, setShowDeepJourney] = useState(
+    () => userId ? localStorage.getItem(`${userId}_sage_journey_unlocked`) === 'true' : false
+  );
   const [completedStepModal, setCompletedStepModal] = useState<number | null>(null);
   const [showGraduationModal, setShowGraduationModal] = useState(false);
-
-  useEffect(() => {
-    // Obtém sessão uma vez via cache do supabase (não faz nova chamada de rede)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUserId(session.user.id);
-        setShowDeepJourney(localStorage.getItem(`${session.user.id}_sage_journey_unlocked`) === 'true');
-      }
-    }).catch(() => {});
-  }, []);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        // Busca trilhas e sessão em paralelo, com timeout de segurança
-        const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('load timeout')), 10000)
-        );
-        const [fetchedTrails, sessionResult] = await Promise.race([
-          Promise.all([fetchTrails(), supabase.auth.getSession()]),
-          timeout,
-        ]) as [typeof FALLBACK_TRAILS, Awaited<ReturnType<typeof supabase.auth.getSession>>];
-
+        const fetchedTrails = await fetchTrails();
         const trailsToUse = fetchedTrails.length > 0 ? fetchedTrails : FALLBACK_TRAILS;
         setTrails(trailsToUse);
-        if (sessionResult.data.session?.user) {
-          const prog = await fetchUserProgress(sessionResult.data.session.user.id);
+        if (userId) {
+          setShowDeepJourney(localStorage.getItem(`${userId}_sage_journey_unlocked`) === 'true');
+          const prog = await fetchUserProgress(userId);
           setProgress(prog);
         }
       } catch {
@@ -82,7 +65,7 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
       }
     }
     load();
-  }, []);
+  }, [userId]);
 
   // Detect completed beginner path steps
   useEffect(() => {

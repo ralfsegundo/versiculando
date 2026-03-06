@@ -65,7 +65,7 @@ function BookDetailSkeleton() {
 }
 
 export default function BookDetail({ bookId, onBack }: BookDetailProps) {
-  const { addPoints, markBookCompleted, markBookVisited, markChapterRead, profile, addNote, userId } = useGamification();
+  const { addPoints, markBookCompleted, markBookVisited, markChapterRead, markAllChaptersRead, profile, addNote, userId } = useGamification();
   const book = BIBLE_BOOKS.find(b => b.id === bookId);
   const [data, setData] = useState<BookData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,7 +128,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
           setData(result);
           setLoading(false);
           if (!hasVisited.current) {
-            addPoints(10, `Visitou o livro ${book.name}`);
+            addPoints(10, `Visitou o livro ${book.name}`, 'freeExploration');
             hasVisited.current = true;
           }
         }
@@ -144,7 +144,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
     return () => {
       isMounted = false;
     };
-  }, [book, addPoints]);
+  }, [book]);
 
   if (!book) return <div>Livro não encontrado</div>;
 
@@ -204,7 +204,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
             <div>
               {activeTab === 'mindmap' && <VisualMindMap data={data.mindmap} book={book} theme={theme} onNavigateToChapter={handleNavigateToChapter} />}
               {activeTab === 'timeline' && <TimelineGrid timeline={data.timeline} bookName={book.name} colorClass={colorClass} />}
-              {activeTab === 'chapters' && <ChapterList chapters={data.chapters} colorClass={colorClass} onAnotar={handleAnotarCapitulo} bookId={book.id} readChapters={profile.readChapters?.[book.id] || []} onMarkChapterRead={(chapterNum) => markChapterRead(book.id, chapterNum, data.chapters.length)} onMarkAllChaptersRead={() => { data.chapters.forEach(ch => { const n = typeof ch.chapter === 'string' ? parseInt(ch.chapter) : ch.chapter as number; if (!(profile.readChapters?.[book.id] || []).includes(n)) markChapterRead(book.id, n, data.chapters.length); }); }} />}
+              {activeTab === 'chapters' && <ChapterList chapters={data.chapters} colorClass={colorClass} onAnotar={handleAnotarCapitulo} bookId={book.id} readChapters={profile.readChapters?.[book.id] || []} onMarkChapterRead={(chapterNum) => markChapterRead(book.id, chapterNum, data.chapters.length)} onMarkAllChaptersRead={() => { const nums = data.chapters.map(ch => typeof ch.chapter === 'string' ? parseInt(ch.chapter) : ch.chapter as number); markAllChaptersRead(book.id, nums); }} />}
               {activeTab === 'search' && <MainVersesGrid verses={data.mainVerses} bookName={book.name} colorClass={colorClass} />}
               {activeTab === 'notes' && <NotesSection bookId={book.id} bookName={book.name} colorClass={colorClass} initialContext={initialNoteContext} onClearContext={() => setInitialNoteContext(null)} onNavigateToChapter={handleNavigateToChapter} />}
             </div>
@@ -1224,7 +1224,7 @@ function ChapterCard({
                           : 'bg-stone-900 hover:bg-stone-700 disabled:bg-stone-200 disabled:text-stone-400 text-white'
                       }`}
                     >
-                      {saved ? <><Check size={14} /> Salvo!</> : <><Sparkles size={14} /> Salvar (+20 pts)</>}
+                      {saved ? <><Check size={14} /> Salvo!</> : <><Sparkles size={14} /> Salvar (+25 pts)</>}
                     </button>
                   </div>
                 </div>
@@ -1506,7 +1506,7 @@ function NotesSection({ bookId, bookName, colorClass, initialContext, onClearCon
             className="w-full sm:w-auto bg-stone-900 hover:bg-stone-800 disabled:bg-stone-300 text-white px-6 py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
           >
             <Sparkles size={18} />
-            Salvar Anotação (+20 pts)
+            Salvar Anotação (+25 pts)
           </button>
         </div>
       </div>

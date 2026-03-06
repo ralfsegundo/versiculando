@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { BIBLE_BOOKS, GROUP_COLORS } from '../constants';
-import { Book, Library, Search, BookOpen, Sun, CheckCircle2, ArrowRight, Info, MapPin, Lock, Trophy, Download, X, Navigation } from 'lucide-react';
+import { Book, Library, Search, BookOpen, Sun, CheckCircle2, ArrowRight, Info, MapPin, Lock, Trophy, Download, X, Navigation, Zap, Star, Shield, Cross } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGamification } from '../services/gamification';
 
@@ -56,7 +56,123 @@ function usePWAInstall() {
 
 export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }: HomeProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const { profile, accessDailyVerse, showFloatingPoints, userId } = useGamification();
+  const { profile, accessDailyVerse, showFloatingPoints, userId, useStreakFreeze, completeDailyMission, recordSaintEncounter, completeFlashChallenge } = useGamification();
+
+  // ── Dados do dia (determinísticos por dia do ano) ──────────
+  const DAY_OF_YEAR = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+  const TODAY_STR = new Date().toISOString().split('T')[0];
+
+  // 1. Versículo do dia rotativo
+  const DAILY_VERSES = [
+    { text: 'O Senhor é o meu pastor; nada me faltará.', ref: 'Sl 23,1' },
+    { text: 'Tudo posso naquele que me fortalece.', ref: 'Fl 4,13' },
+    { text: 'Não temas, porque eu sou contigo.', ref: 'Is 41,10' },
+    { text: 'O amor é paciente, o amor é bondoso.', ref: '1Cor 13,4' },
+    { text: 'Buscai primeiro o Reino de Deus e a sua justiça.', ref: 'Mt 6,33' },
+    { text: 'Sede fortes e corajosos. Não temais.', ref: 'Dt 31,6' },
+    { text: 'Confia no Senhor de todo o teu coração.', ref: 'Pv 3,5' },
+    { text: 'No começo, Deus criou os céus e a terra.', ref: 'Gn 1,1' },
+    { text: 'Amarás o teu próximo como a ti mesmo.', ref: 'Mt 22,39' },
+    { text: 'Deus é amor.', ref: '1Jo 4,8' },
+    { text: 'Alegrai-vos sempre no Senhor.', ref: 'Fl 4,4' },
+    { text: 'A fé sem obras é morta.', ref: 'Tg 2,26' },
+    { text: 'Eu sou o caminho, a verdade e a vida.', ref: 'Jo 14,6' },
+    { text: 'Sede a luz do mundo.', ref: 'Mt 5,14' },
+    { text: 'A misericórdia do Senhor dura para sempre.', ref: 'Sl 136,1' },
+    { text: 'Vós sois o sal da terra.', ref: 'Mt 5,13' },
+    { text: 'Nada vos separe do amor de Deus.', ref: 'Rm 8,39' },
+    { text: 'Orai sem cessar.', ref: '1Ts 5,17' },
+    { text: 'A sabedoria começa pelo temor do Senhor.', ref: 'Pv 9,10' },
+    { text: 'Sede misericordiosos como vosso Pai é misericordioso.', ref: 'Lc 6,36' },
+    { text: 'Não vos conformeis com este século.', ref: 'Rm 12,2' },
+    { text: 'Com Deus nada é impossível.', ref: 'Lc 1,37' },
+    { text: 'Bem-aventurados os puros de coração.', ref: 'Mt 5,8' },
+    { text: 'O Senhor é minha luz e minha salvação.', ref: 'Sl 27,1' },
+    { text: 'Sede santos, pois eu sou santo.', ref: '1Pd 1,16' },
+    { text: 'Onde está o teu tesouro, lá está o teu coração.', ref: 'Mt 6,21' },
+    { text: 'Jesus Cristo é o mesmo, ontem, hoje e sempre.', ref: 'Hb 13,8' },
+    { text: 'O coração do homem planeja o seu caminho, mas o Senhor dirige os seus passos.', ref: 'Pv 16,9' },
+    { text: 'Derramai diante dele o vosso coração.', ref: 'Sl 62,9' },
+    { text: 'Posso tudo naquele que me fortalece.', ref: 'Fl 4,13' },
+    { text: 'Sede fortes no Senhor e na força do seu poder.', ref: 'Ef 6,10' },
+  ];
+  const todayVerse = DAILY_VERSES[DAY_OF_YEAR % DAILY_VERSES.length];
+
+  // 2. Santo do dia
+  const SAINTS = [
+    { key: 'joao_batista', name: 'São João Batista', date: '24/06', phrase: 'É preciso que Ele cresça e eu diminua.', emoji: '🌊' },
+    { key: 'pedro_paulo', name: 'São Pedro e São Paulo', date: '29/06', phrase: 'Tu és o Cristo, o Filho do Deus vivo.', emoji: '⚓' },
+    { key: 'maria', name: 'Nossa Senhora', date: '15/08', phrase: 'Faça-se em mim segundo a tua palavra.', emoji: '🌹' },
+    { key: 'francisco', name: 'São Francisco de Assis', date: '04/10', phrase: 'Começa por fazer o que é necessário.', emoji: '🕊️' },
+    { key: 'teresinha', name: 'Santa Teresinha', date: '01/10', phrase: 'O amor não é sentido, mas demonstrado.', emoji: '🌸' },
+    { key: 'agostinho', name: 'Santo Agostinho', date: '28/08', phrase: 'Nosso coração é inquieto enquanto não repousa em Ti.', emoji: '📚' },
+    { key: 'tomaz_aquino', name: 'São Tomás de Aquino', date: '28/01', phrase: 'A fé e a razão não se contradizem.', emoji: '🧠' },
+    { key: 'domingos', name: 'São Domingos', date: '08/08', phrase: 'A fé sem obras é morta.', emoji: '📿' },
+    { key: 'jose', name: 'São José', date: '19/03', phrase: 'Homem justo, que ouve em silêncio e age com fé.', emoji: '🔨' },
+    { key: 'paulo', name: 'São Paulo', date: '25/01', phrase: 'Tudo posso naquele que me fortalece.', emoji: '✉️' },
+    { key: 'joao_evangelista', name: 'São João Evangelista', date: '27/12', phrase: 'Deus é amor; quem permanece no amor permanece em Deus.', emoji: '❤️' },
+    { key: 'tiago', name: 'São Tiago', date: '25/07', phrase: 'A fé sem obras é morta.', emoji: '🛤️' },
+    { key: 'bartolomeu', name: 'São Bartolomeu', date: '24/08', phrase: 'Pode vir algo de bom de Nazaré?', emoji: '🌿' },
+    { key: 'lucas', name: 'São Lucas', date: '18/10', phrase: 'Ele sarou a todos.', emoji: '🏥' },
+    { key: 'marcos', name: 'São Marcos', date: '25/04', phrase: 'Convertei-vos e crede no Evangelho.', emoji: '🦁' },
+    { key: 'mateus', name: 'São Mateus', date: '21/09', phrase: 'Sede misericordiosos como vosso Pai.', emoji: '💰' },
+    { key: 'andre', name: 'Santo André', date: '30/11', phrase: 'Encontrei o Messias.', emoji: '🎣' },
+    { key: 'filipe', name: 'São Filipe', date: '03/05', phrase: 'Senhor, mostra-nos o Pai.', emoji: '🌟' },
+    { key: 'atanasio', name: 'Santo Atanásio', date: '02/05', phrase: 'O Verbo de Deus se fez homem para que nós nos tornemos Deus.', emoji: '⛪' },
+    { key: 'monica', name: 'Santa Mônica', date: '27/08', phrase: 'Chorei tanto por ti, filho meu.', emoji: '💧' },
+    { key: 'cecilia', name: 'Santa Cecília', date: '22/11', phrase: 'Cantai ao Senhor um cântico novo.', emoji: '🎵' },
+    { key: 'catarina', name: 'Santa Catarina de Sena', date: '29/04', phrase: 'Sê quem és e serás grande.', emoji: '🌺' },
+    { key: 'inacio', name: 'Santo Inácio de Loyola', date: '31/07', phrase: 'Tudo para a maior glória de Deus.', emoji: '⚔️' },
+    { key: 'teresa_avila', name: 'Santa Teresa de Ávila', date: '15/10', phrase: 'Deus basta.', emoji: '🏰' },
+    { key: 'bento', name: 'São Bento', date: '11/07', phrase: 'Ora et Labora — Ora e Trabalha.', emoji: '📖' },
+    { key: 'cristovao', name: 'São Cristóvão', date: '25/07', phrase: 'Carreguei o mundo inteiro em meus ombros.', emoji: '🌍' },
+    { key: 'valentim', name: 'São Valentim', date: '14/02', phrase: 'O amor é o maior presente.', emoji: '💝' },
+    { key: 'patrício', name: 'São Patrício', date: '17/03', phrase: 'Cristo à minha frente, Cristo atrás de mim.', emoji: '☘️' },
+    { key: 'nicolau', name: 'São Nicolau', date: '06/12', phrase: 'Dar sem esperar receber.', emoji: '🎁' },
+    { key: 'sebastiao', name: 'São Sebastião', date: '20/01', phrase: 'A fé é o escudo do cristão.', emoji: '🎯' },
+    { key: 'antonio', name: 'Santo Antônio', date: '13/06', phrase: 'Se procuras milagres, olha para a Cruz.', emoji: '🔑' },
+  ];
+  const todaySaint = SAINTS[DAY_OF_YEAR % SAINTS.length];
+
+  // 3. Missão diária
+  const DAILY_MISSIONS = [
+    { id: 'leia_1cap', text: 'Leia 1 capítulo da Bíblia e medite por 1 minuto', bookId: null },
+    { id: 'favorita_versiculo', text: 'Favorite um versículo que te tocou hoje', bookId: null },
+    { id: 'anota_reflexao', text: 'Escreva uma anotação de pelo menos 2 linhas', bookId: null },
+    { id: 'leia_evangelhos', text: 'Leia qualquer capítulo dos Evangelhos', bookId: 'mat' },
+    { id: 'leia_salmos', text: 'Leia qualquer Salmo em voz alta', bookId: 'psa' },
+    { id: 'leia_provérbios', text: 'Leia um capítulo de Provérbios', bookId: 'pro' },
+    { id: 'leia_jo', text: 'Leia um capítulo do Evangelho de João', bookId: 'jhn' },
+    { id: 'versículo_memoria', text: 'Decore o versículo do dia de cor', bookId: null },
+    { id: 'compartilha', text: 'Compartilhe o app com um amigo', bookId: null },
+    { id: 'leia_atos', text: 'Leia um capítulo dos Atos dos Apóstolos', bookId: 'act' },
+    { id: 'leia_romanos', text: 'Leia um capítulo de Romanos', bookId: 'rom' },
+    { id: 'reflexao_santo', text: 'Leia sobre o santo do dia e aplique sua frase à sua vida', bookId: null },
+    { id: 'leia_genesis', text: 'Leia um capítulo do Gênesis', bookId: 'gen' },
+    { id: 'leia_isaias', text: 'Leia um capítulo de Isaías', bookId: 'isa' },
+  ];
+  const todayMission = DAILY_MISSIONS[DAY_OF_YEAR % DAILY_MISSIONS.length];
+
+  // 4. Desafio relâmpago (aparece por 48h a cada semana)
+  const FLASH_CHALLENGES = [
+    { id: 'salmos_subida', text: 'Leia os Salmos de Subida (120-134) antes de domingo', bookId: 'psa', hours: 48 },
+    { id: 'cartas_joao', text: 'Leia as 3 cartas de João hoje', bookId: '1jn', hours: 24 },
+    { id: 'filipenses', text: 'Leia Filipenses inteiro (4 cap.) em 48h', bookId: 'php', hours: 48 },
+    { id: 'jonas', text: 'Leia Jonas completo (só 4 capítulos!)', bookId: 'jon', hours: 24 },
+    { id: 'rute', text: 'Leia o livro de Rute (4 capítulos) hoje', bookId: 'rut', hours: 24 },
+    { id: 'efesios', text: 'Leia Efésios inteiro antes de amanhã', bookId: 'eph', hours: 36 },
+    { id: 'discurso_montanha', text: 'Leia o Sermão da Montanha (Mt 5-7)', bookId: 'mat', hours: 24 },
+  ];
+  const weekOfYear = Math.floor(DAY_OF_YEAR / 7);
+  const flashChallenge = FLASH_CHALLENGES[weekOfYear % FLASH_CHALLENGES.length];
+  const flashDayOfWeek = DAY_OF_YEAR % 7; // Aparece nos dias 0-1 da semana (48h)
+  const showFlashChallenge = flashDayOfWeek < 2;
+  const flashDismissed = localStorage.getItem(`flash_dismissed_${weekOfYear}`) === 'true';
+  const flashCompleted = localStorage.getItem(`flash_done_${weekOfYear}`) === 'true';
+  const [flashVisible, setFlashVisible] = useState(showFlashChallenge && !flashDismissed);
+
+  // Streak freeze state
+  const [showFreezeUsed, setShowFreezeUsed] = useState(false);
   const [dailyVerseRead, setDailyVerseRead] = useState<boolean>(() => {
     // Only "read" if it was already read TODAY
     const lastRead = localStorage.getItem('daily_verse_last_read');
@@ -366,15 +482,209 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                   {profile.streak} dias seguidos!
                 </p>
                 <p className="text-orange-100 text-xs">
-                  {profile.streak < 7 ? `Mais ${7 - profile.streak} dia${7 - profile.streak > 1 ? 's' : ''} para a conquista Fogo do Espírito ⚡` :
-                   profile.streak < 30 ? `Incrível! Continue para ${30 - profile.streak} dias ainda mais!` :
+                  {profile.streak < 7 ? `Mais ${7 - profile.streak} dia${7 - profile.streak > 1 ? 's' : ''} para Fogo do Espírito ⚡` :
+                   profile.streak < 30 ? `Rumo a 30 dias! Faltam ${30 - profile.streak}.` :
                    'Você é uma inspiração! 30+ dias seguidos! 🏆'}
                 </p>
               </div>
-              <div className="text-white font-black text-2xl">{profile.streak}</div>
+              {/* Graças disponíveis */}
+              <div className="flex items-center gap-1 bg-white/20 rounded-lg px-2 py-1">
+                <Shield size={12} className="text-white" />
+                <span className="text-white font-bold text-xs">{profile.streakFreezes ?? 0}</span>
+              </div>
             </div>
+            {showFreezeUsed && (
+              <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                className="text-center text-xs text-orange-600 font-bold mt-1">
+                🕊️ Graça do Dia usada! Seu streak foi protegido.
+              </motion.p>
+            )}
           </div>
         )}
+
+        {/* ── Desafio Relâmpago ⚡ (48h, 1x por semana) ──────── */}
+        <AnimatePresence>
+          {flashVisible && !flashCompleted && (
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="max-w-xl mx-auto mb-4">
+              <div className="bg-gradient-to-r from-violet-600 to-purple-700 rounded-2xl p-4 shadow-lg relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+                <button onClick={() => { localStorage.setItem(`flash_dismissed_${weekOfYear}`, 'true'); setFlashVisible(false); }}
+                  className="absolute top-3 right-3 text-white/50 hover:text-white transition-colors z-10">
+                  <X size={16} />
+                </button>
+                <div className="flex items-start gap-3 relative z-10">
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+                    <Zap size={20} className="text-yellow-300" />
+                  </div>
+                  <div className="flex-1 pr-4">
+                    <p className="text-yellow-300 text-[10px] font-bold uppercase tracking-widest mb-0.5">⚡ Desafio Relâmpago — {flashChallenge.hours}h</p>
+                    <p className="text-white font-bold text-sm leading-snug mb-3">{flashChallenge.text}</p>
+                    <div className="flex items-center gap-2">
+                      {flashChallenge.bookId && (
+                        <button onClick={() => onSelectBook(flashChallenge.bookId!)}
+                          className="bg-white text-purple-700 font-bold text-xs px-4 py-1.5 rounded-full active:scale-95 transition-all">
+                          Ir para o livro →
+                        </button>
+                      )}
+                      <button onClick={() => {
+                        localStorage.setItem(`flash_done_${weekOfYear}`, 'true');
+                        completeFlashChallenge();
+                        setFlashVisible(false);
+                      }} className="bg-yellow-400 text-stone-900 font-bold text-xs px-4 py-1.5 rounded-full active:scale-95 transition-all">
+                        Concluí! +200pts
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Missão do Dia 📋 ──────────────────────────────── */}
+        {(() => {
+          const missionDone = profile.lastDailyMissionDate === TODAY_STR;
+          return (
+            <div className="max-w-xl mx-auto mb-4">
+              <div className={`rounded-2xl p-4 border transition-all ${missionDone ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-stone-200 shadow-sm'}`}>
+                <div className="flex items-start gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${missionDone ? 'bg-emerald-100' : 'bg-amber-100'}`}>
+                    {missionDone ? <CheckCircle2 size={18} className="text-emerald-600" /> : <Star size={18} className="text-amber-600" />}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <p className={`text-[10px] font-bold uppercase tracking-widest ${missionDone ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        Missão do Dia {profile.dailyMissionStreak > 1 ? `· ${profile.dailyMissionStreak} dias 🔥` : ''}
+                      </p>
+                      {!missionDone && <span className="text-[10px] text-stone-400 font-medium">+25 pts</span>}
+                    </div>
+                    <p className={`text-sm font-medium leading-snug ${missionDone ? 'text-emerald-700 line-through opacity-60' : 'text-stone-900'}`}>
+                      {todayMission.text}
+                    </p>
+                    {!missionDone && (
+                      <div className="flex items-center gap-2 mt-2.5">
+                        {todayMission.bookId && (
+                          <button onClick={() => onSelectBook(todayMission.bookId!)}
+                            className="text-xs text-amber-700 font-bold bg-amber-50 border border-amber-200 px-3 py-1 rounded-full active:scale-95 transition-all">
+                            Abrir livro →
+                          </button>
+                        )}
+                        <button onClick={() => completeDailyMission(TODAY_STR)}
+                          className="text-xs text-stone-700 font-bold bg-stone-100 hover:bg-stone-200 border border-stone-200 px-3 py-1 rounded-full active:scale-95 transition-all">
+                          Concluí ✓
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Lectio Divina do Dia 📖 ───────────────────────── */}
+        {(() => {
+          const LECTIO = [
+            { ref: 'Mt 5,1-12', title: 'Bem-aventuranças', text: 'Bem-aventurados os pobres de espírito, pois deles é o Reino dos Céus...', bookId: 'mat', reflection: 'O que significa ser pobre de espírito no meu dia a dia?' },
+            { ref: 'Jo 15,1-8', title: 'A Videira e os Ramos', text: 'Eu sou a videira verdadeira e meu Pai é o agricultor...', bookId: 'jhn', reflection: 'Como permaneço unido a Cristo nesta semana?' },
+            { ref: 'Sl 23', title: 'O Senhor é meu Pastor', text: 'O Senhor é o meu pastor; nada me faltará. Em verdes pastagens me faz repousar...', bookId: 'psa', reflection: 'Em que área da minha vida preciso confiar mais no Senhor?' },
+            { ref: 'Rm 8,28-39', title: 'Nada nos Separa', text: 'Sabemos que tudo concorre para o bem daqueles que amam a Deus...', bookId: 'rom', reflection: 'O que me impede de crer que Deus está no controle?' },
+            { ref: 'Lc 15,11-32', title: 'O Filho Pródigo', text: 'Um homem tinha dois filhos. O mais novo disse ao pai: Pai, dá-me a parte da herança...', bookId: 'luk', reflection: 'Qual filho me representa mais hoje — o que voltou ou o que ficou?' },
+            { ref: '1Cor 13', title: 'Hino ao Amor', text: 'Ainda que eu falasse as línguas dos homens e dos anjos, se não tiver amor...', bookId: '1co', reflection: 'Em quais relações preciso praticar mais o amor descrito por Paulo?' },
+            { ref: 'Is 40,28-31', title: 'Os que esperam no Senhor', text: 'Não sabes? Não ouviste? O Senhor é o Deus eterno...', bookId: 'isa', reflection: 'Onde estou cansado e preciso de renovação divina?' },
+            { ref: 'Ef 6,10-18', title: 'A Armadura de Deus', text: 'Revesti-vos de toda a armadura de Deus para poderdes resistir...', bookId: 'eph', reflection: 'Qual parte da armadura espiritual mais negligencio?' },
+            { ref: 'Fl 4,4-9', title: 'A Paz de Deus', text: 'Alegrai-vos sempre no Senhor! Repito: alegrai-vos!...', bookId: 'php', reflection: 'O que me rouba a paz e como posso entregar isso a Deus?' },
+            { ref: 'Jo 3,1-17', title: 'Nascer de Novo', text: 'Havia um fariseu chamado Nicodemos, membro do Sinédrio...', bookId: 'jhn', reflection: 'O que precisa renascer em mim?' },
+            { ref: 'Tg 1,2-8', title: 'Fé na Tribulação', text: 'Meus irmãos, considerai uma grande alegria quando sofreis várias provações...', bookId: 'jas', reflection: 'Qual provação atual pode estar me tornando mais sábio?' },
+            { ref: 'Hb 11,1-12', title: 'Os Heróis da Fé', text: 'A fé é a garantia das coisas que se esperam e a prova das que não se veem...', bookId: 'heb', reflection: 'Em que área preciso agir mais pela fé do que pelo que vejo?' },
+            { ref: 'Ap 21,1-7', title: 'A Nova Criação', text: 'Vi um novo céu e uma nova terra, pois o primeiro céu e a primeira terra tinham passado...', bookId: 'rev', reflection: 'Como esta esperança muda a forma como enfrento as dificuldades?' },
+            { ref: 'Mc 1,14-20', title: 'Seguir a Jesus', text: 'Depois que João foi preso, Jesus foi para a Galileia pregar o Evangelho de Deus...', bookId: 'mrk', reflection: 'O que precisaria largar para seguir Jesus mais de perto?' },
+          ];
+          const lectio = LECTIO[DAY_OF_YEAR % LECTIO.length];
+          const lectioKey = `lectio_done_${TODAY_STR}`;
+          const lectioDone = localStorage.getItem(lectioKey) === 'true';
+
+          return (
+            <div className="max-w-xl mx-auto mb-4">
+              <div className="bg-stone-50 border border-stone-200 rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-gradient-to-r from-stone-800 to-stone-900 px-4 py-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <BookOpen size={14} className="text-amber-400" />
+                    <span className="text-amber-400 text-[10px] font-bold uppercase tracking-widest">Lectio Divina · {lectio.ref}</span>
+                  </div>
+                  {lectioDone && <span className="text-emerald-400 text-[10px] font-bold">✓ Lida hoje</span>}
+                </div>
+                <div className="p-4">
+                  <h4 className="font-serif font-bold text-stone-900 text-base mb-1">{lectio.title}</h4>
+                  <p className="text-stone-600 text-sm italic leading-relaxed mb-3">"{lectio.text}"</p>
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 mb-3">
+                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-0.5">Pergunta para meditação</p>
+                    <p className="text-sm text-stone-700 leading-snug">{lectio.reflection}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => onSelectBook(lectio.bookId)}
+                      className="flex-1 bg-stone-900 text-white font-bold text-xs py-2 rounded-xl active:scale-95 transition-all">
+                      Ler o trecho completo →
+                    </button>
+                    {!lectioDone && (
+                      <button onClick={() => {
+                        localStorage.setItem(lectioKey, 'true');
+                        // pequeno bônus
+                        window.dispatchEvent(new CustomEvent('lectio-done'));
+                      }}
+                        className="bg-stone-100 text-stone-700 font-bold text-xs py-2 px-3 rounded-xl border border-stone-200 active:scale-95 transition-all">
+                        Meditei ✓
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Santo do Dia ✨ ──────────────────────────────── */}
+        {(() => {
+          const saintKey = `saint_seen_${TODAY_STR}`;
+          const saintSeen = localStorage.getItem(saintKey) === 'true';
+          const [saintExpanded, setSaintExpanded] = useState(false);
+          return (
+            <div className="max-w-xl mx-auto mb-4">
+              <button onClick={() => {
+                setSaintExpanded(v => !v);
+                if (!saintSeen) {
+                  localStorage.setItem(saintKey, 'true');
+                  recordSaintEncounter(todaySaint.key);
+                }
+              }}
+                className="w-full bg-white border border-stone-200 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-all text-left">
+                <span className="text-2xl">{todaySaint.emoji}</span>
+                <div className="flex-1">
+                  <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Santo do Dia</p>
+                  <p className="font-serif font-bold text-stone-900 text-sm">{todaySaint.name}</p>
+                </div>
+                <span className={`text-stone-400 transition-transform ${saintExpanded ? 'rotate-180' : ''}`}>▾</span>
+              </button>
+              <AnimatePresence>
+                {saintExpanded && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden">
+                    <div className="bg-white border border-t-0 border-stone-200 rounded-b-2xl px-4 pb-4 pt-3">
+                      <p className="text-stone-500 text-xs mb-2">Festa: {todaySaint.date}</p>
+                      <blockquote className="border-l-4 border-amber-400 pl-3 italic text-stone-700 text-sm leading-relaxed">
+                        "{todaySaint.phrase}"
+                      </blockquote>
+                      {!saintSeen && (
+                        <p className="text-[10px] text-emerald-600 font-bold mt-2">✨ Novo santo encontrado! ({Object.keys(profile.ecoReactions || {}).length}/10 para conquista)</p>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })()}
 
         {/* Card "Por onde começar" — só para usuários sem nenhuma visita */}
         {(profile.visitedBooks?.length || 0) === 0 && profile.completedBooks.length === 0 && (

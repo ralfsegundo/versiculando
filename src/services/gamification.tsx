@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
 import { BEGINNER_PATH } from '../constants';
 import confetti from 'canvas-confetti';
 import { motion, AnimatePresence } from 'motion/react';
@@ -172,6 +172,7 @@ const getLocalBadges = (): Badge[] => {
 
 interface GamificationContextType {
   profile: UserProfile;
+  userId: string | null;
   badges: Badge[];
   weeklyChallenge: WeeklyChallenge;
   addPoints: (amount: number, reason: string, category?: 'freeExploration' | 'discipleTrail' | 'bonus') => void;
@@ -195,6 +196,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const [floatingPoints, setFloatingPoints] = useState<FloatingPoint[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  // Controla se o perfil foi carregado do Supabase — evita salvar de volta logo após carregar
+  const isLoadingFromSupabase = useRef(false);
+  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const WEEKLY_CHALLENGES: Omit<WeeklyChallenge, 'id' | 'progress' | 'deadline' | 'completed'>[] = [
     { title: 'Conclua 3 livros esta semana', description: 'Complete a leitura de qualquer 3 livros.', target: 3, rewardPoints: 100 },
@@ -245,6 +249,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         setUserId(session.user.id);
         const authEmail = session.user.email || '';
 
+        // Marca que estamos carregando do Supabase — evita o saveToSupabase disparar logo em seguida
+        isLoadingFromSupabase.current = true;
+
         // Load profile
         const { data: profileData } = await Promise.race([
           supabase.from('profiles').select('*').eq('id', session.user.id).single(),
@@ -294,8 +301,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             unlockedAt: b.unlocked_at
           })));
         }
+
+        // Aguarda o React processar os setState antes de liberar o save
+        setTimeout(() => { isLoadingFromSupabase.current = false; }, 500);
       } catch (e) {
         console.warn('[gamification] loadSupabaseData error:', e);
+        isLoadingFromSupabase.current = false;
       }
     };
     
@@ -312,15 +323,23 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     }
   }, [profile.email, profile.avatarId, profile.avatarUrl, profile.name, userId]);
 
-  // Save to local storage and Supabase whenever state changes
+  // Salva no Supabase com debounce de 2s — evita flood de requests
+  // e não salva enquanto estiver carregando dados do Supabase
   useEffect(() => {
     safeStorage.setItem('user_profile', JSON.stringify(profile));
     safeStorage.setItem('user_badges', JSON.stringify(badges));
     safeStorage.setItem('weekly_challenge', JSON.stringify(weeklyChallenge));
-    
-    const saveToSupabase = async () => {
-      const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-      if (!hasSupabase || !userId || isSyncing) return;
+
+    // Não salva se: sem userId, sem Supabase, ou se acabou de carregar do banco
+    if (!userId || isLoadingFromSupabase.current) return;
+
+    const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!hasSupabase) return;
+
+    // Debounce: cancela saves anteriores, aguarda 2s de inatividade antes de salvar
+    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    saveDebounceRef.current = setTimeout(async () => {
+      if (isSyncing) return;
       setIsSyncing(true);
       try {
         await supabase.from('profiles').upsert({
@@ -347,13 +366,11 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           updated_at: new Date().toISOString()
         });
       } catch (err) {
-        console.error('Error syncing profile to Supabase', err);
+        console.warn('[gamification] saveToSupabase error:', err);
       } finally {
         setIsSyncing(false);
       }
-    };
-    
-    saveToSupabase();
+    }, 2000);
   }, [profile, userId]);
 
   const triggerConfetti = () => {
@@ -606,6 +623,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   return (
     <GamificationContext.Provider value={{
       profile,
+      userId,
       badges,
       weeklyChallenge,
       addPoints,

@@ -171,6 +171,9 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const flashCompleted = localStorage.getItem(`flash_done_${weekOfYear}`) === 'true';
   const [flashVisible, setFlashVisible] = useState(showFlashChallenge && !flashDismissed);
 
+  // Santo do dia — expandido ou não
+  const [saintExpanded, setSaintExpanded] = useState(false);
+
   // Streak freeze state
   const [showFreezeUsed, setShowFreezeUsed] = useState(false);
   const [dailyVerseRead, setDailyVerseRead] = useState<boolean>(() => {
@@ -648,7 +651,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
         {(() => {
           const saintKey = `saint_seen_${TODAY_STR}`;
           const saintSeen = localStorage.getItem(saintKey) === 'true';
-          const [saintExpanded, setSaintExpanded] = useState(false);
           return (
             <div className="max-w-xl mx-auto mb-4">
               <button onClick={() => {
@@ -676,7 +678,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         "{todaySaint.phrase}"
                       </blockquote>
                       {!saintSeen && (
-                        <p className="text-[10px] text-emerald-600 font-bold mt-2">✨ Novo santo encontrado! ({Object.keys(profile.ecoReactions || {}).length}/10 para conquista)</p>
+                        <p className="text-[10px] text-emerald-600 font-bold mt-2">✨ Novo santo encontrado!</p>
                       )}
                     </div>
                   </motion.div>
@@ -748,42 +750,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
 
         {/* Daily Verse Card — some ao marcar como lido */}
         {!dailyVerseRead && (() => {
-          // Versículo diferente a cada dia do ano (determinístico — mesmo para todos os usuários)
-          const DAILY_VERSES = [
-            { text: 'O Senhor é o meu pastor; nada me faltará.', ref: 'Sl 23,1' },
-            { text: 'Tudo posso naquele que me fortalece.', ref: 'Fl 4,13' },
-            { text: 'Não temas, porque eu sou contigo.', ref: 'Is 41,10' },
-            { text: 'O amor é paciente, o amor é bondoso.', ref: '1Cor 13,4' },
-            { text: 'Buscai primeiro o Reino de Deus e a sua justiça.', ref: 'Mt 6,33' },
-            { text: 'Sede fortes e corajosos. Não temais.', ref: 'Dt 31,6' },
-            { text: 'Confia no Senhor de todo o teu coração.', ref: 'Pv 3,5' },
-            { text: 'No começo, Deus criou os céus e a terra.', ref: 'Gn 1,1' },
-            { text: 'Amarás o teu próximo como a ti mesmo.', ref: 'Mt 22,39' },
-            { text: 'Deus é amor.', ref: '1Jo 4,8' },
-            { text: 'Alegrai-vos sempre no Senhor.', ref: 'Fl 4,4' },
-            { text: 'A fé sem obras é morta.', ref: 'Tg 2,26' },
-            { text: 'Eu sou o caminho, a verdade e a vida.', ref: 'Jo 14,6' },
-            { text: 'Sede a luz do mundo.', ref: 'Mt 5,14' },
-            { text: 'A misericórdia do Senhor dura para sempre.', ref: 'Sl 136,1' },
-            { text: 'Vós sois o sal da terra.', ref: 'Mt 5,13' },
-            { text: 'Nada vos separe do amor de Deus.', ref: 'Rm 8,39' },
-            { text: 'Orai sem cessar.', ref: '1Ts 5,17' },
-            { text: 'A sabedoria começa pelo temor do Senhor.', ref: 'Pv 9,10' },
-            { text: 'Sede misericordiosos como vosso Pai é misericordioso.', ref: 'Lc 6,36' },
-            { text: 'Não vos conformeis com este século.', ref: 'Rm 12,2' },
-            { text: 'Com Deus nada é impossível.', ref: 'Lc 1,37' },
-            { text: 'Bem-aventurados os puros de coração.', ref: 'Mt 5,8' },
-            { text: 'O Senhor é minha luz e minha salvação.', ref: 'Sl 27,1' },
-            { text: 'Sede santos, pois eu sou santo.', ref: '1Pd 1,16' },
-            { text: 'Onde está o teu tesouro, lá está o teu coração.', ref: 'Mt 6,21' },
-            { text: 'Jesus Cristo é o mesmo, ontem, hoje e sempre.', ref: 'Hb 13,8' },
-            { text: 'O coração do homem planeja o seu caminho, mas o Senhor dirige os seus passos.', ref: 'Pv 16,9' },
-            { text: 'Derramai diante dele o vosso coração.', ref: 'Sl 62,9' },
-            { text: 'Posso tudo naquele que me fortalece.', ref: 'Fl 4,13' },
-            { text: 'Sede fortes no Senhor e na força do seu poder.', ref: 'Ef 6,10' },
-          ];
-          const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
-          const verse = DAILY_VERSES[dayOfYear % DAILY_VERSES.length];
           return (
             <div className="max-w-xl mx-auto mb-4">
               <div className="bg-stone-900 rounded-xl p-3 shadow-sm relative overflow-hidden">
@@ -791,8 +757,8 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                 <div className="relative z-10 flex items-center gap-2.5">
                   <Sun size={16} className="text-amber-400 shrink-0" />
                   <p className="flex-1 text-sm font-serif italic text-stone-100 leading-snug">
-                    "{verse.text}"
-                    <span className="not-italic font-bold text-amber-400 ml-1.5 text-[11px]">{verse.ref}</span>
+                    "{todayVerse.text}"
+                    <span className="not-italic font-bold text-amber-400 ml-1.5 text-[11px]">{todayVerse.ref}</span>
                   </p>
                   <button
                     onClick={handleReadDailyVerse}
@@ -864,6 +830,19 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                 <span>Via Trilha do Discípulo</span>
               </div>
             </div>
+
+            {filteredBooks.length === 0 && (
+              <div className="text-center py-20 text-stone-500">
+                <p className="text-lg">Nenhum livro encontrado para "{searchTerm}".</p>
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="mt-4 text-stone-900 font-medium underline underline-offset-4"
+                >
+                  Limpar busca
+                </button>
+              </div>
+            )}
+
             {/* Para iniciantes: NT primeiro (mais acessível). Para experientes: ordem canônica VT→NT */}
             {showNTFirst && ntBooks.length > 0 && (
               <section className="mb-10 md:mb-12">
@@ -878,7 +857,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                   </div>
                 </div>
                 <p className="text-xs text-stone-400 mb-4 italic">Recomendado para quem está começando — mais direto e acessível.</p>
-                {renderBookGrid(ntBooks)}
+                {renderBookGrid(ntBooks, true)}
               </section>
             )}
 
@@ -899,7 +878,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                     })()}
                   </div>
                 </div>
-                {renderBookGrid(vtBooks)}
+                {renderBookGrid(vtBooks, true)}
               </section>
             )}
 
@@ -920,22 +899,10 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                     })()}
                   </div>
                 </div>
-                {renderBookGrid(ntBooks)}
+                {renderBookGrid(ntBooks, true)}
               </section>
             )}
           </>
-
-        {filteredBooks.length === 0 && (
-          <div className="text-center py-20 text-stone-500">
-            <p className="text-lg">Nenhum livro encontrado para "{searchTerm}".</p>
-            <button
-              onClick={() => setSearchTerm('')}
-              className="mt-4 text-stone-900 font-medium underline underline-offset-4"
-            >
-              Limpar busca
-            </button>
-          </div>
-        )}
 
         {/* Extra Resources Section */}
         <section className="mt-20 pt-12 border-t border-stone-200">

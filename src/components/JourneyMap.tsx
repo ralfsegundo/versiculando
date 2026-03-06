@@ -1,139 +1,210 @@
-import { BIBLE_BOOKS, GROUP_COLORS, BEGINNER_PATH } from '../constants';
+import { BIBLE_BOOKS, BEGINNER_PATH } from '../constants';
 import { useGamification } from '../services/gamification';
-import { CheckCircle2, Map as MapIcon, Star, BookOpen } from 'lucide-react';
+import { CheckCircle2, Star, BookOpen, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface JourneyMapProps {
   onSelectBook: (bookId: string) => void;
 }
 
+const GROUP_META: Record<string, { emoji: string; color: string; glow: string; bg: string; badge: string; track: string }> = {
+  'Pentateuco':          { emoji: '📜', color: 'text-amber-700',   glow: 'shadow-amber-300/60',   bg: 'bg-amber-50',   badge: 'bg-amber-100 text-amber-800 border-amber-200',     track: 'bg-amber-400' },
+  'Livros Históricos':   { emoji: '⚔️',  color: 'text-emerald-700', glow: 'shadow-emerald-300/60', bg: 'bg-emerald-50', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', track: 'bg-emerald-500' },
+  'Livros Sapienciais':  { emoji: '🕊️', color: 'text-purple-700',  glow: 'shadow-purple-300/60',  bg: 'bg-purple-50',  badge: 'bg-purple-100 text-purple-800 border-purple-200',   track: 'bg-purple-500' },
+  'Livros Proféticos':   { emoji: '🔥', color: 'text-blue-700',    glow: 'shadow-blue-300/60',    bg: 'bg-blue-50',    badge: 'bg-blue-100 text-blue-800 border-blue-200',         track: 'bg-blue-500' },
+  'Evangelhos':          { emoji: '✝️', color: 'text-rose-700',    glow: 'shadow-rose-300/60',    bg: 'bg-rose-50',    badge: 'bg-rose-100 text-rose-800 border-rose-200',         track: 'bg-rose-500' },
+  'Atos dos Apóstolos':  { emoji: '⚡', color: 'text-teal-700',    glow: 'shadow-teal-300/60',    bg: 'bg-teal-50',    badge: 'bg-teal-100 text-teal-800 border-teal-200',         track: 'bg-teal-500' },
+  'Cartas Paulinas':     { emoji: '✉️', color: 'text-indigo-700',  glow: 'shadow-indigo-300/60',  bg: 'bg-indigo-50',  badge: 'bg-indigo-100 text-indigo-800 border-indigo-200',   track: 'bg-indigo-500' },
+  'Cartas Católicas':    { emoji: '🌿', color: 'text-violet-700',  glow: 'shadow-violet-300/60',  bg: 'bg-violet-50',  badge: 'bg-violet-100 text-violet-800 border-violet-200',   track: 'bg-violet-500' },
+  'Apocalipse':          { emoji: '🌟', color: 'text-fuchsia-700', glow: 'shadow-fuchsia-300/60', bg: 'bg-fuchsia-50', badge: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200', track: 'bg-fuchsia-500' },
+};
+
+function groupBooks() {
+  const groups: { group: string; books: typeof BIBLE_BOOKS }[] = [];
+  let current: { group: string; books: typeof BIBLE_BOOKS } | null = null;
+  for (const book of BIBLE_BOOKS) {
+    if (!current || current.group !== book.group) {
+      current = { group: book.group, books: [] };
+      groups.push(current);
+    }
+    current.books.push(book);
+  }
+  return groups;
+}
+
 export default function JourneyMap({ onSelectBook }: JourneyMapProps) {
   const { profile } = useGamification();
+  const bookGroups = groupBooks();
+  const totalBooks = BIBLE_BOOKS.length;
+  const completedCount = profile.completedBooks.length;
+  const progressPct = Math.round((completedCount / totalBooks) * 100);
+
+  const discipleOrder = BEGINNER_PATH.flatMap((step: any) => step.books);
+  const nextDiscipleBookId = discipleOrder.find((id: string) => !profile.completedBooks.includes(id));
+
+  let globalIndex = 0;
 
   return (
     <div className="min-h-screen bg-[#fdfbf7] text-stone-900 font-sans pb-28 pt-5 md:pt-8">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        <header className="mb-6 flex items-center gap-3 md:flex-col md:text-center md:items-center pr-10 md:pr-0">
-          <div className="w-9 h-9 md:w-12 md:h-12 bg-amber-500 text-white rounded-xl flex items-center justify-center shadow-md shrink-0">
-            <MapIcon size={18} />
+      <div className="max-w-2xl mx-auto px-4 sm:px-6">
+
+        {/* Header */}
+        <header className="mb-8 relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-500 via-amber-600 to-orange-700 p-5 md:p-7 text-white shadow-lg shadow-amber-200">
+          <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/5 rounded-full" />
+          <div className="absolute -bottom-6 -left-6 w-24 h-24 bg-white/5 rounded-full" />
+          <div className="relative flex items-center gap-4">
+            <div className="text-4xl md:text-5xl shrink-0">🗺️</div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl md:text-3xl font-serif font-bold leading-tight">Mapa da Jornada</h1>
+              <p className="text-amber-100 text-xs md:text-sm mt-0.5">
+                {completedCount === 0
+                  ? 'Sua jornada está começando — bom caminho!'
+                  : completedCount === totalBooks
+                    ? '🎉 Jornada completa! Que conquista!'
+                    : `${totalBooks - completedCount} livros restantes`}
+              </p>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg md:text-3xl font-serif font-bold tracking-tight text-stone-900">Mapa da Jornada</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-stone-500"><strong className="text-stone-800">{profile.completedBooks.length}</strong>/73</span>
-              <div className="flex-1 max-w-[80px] h-1.5 bg-stone-200 rounded-full overflow-hidden">
-                <div className="h-full bg-amber-400 rounded-full" style={{ width: `${(profile.completedBooks.length / 73) * 100}%` }} />
-              </div>
-              <span className="text-xs font-bold text-amber-600">{Math.round((profile.completedBooks.length / 73) * 100)}%</span>
+          <div className="relative mt-5">
+            <div className="flex justify-between items-center mb-1.5">
+              <span className="text-xs font-bold text-amber-100">{completedCount} de {totalBooks} livros</span>
+              <span className="text-sm font-black text-white">{progressPct}%</span>
+            </div>
+            <div className="h-3 bg-black/20 rounded-full overflow-hidden">
+              <motion.div
+                className="h-full bg-white rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPct}%` }}
+                transition={{ duration: 1.2, ease: 'easeOut' }}
+              />
             </div>
           </div>
         </header>
 
-        <div className="relative py-8">
-          {/* The Golden Path Line */}
-          <div className="absolute left-1/2 top-0 bottom-0 w-1 md:w-2 bg-stone-200 -translate-x-1/2 rounded-full z-0"></div>
-          
-          <div className="space-y-5 md:space-y-8">
-            {BIBLE_BOOKS.map((book, index) => {
-              const isCompleted = profile.completedBooks.includes(book.id);
-              const isVisited = profile.visitedBooks?.includes(book.id) && !isCompleted;
+        {/* Groups */}
+        {bookGroups.map((section, sectionIdx) => {
+          const meta = GROUP_META[section.group] || GROUP_META['Pentateuco'];
+          const sectionCompleted = section.books.filter(b => profile.completedBooks.includes(b.id)).length;
+          const sectionPct = Math.round((sectionCompleted / section.books.length) * 100);
 
-              // Find next recommended book from Trilha do Discípulo
-              const discipleOrder = BEGINNER_PATH.flatMap(step => step.books);
-              const nextDiscipleBookId = discipleOrder.find(id => !profile.completedBooks.includes(id));
-              const isNextRecommended = book.id === nextDiscipleBookId;
-
-              // No books are locked — user can access any book freely
-              const isLocked = false;
-              
-              const isLeft = index % 2 === 0;
-              
-              const groupColorClass = GROUP_COLORS[book.group] || '';
-              const textColorClass = groupColorClass.split(' ').find(c => c.startsWith('text-')) || 'text-stone-500';
-
-              return (
-                <div key={book.id} className={`relative z-10 flex items-center justify-center w-full`}>
-                  
-                  {/* Path connection to node */}
-                  {index < BIBLE_BOOKS.length - 1 && (
-                    <div className={`absolute top-1/2 left-1/2 w-1.5 md:w-4 h-20 md:h-32 -translate-x-1/2 -z-10 ${
-                      isCompleted ? 'bg-amber-400' : 'bg-stone-200'
-                    }`}></div>
-                  )}
-                  
-                  <div className={`flex w-full ${isLeft ? 'flex-row-reverse' : 'flex-row'} items-center justify-center gap-2 md:gap-8`}>
-                    
-                    {/* Empty space for alternating layout */}
-                    <div className="flex-1 hidden md:block"></div>
-                    
-                    {/* The Node */}
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => onSelectBook(book.id)}
-                      className={`relative rounded-full flex items-center justify-center border-4 shadow-lg transition-all z-20 shrink-0 active:scale-95 ${
-                        isCompleted
-                          ? 'w-12 h-12 md:w-20 md:h-20 bg-amber-400 border-white text-white shadow-amber-400/40'
-                          : isNextRecommended
-                            ? 'w-12 h-12 md:w-20 md:h-20 bg-white border-amber-400 text-amber-500 shadow-amber-400/20'
-                            : isVisited
-                              ? 'w-12 h-12 md:w-20 md:h-20 bg-indigo-50 border-indigo-300 text-indigo-500'
-                              : 'w-10 h-10 md:w-16 md:h-16 bg-white border-stone-200 text-stone-400 shadow-sm'
-                      }`}
-                    >
-                      {isNextRecommended && (
-                        <div className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-30"></div>
-                      )}
-                      
-                      {isCompleted ? (
-                        <CheckCircle2 size={18} className="md:w-8 md:h-8" />
-                      ) : isNextRecommended ? (
-                        <Star size={18} className="md:w-8 md:h-8 fill-amber-100 relative z-10" />
-                      ) : isVisited ? (
-                        <BookOpen size={15} className="md:w-7 md:h-7" />
-                      ) : (
-                        <BookOpen size={13} className="md:w-6 md:h-6 opacity-50" />
-                      )}
-                      
-                      {/* Number badge */}
-                      <div className={`absolute -top-1 -right-1 w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[8px] md:text-[10px] font-bold border-2 border-white ${
-                        isCompleted ? 'bg-emerald-500 text-white' : isVisited ? 'bg-indigo-400 text-white' : 'bg-stone-300 text-stone-600'
-                      }`}>
-                        {index + 1}
-                      </div>
-                    </motion.button>
-                    
-                    {/* Book Info Card */}
-                    <div className={`flex-1 ${isLeft ? 'text-right pr-2 md:pr-0' : 'text-left pl-2 md:pl-0'}`}>
-                      <div className={`inline-block p-2 md:p-3 rounded-xl border shadow-sm transition-all ${
-                        isCompleted ? 'bg-white border-amber-200' :
-                        isNextRecommended ? 'bg-white border-amber-400 shadow-md' :
-                        isVisited ? 'bg-indigo-50 border-indigo-200' :
-                        'bg-stone-50 border-stone-200'
-                      }`}>
-                        {isNextRecommended && (
-                          <span className="text-[9px] font-bold text-amber-600 bg-amber-100 rounded-full px-2 py-0.5 mb-1 inline-block">⭐ Próximo</span>
-                        )}
-                        <span className={`text-[9px] md:text-xs font-bold uppercase tracking-wider mb-0.5 block ${textColorClass} hidden sm:block`}>
-                          {book.group}
-                        </span>
-                        <h3 className={`font-serif text-sm md:text-base font-bold leading-tight ${
-                          isCompleted ? 'text-stone-900' : 'text-stone-700'
-                        }`}>
-                          {book.name}
-                        </h3>
-                        <p className="text-[10px] md:text-xs text-stone-500 mt-0.5 font-medium">{book.chapters} cap.</p>
-                      </div>
-                    </div>
-                    
+          return (
+            <div key={section.group} className="mb-10">
+              {/* Section header */}
+              <motion.div
+                initial={{ opacity: 0, x: -16 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: sectionIdx * 0.05 }}
+                className="flex items-center gap-3 mb-3 px-1"
+              >
+                <span className="text-2xl">{meta.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className={`text-xs font-black uppercase tracking-wider ${meta.color}`}>{section.group}</h2>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${meta.badge}`}>
+                      {sectionCompleted}/{section.books.length}
+                    </span>
+                    {sectionPct === 100 && (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">✓ Completo</span>
+                    )}
+                  </div>
+                  <div className="mt-1 h-1 bg-stone-200 rounded-full overflow-hidden max-w-[100px]">
+                    <div className={`h-full ${meta.track} rounded-full transition-all duration-700`} style={{ width: `${sectionPct}%` }} />
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              </motion.div>
+
+              {/* Books */}
+              <div className="relative">
+                <div className="absolute left-[22px] top-0 bottom-0 w-0.5 bg-stone-100 z-0" />
+                <div className="space-y-2">
+                  {section.books.map((book, bookIdx) => {
+                    const nodeNum = ++globalIndex;
+                    const isCompleted = profile.completedBooks.includes(book.id);
+                    const isVisited = profile.visitedBooks?.includes(book.id) && !isCompleted;
+                    const isNext = book.id === nextDiscipleBookId;
+
+                    return (
+                      <motion.div
+                        key={book.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: sectionIdx * 0.05 + bookIdx * 0.025 }}
+                        className="relative z-10"
+                      >
+                        <button
+                          onClick={() => onSelectBook(book.id)}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl border transition-all active:scale-[0.98] text-left group ${
+                            isCompleted
+                              ? 'bg-white border-amber-200 shadow-sm hover:shadow-md hover:border-amber-300'
+                              : isNext
+                                ? `${meta.bg} border-2 shadow-md hover:shadow-lg`
+                                : isVisited
+                                  ? 'bg-white border-stone-200 hover:border-stone-300 hover:shadow-sm'
+                                  : 'bg-white/70 border-stone-100 hover:border-stone-200 hover:bg-white'
+                          }`}
+                        >
+                          {/* Node */}
+                          <div className={`relative shrink-0 w-11 h-11 rounded-full flex items-center justify-center border-2 transition-all ${
+                            isCompleted
+                              ? 'bg-amber-400 border-amber-300 text-white shadow-md shadow-amber-200'
+                              : isNext
+                                ? `bg-white border-current ${meta.color} shadow-lg ${meta.glow}`
+                                : isVisited
+                                  ? 'bg-stone-100 border-stone-300 text-stone-500'
+                                  : 'bg-stone-50 border-stone-200 text-stone-400'
+                          }`}>
+                            {isNext && <div className="absolute inset-0 rounded-full animate-ping opacity-20 bg-current" />}
+                            {isCompleted ? (
+                              <CheckCircle2 size={18} />
+                            ) : isNext ? (
+                              <Star size={16} className="fill-current relative z-10" />
+                            ) : isVisited ? (
+                              <BookOpen size={15} />
+                            ) : (
+                              <span className="text-[11px] font-bold">{nodeNum}</span>
+                            )}
+                          </div>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {isNext && (
+                                <span className={`text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full border shrink-0 ${meta.badge}`}>⭐ Próximo</span>
+                              )}
+                              {isCompleted && (
+                                <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200 shrink-0">✓ Lido</span>
+                              )}
+                            </div>
+                            <h3 className={`font-serif font-bold text-sm leading-tight mt-0.5 ${
+                              isCompleted ? 'text-stone-900' : isNext ? meta.color : 'text-stone-600'
+                            }`}>
+                              {book.name}
+                            </h3>
+                            <p className="text-[11px] text-stone-400 font-medium">{book.chapters} cap.</p>
+                          </div>
+
+                          <ChevronRight size={15} className={`shrink-0 transition-transform group-hover:translate-x-0.5 ${
+                            isCompleted ? 'text-amber-400' : isNext ? meta.color : 'text-stone-300'
+                          }`} />
+                        </button>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Footer */}
+        <div className="text-center py-8">
+          <p className="text-stone-400 text-sm font-medium">
+            {completedCount === totalBooks
+              ? '🏆 Você completou toda a Bíblia. Extraordinário!'
+              : '📖 Continue — cada capítulo é um passo na jornada.'}
+          </p>
         </div>
-        
+
       </div>
     </div>
   );

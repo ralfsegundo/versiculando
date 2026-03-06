@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useGamification, AVATARS } from '../services/gamification';
 import { Users, Search, UserPlus, Check, X, UserMinus, Clock, Activity, Trophy, BookOpen, Heart, ThumbsUp, ChevronLeft, Send, LogOut, Crown, Trash2, BarChart2, Plus, Pin, Edit2, Target, MessageSquare, Smile, Paperclip, Link as LinkIcon, ExternalLink, FileSpreadsheet, FileText, Youtube, HelpCircle } from 'lucide-react';
 import { sharingService, Connection } from '../services/sharingService';
@@ -42,8 +42,8 @@ interface GroupMessage {
   avatarId: string;
   avatarUrl?: string;
   text: string;
-  timestamp: string;
-  type?: 'text' | 'poll' | 'verse' | 'goal' | 'question_box';
+  timestamp: string;     // ISO 8601 — sempre salvo como new Date().toISOString()
+  type?: 'text' | 'poll' | 'verse' | 'goal' | 'question_box' | 'member_reply';
   poll?: {
     question: string;
     options: PollOption[];
@@ -52,6 +52,7 @@ interface GroupMessage {
     question: string;
     answers: QuestionBoxAnswer[];
   };
+  replyToId?: number;    // id da mensagem que está respondendo (para member_reply)
   isPinned?: boolean;
   reactions?: Reaction[];
 }
@@ -123,7 +124,21 @@ export default function Community() {
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [showReactionMenu, setShowReactionMenu] = useState<number | null>(null);
   const [showReactionDetails, setShowReactionDetails] = useState<{ messageId: number, emoji: string } | null>(null);
-  
+
+  // Member reply state (non-admins can reply to specific messages)
+  const [replyingToId, setReplyingToId] = useState<number | null>(null);
+  const [memberReplyText, setMemberReplyText] = useState('');
+
+  // Mural scroll ref — auto-scroll to bottom on new message
+  const muralScrollRef = useRef<HTMLDivElement>(null);
+  const scrollMuralToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    setTimeout(() => {
+      if (muralScrollRef.current) {
+        muralScrollRef.current.scrollTop = muralScrollRef.current.scrollHeight;
+      }
+    }, 50);
+  }, []);
+
   // Poll State
   const [isCreatingPoll, setIsCreatingPoll] = useState(false);
   const [pollQuestion, setPollQuestion] = useState('');
@@ -234,23 +249,38 @@ export default function Community() {
   const loadGroups = async () => {
     if (!profile.email) return;
     try {
+      // Filtra no servidor: grupos onde o array JSON de members contém o email do usuário
       const { data, error } = await supabase
         .from('community_groups')
         .select('id, name, target_id, target_name, members, messages, materials')
+        .contains('members', JSON.stringify([{ email: profile.email }]))
         .order('created_at', { ascending: false });
-      if (error) { console.warn('[Community] loadGroups error:', error.message); return; }
+
+      // Fallback: se o contains falhar (índice não configurado), faz o filtro no cliente
+      if (error) {
+        const { data: allData, error: allError } = await supabase
+          .from('community_groups')
+          .select('id, name, target_id, target_name, members, messages, materials')
+          .order('created_at', { ascending: false });
+        if (allError) { console.warn('[Community] loadGroups error:', allError.message); return; }
+        const myGroups = (allData || []).filter((g: any) =>
+          Array.isArray(g.members) && g.members.some((m: any) => m.email === profile.email)
+        );
+        setMockGroups(myGroups.map((g: any) => ({
+          id: g.id, name: g.name, targetId: g.target_id, targetName: g.target_name,
+          members: g.members || [], messages: g.messages || [], materials: g.materials || [],
+        })));
+        return;
+      }
+
       if (data) {
+        // Double-check no cliente por segurança (contains pode retornar falsos positivos)
         const myGroups = data.filter((g: any) =>
           Array.isArray(g.members) && g.members.some((m: any) => m.email === profile.email)
         );
         setMockGroups(myGroups.map((g: any) => ({
-          id: g.id,
-          name: g.name,
-          targetId: g.target_id,
-          targetName: g.target_name,
-          members: g.members || [],
-          messages: g.messages || [],
-          materials: g.materials || [],
+          id: g.id, name: g.name, targetId: g.target_id, targetName: g.target_name,
+          members: g.members || [], messages: g.messages || [], materials: g.materials || [],
         })));
       }
     } catch (e) { console.warn('[Community] loadGroups exception:', e); }
@@ -309,14 +339,45 @@ export default function Community() {
   };
 
   const formatRelativeTime = (isoString: string) => {
+    if (!isoString) return '';
     const diff = Date.now() - new Date(isoString).getTime();
+    if (diff < 0) return 'Agora mesmo';
     const m = Math.floor(diff / 60000);
     if (m < 1) return 'Agora mesmo';
     if (m < 60) return `há ${m}min`;
     const h = Math.floor(m / 60);
     if (h < 24) return `há ${h}h`;
-    return `há ${Math.floor(h / 24)} dias`;
+    const d = Math.floor(h / 24);
+    if (d < 7) return `há ${d} dia${d > 1 ? 's' : ''}`;
+    return new Date(isoString).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
   };
+
+  // Calcula o progresso REAL de um membro para o livro/trilha alvo do grupo
+  const calculateMemberProgress = useCallback((memberEmail: string, targetId: string): number => {
+    // Tenta buscar do perfil local se for o próprio usuário
+    if (memberEmail === profile.email) {
+      if (targetId === 'beginner') {
+        const total = BEGINNER_PATH.length;
+        const done = profile.completedBooks.filter(id => BEGINNER_PATH.includes(id)).length;
+        return total === 0 ? 0 : Math.round((done / total) * 100);
+      }
+      return profile.completedBooks.includes(targetId) ? 100 : 0;
+    }
+    // Para outros membros, retorna o progress salvo no grupo (atualizado quando eles entram/completam)
+    return 0;
+  }, [profile.completedBooks, profile.email]);
+
+  // Calcula progresso coletivo real: média dos membros que já têm dado registrado
+  const calculateGroupProgress = useCallback((members: GroupMember[], targetId: string): number => {
+    if (members.length === 0) return 0;
+    const values = members.map(m =>
+      m.email === profile.email ? calculateMemberProgress(m.email, targetId) : m.progress
+    );
+    // Inclui só quem tem dado real (>0) ou é o próprio usuário
+    const activeValues = values.filter((v, i) => v > 0 || members[i].email === profile.email);
+    if (activeValues.length === 0) return 0;
+    return Math.round(activeValues.reduce((a, b) => a + b, 0) / activeValues.length);
+  }, [calculateMemberProgress, profile.email]);
 
   const addToFeed = async (action: string) => {
     if (!profile.email) return;
@@ -422,12 +483,15 @@ export default function Community() {
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !activeGroup) return;
+    // Guard: only admins can post non-reply messages
+    const isAdmin = activeGroup.members.find(m => m.email === profile.email)?.isLeader === true;
+    if (!isAdmin) return;
+
     let updatedMessages = [...activeGroup.messages];
 
     if (editingMessageId) {
       updatedMessages = updatedMessages.map(msg => {
         if (msg.id !== editingMessageId) return msg;
-        // Preserve special types (poll, question_box) — only allow editing text/verse/goal
         if (msg.type === 'poll' || msg.type === 'question_box') return msg;
         return { ...msg, text: newMessage, type: postType };
       });
@@ -436,11 +500,11 @@ export default function Community() {
         id: Date.now(),
         user: profile.name,
         userEmail: profile.email || 'me',
-        avatarId: profile.avatarId,
+        avatarId: profile.avatarId || '',
         avatarUrl: profile.avatarUrl,
         text: newMessage,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        type: postType
+        timestamp: new Date().toISOString(),   // ← ISO, não toLocaleTimeString
+        type: postType,
       });
     }
 
@@ -451,6 +515,30 @@ export default function Community() {
     setNewMessage('');
     setEditingMessageId(null);
     setPostType('text');
+    scrollMuralToBottom();
+  };
+
+  // Membros (não-admin) podem deixar uma reply em qualquer mensagem
+  const handleMemberReply = async () => {
+    if (!memberReplyText.trim() || !activeGroup || replyingToId === null) return;
+    const replyMsg: GroupMessage = {
+      id: Date.now(),
+      user: profile.name,
+      userEmail: profile.email || 'me',
+      avatarId: profile.avatarId || '',
+      avatarUrl: profile.avatarUrl,
+      text: memberReplyText.trim(),
+      timestamp: new Date().toISOString(),
+      type: 'member_reply',
+      replyToId: replyingToId,
+    };
+    const updatedGroup = { ...activeGroup, messages: [...activeGroup.messages, replyMsg] };
+    setActiveGroup(updatedGroup);
+    setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+    await persistGroup(updatedGroup);
+    setMemberReplyText('');
+    setReplyingToId(null);
+    scrollMuralToBottom();
   };
 
   const handleEditMessageClick = (msg: GroupMessage) => {
@@ -516,7 +604,7 @@ export default function Community() {
         avatarId: profile.avatarId,
         avatarUrl: profile.avatarUrl,
         text: '',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: new Date().toISOString(),
         type: 'poll' as const,
         poll: { question: pollQuestion.trim(), options: validOptions }
       }]
@@ -555,7 +643,7 @@ export default function Community() {
       avatarId: profile.avatarId,
       avatarUrl: profile.avatarUrl,
       text: `📚 Novo material de apoio adicionado: "${materialTitle.trim()}". Confira na seção de Materiais de Apoio!`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: new Date().toISOString(),
       type: 'text',
       isPinned: false
     };
@@ -635,7 +723,7 @@ export default function Community() {
         avatarId: profile.avatarId,
         avatarUrl: profile.avatarUrl,
         text: '',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: new Date().toISOString(),
         type: 'question_box' as const,
         questionBox: { question: questionBoxText.trim(), answers: [] }
       }]
@@ -660,7 +748,7 @@ export default function Community() {
           userName: profile.name,
           avatarId: profile.avatarId,
           text: answerText.trim(),
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          timestamp: new Date().toISOString()
         };
         return { ...msg, questionBox: { ...msg.questionBox, answers: [...msg.questionBox.answers, newAnswer] } };
       }
@@ -762,11 +850,7 @@ export default function Community() {
     });
   };
 
-  const calculateGroupProgress = (members: GroupMember[]) => {
-    if (members.length === 0) return 0;
-    const total = members.reduce((sum, m) => sum + m.progress, 0);
-    return Math.round(total / members.length);
-  };
+  // isCurrentUserAdmin — computed once, stable reference
 
   const handleCreatePrayer = async () => {
     if (!newPrayerRequest.trim() || !profile.email) return;
@@ -830,8 +914,6 @@ export default function Community() {
     });
   };
   useEffect(() => {
-    // Dispara tanto no mount quanto quando profile.email muda
-    // (ex: perfil carregado do Supabase após mount inicial)
     const email = profile.email;
     if (!email) return;
 
@@ -846,6 +928,64 @@ export default function Community() {
     return removeListener;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.email]);
+
+  // ── Realtime: atualiza activeGroup quando outros membros mudam ──
+  useEffect(() => {
+    if (!activeGroup) return;
+
+    const channel = supabase
+      .channel(`group-${activeGroup.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'community_groups',
+          filter: `id=eq.${activeGroup.id}`,
+        },
+        (payload: any) => {
+          const d = payload.new;
+          if (!d) return;
+          const updated: Group = {
+            id: d.id,
+            name: d.name,
+            targetId: d.target_id,
+            targetName: d.target_name,
+            members: d.members || [],
+            messages: d.messages || [],
+            materials: d.materials || [],
+          };
+          setActiveGroup(updated);
+          setMockGroups(prev => prev.map(g => g.id === updated.id ? updated : g));
+          // Auto-scroll only if user was already at bottom
+          const el = muralScrollRef.current;
+          if (el) {
+            const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+            if (nearBottom) scrollMuralToBottom();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [activeGroup?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Ao abrir grupo: atualiza progresso do usuário local no grupo ──
+  useEffect(() => {
+    if (!activeGroup || !profile.email) return;
+    const myMember = activeGroup.members.find(m => m.email === profile.email);
+    if (!myMember) return;
+    const realProgress = calculateMemberProgress(profile.email, activeGroup.targetId);
+    if (myMember.progress !== realProgress) {
+      const updatedMembers = activeGroup.members.map(m =>
+        m.email === profile.email ? { ...m, progress: realProgress } : m
+      );
+      const updatedGroup = { ...activeGroup, members: updatedMembers };
+      setActiveGroup(updatedGroup);
+      setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+      persistGroup(updatedGroup); // fire and forget
+    }
+  }, [activeGroup?.id, profile.completedBooks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadConnections = async () => {
     if (profile.email) {
@@ -931,6 +1071,12 @@ export default function Community() {
     return 'recentemente';
   };
 
+  // ── isCurrentUserAdmin — stable memo, never recalculated inside render ──
+  const isCurrentUserAdmin = useMemo(() =>
+    !!(profile.email && activeGroup?.members.find(m => m.email === profile.email)?.isLeader),
+    [profile.email, activeGroup]
+  );
+
   return (
     <div className="min-h-screen bg-[#fdfbf7] text-stone-900 font-sans pb-28 pt-6 md:pt-12 overflow-x-hidden">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
@@ -997,15 +1143,10 @@ export default function Community() {
           ) : (
           <>{activeGroup ? (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              {(() => {
-                const isCurrentUserAdmin = profile.email
-                  ? activeGroup.members.find(m => m.email === profile.email)?.isLeader === true
-                  : false;
-                return (
                   <>
                     <div className="flex items-center gap-3 border-b border-stone-100 pb-4">
                 <button 
-                  onClick={() => { setActiveGroup(null); setGroupSubTab('mural'); }}
+                  onClick={() => { setActiveGroup(null); setGroupSubTab('mural'); setReplyingToId(null); setMemberReplyText(''); }}
                   className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors flex-shrink-0"
                 >
                   <ChevronLeft size={24} />
@@ -1016,20 +1157,28 @@ export default function Community() {
                     <BookOpen size={12} /> Estudando: {activeGroup.targetName}
                   </p>
                 </div>
+                {/* Realtime indicator */}
+                <div className="flex items-center gap-1.5 text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-full shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Ao vivo
+                </div>
               </div>
 
-              {/* Collective Progress — always visible */}
+              {/* Collective Progress */}
               <div className="bg-indigo-50 rounded-xl p-3.5 border border-indigo-100">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="font-bold text-indigo-900 text-sm">Progresso Coletivo</h3>
-                  <span className="text-lg font-bold text-indigo-600">{calculateGroupProgress(activeGroup.members)}%</span>
+                  <span className="text-lg font-bold text-indigo-600">{calculateGroupProgress(activeGroup.members, activeGroup.targetId)}%</span>
                 </div>
                 <div className="h-2 bg-white rounded-full overflow-hidden border border-indigo-100">
                   <div 
                     className="h-full bg-indigo-500 rounded-full transition-all duration-1000" 
-                    style={{ width: `${calculateGroupProgress(activeGroup.members)}%` }}
-                  ></div>
+                    style={{ width: `${calculateGroupProgress(activeGroup.members, activeGroup.targetId)}%` }}
+                  />
                 </div>
+                <p className="text-[10px] text-indigo-400 mt-1.5">
+                  {activeGroup.members.length} membro{activeGroup.members.length !== 1 ? 's' : ''} · baseado em livros completados
+                </p>
               </div>
 
               {/* Sub-tabs */}
@@ -1064,42 +1213,59 @@ export default function Community() {
                       <UserPlus size={14} /> Convidar amigo
                     </button>
                   </div>
-                  <div className="space-y-2">
-                    {activeGroup.members.sort((a, b) => b.progress - a.progress).map((member, idx) => (
-                      <div key={idx} className="flex items-center justify-between px-3 py-2 bg-stone-50 rounded-xl border border-stone-100">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-base border border-stone-200 overflow-hidden shrink-0">
-                            {member.avatarUrl ? (
-                              <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              AVATARS.find(a => a.id === member.avatarId)?.emoji || '👤'
+                  {activeGroup.members.length === 0 ? (
+                    <div className="text-center py-10 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
+                      <Users size={28} className="mx-auto text-stone-300 mb-2" />
+                      <p className="text-stone-400 text-sm">Nenhum membro ainda.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {[...activeGroup.members].sort((a, b) => {
+                        const pa = a.email === profile.email ? calculateMemberProgress(a.email, activeGroup.targetId) : a.progress;
+                        const pb = b.email === profile.email ? calculateMemberProgress(b.email, activeGroup.targetId) : b.progress;
+                        return pb - pa;
+                      }).map((member, idx) => {
+                        const prog = member.email === profile.email
+                          ? calculateMemberProgress(member.email, activeGroup.targetId)
+                          : member.progress;
+                        return (
+                          <div key={idx} className="flex items-center justify-between px-3 py-2.5 bg-stone-50 rounded-xl border border-stone-100">
+                            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-base border border-stone-200 overflow-hidden shrink-0">
+                                {member.avatarUrl ? (
+                                  <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  AVATARS.find(a => a.id === member.avatarId)?.emoji || '👤'
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-stone-900 text-sm flex items-center gap-1 leading-none truncate">
+                                  {member.name}
+                                  {member.isLeader && <Crown size={12} className="text-amber-500 shrink-0" title="Admin do Grupo" />}
+                                  {member.email === profile.email && <span className="text-[9px] text-indigo-400 font-medium">(você)</span>}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1.5">
+                                  <div className="flex-1 h-1.5 bg-stone-200 rounded-full overflow-hidden max-w-[80px]">
+                                    <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${prog}%` }} />
+                                  </div>
+                                  <span className="text-[10px] font-bold text-stone-400">{prog}%</span>
+                                </div>
+                              </div>
+                            </div>
+                            {isCurrentUserAdmin && !member.isLeader && (
+                              <button 
+                                onClick={() => handleRemoveMember(member.email, member.name)}
+                                className="p-1.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors shrink-0 ml-2"
+                                title="Remover membro"
+                              >
+                                <X size={14} />
+                              </button>
                             )}
                           </div>
-                          <div>
-                            <p className="font-bold text-stone-900 text-sm flex items-center gap-1 leading-none">
-                              {member.name}
-                              {member.isLeader && <Crown size={12} className="text-amber-500" title="Admin do Grupo" />}
-                            </p>
-                            <div className="w-20 h-1.5 bg-stone-200 rounded-full mt-1.5 overflow-hidden">
-                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${member.progress}%` }}></div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-stone-400">{member.progress}%</span>
-                          {isCurrentUserAdmin && !member.isLeader && (
-                            <button 
-                              onClick={() => handleRemoveMember(member.email, member.name)}
-                              className="p-1.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
-                              title="Remover membro"
-                            >
-                              <X size={14} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1204,16 +1370,34 @@ export default function Community() {
               {groupSubTab === 'mural' && (
               <div>
                 <div className="bg-stone-50 rounded-2xl border border-stone-200 flex flex-col overflow-hidden">
-                  <div className="overflow-y-auto space-y-4 p-3 pr-2" style={{ maxHeight: 'calc(100svh - 480px)' }}>
+                  {/* ── Message list ── */}
+                  <div ref={muralScrollRef} className="overflow-y-auto space-y-4 p-3 pr-2" style={{ maxHeight: 'min(calc(100svh - 420px), 480px)', minHeight: '160px' }}>
                     {activeGroup.messages.length === 0 ? (
-                      <p className="text-center text-stone-400 text-sm mt-10">Nenhuma publicação ainda. O administrador do grupo postará novidades aqui!</p>
+                      <div className="flex flex-col items-center justify-center py-14 gap-2 text-center">
+                        <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-1">
+                          <MessageSquare size={24} className="text-indigo-300" />
+                        </div>
+                        <p className="font-bold text-stone-700 text-sm">O mural está vazio</p>
+                        {isCurrentUserAdmin
+                          ? <p className="text-stone-400 text-xs max-w-[200px]">Escreva o primeiro recado, versículo ou meta para o grupo!</p>
+                          : <p className="text-stone-400 text-xs max-w-[200px]">Quando o administrador postar algo, aparecerá aqui. Você pode reagir e responder às mensagens.</p>
+                        }
+                      </div>
                     ) : (
-                      [...activeGroup.messages].sort((a, b) => {
-                        if (a.isPinned && !b.isPinned) return -1;
-                        if (!a.isPinned && b.isPinned) return 1;
-                        return a.id - b.id;
-                      }).map(msg => (
-                        <div key={msg.id} className="flex gap-2.5">
+                      (() => {
+                        // Separa pinadas (no topo) das demais (por ordem de criação)
+                        const pinned = activeGroup.messages.filter(m => m.isPinned);
+                        const rest = activeGroup.messages.filter(m => !m.isPinned).sort((a, b) => a.id - b.id);
+                        const sorted = [...pinned, ...rest];
+
+                        return sorted.map(msg => {
+                          // Contexto da mensagem original para member_reply
+                          const parentMsg = msg.type === 'member_reply' && msg.replyToId
+                            ? activeGroup.messages.find(m => m.id === msg.replyToId)
+                            : null;
+
+                        return (
+                        <div key={msg.id} className={`flex gap-2.5 ${msg.type === 'member_reply' ? 'pl-6' : ''}`}>
                           {/* Avatar */}
                           <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-sm border border-stone-200 shrink-0 overflow-hidden mt-0.5">
                             {msg.avatarUrl ? (
@@ -1228,8 +1412,21 @@ export default function Community() {
                             msg.isPinned ? 'bg-amber-50 border-amber-200' :
                             msg.type === 'verse' ? 'bg-indigo-50 border-indigo-100' :
                             msg.type === 'goal' ? 'bg-emerald-50 border-emerald-100' :
+                            msg.type === 'member_reply' ? 'bg-stone-50 border-stone-200' :
                             'bg-white border-stone-100'
                           }`}>
+
+                            {/* Reply context thread */}
+                            {parentMsg && (
+                              <div className="mb-2 px-2 py-1.5 bg-white border-l-2 border-indigo-300 rounded-r-lg">
+                                <p className="text-[10px] font-bold text-indigo-500 mb-0.5">{parentMsg.user}</p>
+                                <p className="text-xs text-stone-500 leading-snug line-clamp-2">
+                                  {parentMsg.type === 'poll' ? `📊 ${parentMsg.poll?.question}` :
+                                   parentMsg.type === 'question_box' ? `❓ ${parentMsg.questionBox?.question}` :
+                                   parentMsg.text}
+                                </p>
+                              </div>
+                            )}
 
                             {/* Header: name + badges + timestamp */}
                             <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -1237,10 +1434,21 @@ export default function Community() {
                                 <span className="font-bold text-stone-900 text-sm leading-none">{msg.user}</span>
                                 {msg.type === 'verse' && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-bold">Versículo</span>}
                                 {msg.type === 'goal' && <span className="text-[10px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full font-bold">Meta</span>}
+                                {msg.type === 'member_reply' && <span className="text-[10px] bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded-full font-bold">Resposta</span>}
                                 {msg.isPinned && <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5"><Pin size={9} /> Fixado</span>}
                               </div>
-                              <span className="text-[10px] text-stone-400 shrink-0">{msg.timestamp}</span>
+                              <span className="text-[10px] text-stone-400 shrink-0" title={new Date(msg.timestamp).toLocaleString('pt-BR')}>
+                                {formatRelativeTime(msg.timestamp)}
+                              </span>
                             </div>
+
+                            {/* Reply context */}
+                            {parentMsg && (
+                              <div className="mb-2 pl-2 border-l-2 border-stone-300">
+                                <p className="text-[11px] text-stone-500 font-bold">{parentMsg.user}</p>
+                                <p className="text-[11px] text-stone-400 truncate">{parentMsg.text || (parentMsg.type === 'poll' ? '📊 Enquete' : parentMsg.type === 'verse' ? '📖 Versículo' : '')}</p>
+                              </div>
+                            )}
                             
                             {msg.type === 'poll' && msg.poll ? (
                               <div className="mt-2 space-y-2">
@@ -1255,7 +1463,6 @@ export default function Community() {
                                     <div key={opt.id} className="relative">
                                       <button
                                         onClick={() => handleVote(msg.id, opt.id)}
-                                        disabled={false}
                                         title={votedForThis ? 'Clique para remover seu voto' : ''}
                                         className={`w-full text-left p-2 rounded-xl border text-sm relative overflow-hidden transition-all z-10 ${
                                           votedForThis ? 'border-indigo-500 bg-indigo-50/50' : 'border-stone-200 hover:border-indigo-300 bg-white'
@@ -1265,7 +1472,7 @@ export default function Community() {
                                           <span className={votedForThis ? 'font-bold text-indigo-900' : 'text-stone-700'}>{opt.text}</span>
                                           <div className="flex items-center gap-1.5 shrink-0">
                                             {hasVoted && <span className="text-stone-500 font-medium">{percentage}%</span>}
-                                            {votedForThis && <span className="text-[10px] text-indigo-400 font-medium hidden sm:inline">(clique para desvolar)</span>}
+                                            {votedForThis && <span className="text-[10px] text-indigo-400 font-medium hidden sm:inline">(clique para desvotar)</span>}
                                           </div>
                                         </div>
                                         {hasVoted && (
@@ -1307,7 +1514,7 @@ export default function Community() {
                                   </p>
                                 </div>
                                 
-                                {!isCurrentUserAdmin && !msg.questionBox.answers.some(ans => ans.userEmail === (profile.email || 'me')) && (
+                                {!msg.questionBox.answers.some(ans => ans.userEmail === (profile.email || 'me')) && (
                                   <div className="flex gap-2">
                                     <input 
                                       type="text" 
@@ -1327,7 +1534,7 @@ export default function Community() {
                                   </div>
                                 )}
 
-                                {!isCurrentUserAdmin && msg.questionBox.answers.some(ans => ans.userEmail === (profile.email || 'me')) && (
+                                {msg.questionBox.answers.some(ans => ans.userEmail === (profile.email || 'me')) && !isCurrentUserAdmin && (
                                   <div className="text-sm text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 p-2 rounded-lg border border-emerald-100">
                                     <Check size={14} /> Resposta enviada!
                                   </div>
@@ -1344,7 +1551,7 @@ export default function Community() {
                                           <div key={idx} className="bg-white border border-stone-100 p-2.5 rounded-xl text-sm">
                                             <div className="flex items-center gap-1.5 mb-1">
                                               <span className="font-bold text-stone-800 text-xs">{ans.userName}</span>
-                                              <span className="text-[10px] text-stone-400">{ans.timestamp}</span>
+                                              <span className="text-[10px] text-stone-400">{formatRelativeTime(ans.timestamp)}</span>
                                             </div>
                                             <p className="text-stone-600">{ans.text}</p>
                                           </div>
@@ -1360,13 +1567,13 @@ export default function Community() {
                               </p>
                             )}
 
-                            {/* Reactions + Admin actions */}
+                            {/* Reactions + actions row */}
                             <div className="mt-2.5 flex items-center justify-between gap-2">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {msg.reactions && msg.reactions.map(reaction => {
                                   const hasReacted = reaction.users.includes(profile.email || 'me');
                                   return (
-                                    <div key={reaction.emoji} className="relative group">
+                                    <div key={reaction.emoji} className="relative group/reaction">
                                       <button
                                         onClick={() => handleReact(msg.id, reaction.emoji)}
                                         className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs border transition-colors ${
@@ -1377,7 +1584,7 @@ export default function Community() {
                                         <span className="font-medium">{reaction.users.length}</span>
                                       </button>
                                       {isCurrentUserAdmin && (
-                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-20 w-max max-w-[200px] bg-stone-800 text-white text-[10px] p-2 rounded-lg shadow-xl">
+                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover/reaction:block z-20 w-max max-w-[200px] bg-stone-800 text-white text-[10px] p-2 rounded-lg shadow-xl">
                                           <p className="font-bold mb-1 border-b border-stone-600 pb-1">Reagiram com {reaction.emoji}</p>
                                           <p>{reaction.users.map(email => activeGroup.members.find(m => m.email === email)?.name || email).join(', ')}</p>
                                         </div>
@@ -1386,7 +1593,7 @@ export default function Community() {
                                   );
                                 })}
 
-                                {/* Add reaction button */}
+                                {/* Add reaction */}
                                 <div className="relative">
                                   <button
                                     onClick={() => setShowReactionMenu(showReactionMenu === msg.id ? null : msg.id)}
@@ -1396,7 +1603,7 @@ export default function Community() {
                                   </button>
                                   {showReactionMenu === msg.id && (
                                     <div className="absolute bottom-full left-0 mb-1 bg-white border border-stone-200 shadow-xl rounded-full px-2 py-1 flex gap-1 z-20">
-                                      {['🙏', '✨', '🔥'].map(emoji => (
+                                      {['🙏', '✨', '🔥', '❤️', '👏'].map(emoji => (
                                         <button
                                           key={emoji}
                                           onClick={() => handleReact(msg.id, emoji)}
@@ -1408,10 +1615,24 @@ export default function Community() {
                                     </div>
                                   )}
                                 </div>
+
+                                {/* Member reply button — only for admin messages, non-reply types */}
+                                {!isCurrentUserAdmin && msg.type !== 'member_reply' && (
+                                  <button
+                                    onClick={() => {
+                                      setReplyingToId(replyingToId === msg.id ? null : msg.id);
+                                      setMemberReplyText('');
+                                    }}
+                                    className="w-7 h-7 flex items-center justify-center text-stone-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors"
+                                    title="Responder"
+                                  >
+                                    <MessageSquare size={14} />
+                                  </button>
+                                )}
                               </div>
 
-                              {/* Admin actions — larger touch targets, right side */}
-                              {isCurrentUserAdmin && (
+                              {/* Admin actions */}
+                              {isCurrentUserAdmin && msg.type !== 'member_reply' && (
                                 <div className="flex items-center gap-0.5 shrink-0">
                                   <button
                                     onClick={() => handlePinMessage(msg.id)}
@@ -1430,11 +1651,49 @@ export default function Community() {
                                   ><Trash2 size={15} /></button>
                                 </div>
                               )}
+                              {/* Admin can also delete member replies */}
+                              {isCurrentUserAdmin && msg.type === 'member_reply' && (
+                                <button
+                                  onClick={() => handleDeleteMessage(msg.id)}
+                                  className="w-8 h-8 flex items-center justify-center text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                                  title="Excluir resposta"
+                                ><Trash2 size={15} /></button>
+                              )}
                             </div>
+
+                            {/* Inline reply input for member */}
+                            {replyingToId === msg.id && !isCurrentUserAdmin && (
+                              <div className="mt-2.5 flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Sua resposta..."
+                                  value={memberReplyText}
+                                  autoFocus
+                                  onChange={(e) => setMemberReplyText(e.target.value)}
+                                  onKeyDown={(e) => e.key === 'Enter' && handleMemberReply()}
+                                  className="flex-1 px-3 py-1.5 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                                <button
+                                  onClick={handleMemberReply}
+                                  disabled={!memberReplyText.trim()}
+                                  className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-xs font-bold"
+                                >
+                                  <Send size={14} />
+                                </button>
+                                <button
+                                  onClick={() => { setReplyingToId(null); setMemberReplyText(''); }}
+                                  className="px-2 py-1.5 text-stone-400 hover:text-stone-600 rounded-xl transition-colors"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            )}
 
                           </div>
                         </div>
-                      ))
+                        );
+                      });
+                      })()
                     )}
                   </div>
                   
@@ -1596,15 +1855,29 @@ export default function Community() {
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-stone-100 text-stone-500 text-sm text-center py-3 rounded-b-2xl border-t border-stone-200">
-                      Apenas o administrador pode publicar neste mural.
+                    /* Non-admin footer — explains interaction via reply button on each message */
+                    <div className="bg-white border-t border-stone-200 rounded-b-2xl px-4 py-3 flex items-center gap-2 text-stone-500">
+                      <div className="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
+                        <MessageSquare size={13} className="text-indigo-500" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-stone-600">
+                          Use o botão <span className="font-bold text-stone-800">↩ Responder</span> em qualquer mensagem para participar.
+                        </p>
+                        {(() => {
+                          const myReplies = activeGroup.messages.filter(m => m.type === 'member_reply' && m.userEmail === (profile.email || 'me')).length;
+                          return myReplies > 0 ? (
+                            <p className="text-[10px] text-indigo-500 font-medium mt-0.5">Você participou {myReplies} vez{myReplies > 1 ? 'es' : ''} neste grupo.</p>
+                          ) : null;
+                        })()}
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
               )} {/* end groupSubTab === 'mural' */}
 
-              {/* Leave / Delete Group — discreto no rodapé */}
+              {/* Leave / Delete Group */}
               <div className="pt-2 flex justify-center">
                 {isCurrentUserAdmin ? (
                   <button 
@@ -1674,8 +1947,6 @@ export default function Community() {
                 </div>
               )}
                   </>
-                );
-              })()}
             </motion.div>
           ) : activeTab === 'feed' && (
             <div className="space-y-2">
@@ -2016,6 +2287,14 @@ export default function Community() {
                   <div 
                     key={group.id} 
                     onClick={async () => {
+                      // Reset estado do grupo anterior
+                      setReplyingToId(null);
+                      setMemberReplyText('');
+                      setGroupSubTab('mural');
+                      setEditingMessageId(null);
+                      setNewMessage('');
+                      setIsCreatingPoll(false);
+                      setIsCreatingQuestionBox(false);
                       // Fetch the freshest version of this group directly from Supabase
                       const { data } = await supabase
                         .from('community_groups')
@@ -2071,9 +2350,9 @@ export default function Community() {
                       {/* Progresso compacto */}
                       <div className="flex items-center gap-2 flex-1 max-w-[120px]">
                         <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${calculateGroupProgress(group.members)}%` }}></div>
+                          <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${calculateGroupProgress(group.members, group.targetId)}%` }}></div>
                         </div>
-                        <span className="text-xs font-bold text-stone-500 shrink-0">{calculateGroupProgress(group.members)}%</span>
+                        <span className="text-xs font-bold text-stone-500 shrink-0">{calculateGroupProgress(group.members, group.targetId)}%</span>
                       </div>
                     </div>
                   </div>

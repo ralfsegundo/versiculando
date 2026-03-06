@@ -96,7 +96,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     { text: 'Jesus Cristo é o mesmo, ontem, hoje e sempre.', ref: 'Hb 13,8' },
     { text: 'O coração do homem planeja o seu caminho, mas o Senhor dirige os seus passos.', ref: 'Pv 16,9' },
     { text: 'Derramai diante dele o vosso coração.', ref: 'Sl 62,9' },
-    { text: 'Posso tudo naquele que me fortalece.', ref: 'Fl 4,13' },
+    { text: 'Vinde a mim todos os que estais cansados e sobrecarregados.', ref: 'Mt 11,28' },
     { text: 'Sede fortes no Senhor e na força do seu poder.', ref: 'Ef 6,10' },
   ];
   const todayVerse = DAILY_VERSES[DAY_OF_YEAR % DAILY_VERSES.length];
@@ -110,7 +110,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     { key: 'teresinha', name: 'Santa Teresinha', date: '01/10', phrase: 'O amor não é sentido, mas demonstrado.', emoji: '🌸' },
     { key: 'agostinho', name: 'Santo Agostinho', date: '28/08', phrase: 'Nosso coração é inquieto enquanto não repousa em Ti.', emoji: '📚' },
     { key: 'tomaz_aquino', name: 'São Tomás de Aquino', date: '28/01', phrase: 'A fé e a razão não se contradizem.', emoji: '🧠' },
-    { key: 'domingos', name: 'São Domingos', date: '08/08', phrase: 'A fé sem obras é morta.', emoji: '📿' },
+    { key: 'domingos', name: 'São Domingos', date: '08/08', phrase: 'Pregai sempre o Evangelho — se necessário, com palavras.', emoji: '📿' },
     { key: 'jose', name: 'São José', date: '19/03', phrase: 'Homem justo, que ouve em silêncio e age com fé.', emoji: '🔨' },
     { key: 'paulo', name: 'São Paulo', date: '25/01', phrase: 'Tudo posso naquele que me fortalece.', emoji: '✉️' },
     { key: 'joao_evangelista', name: 'São João Evangelista', date: '27/12', phrase: 'Deus é amor; quem permanece no amor permanece em Deus.', emoji: '❤️' },
@@ -128,7 +128,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     { key: 'inacio', name: 'Santo Inácio de Loyola', date: '31/07', phrase: 'Tudo para a maior glória de Deus.', emoji: '⚔️' },
     { key: 'teresa_avila', name: 'Santa Teresa de Ávila', date: '15/10', phrase: 'Deus basta.', emoji: '🏰' },
     { key: 'bento', name: 'São Bento', date: '11/07', phrase: 'Ora et Labora — Ora e Trabalha.', emoji: '📖' },
-    { key: 'cristovao', name: 'São Cristóvão', date: '25/07', phrase: 'Carreguei o mundo inteiro em meus ombros.', emoji: '🌍' },
+    { key: 'cristovao', name: 'São Cristóvão', date: '25/07', phrase: 'Com fé, qualquer peso se torna leve.', emoji: '🌍' },
     { key: 'valentim', name: 'São Valentim', date: '14/02', phrase: 'O amor é o maior presente.', emoji: '💝' },
     { key: 'patrício', name: 'São Patrício', date: '17/03', phrase: 'Cristo à minha frente, Cristo atrás de mim.', emoji: '☘️' },
     { key: 'nicolau', name: 'São Nicolau', date: '06/12', phrase: 'Dar sem esperar receber.', emoji: '🎁' },
@@ -602,7 +602,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         completeFlashChallenge();
                         setFlashVisible(false);
                       }} className="bg-yellow-400 text-stone-900 font-bold text-xs px-4 py-1.5 rounded-full active:scale-95 transition-all">
-                        Concluí! +300 XP
+                        Concluí! +{applyMultiplier(300, profile.streak)} XP
                       </button>
                     </div>
                   </div>

@@ -531,6 +531,40 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         showFloatingPoints(50, 'free');
       }
 
+      // Post automático no feed da comunidade
+      if (profile.email) {
+        const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+        if (hasSupabase) {
+          const BIBLE_BOOKS_MAP: Record<string, string> = {
+            'gen':'Gênesis','exo':'Êxodo','lev':'Levítico','num':'Números','deu':'Deuteronômio',
+            'jos':'Josué','jdg':'Juízes','rut':'Rute','1sa':'1 Samuel','2sa':'2 Samuel',
+            '1ki':'1 Reis','2ki':'2 Reis','1ch':'1 Crônicas','2ch':'2 Crônicas','ezr':'Esdras',
+            'neh':'Neemias','tob':'Tobias','jdt':'Judite','est':'Ester','1ma':'1 Macabeus',
+            '2ma':'2 Macabeus','job':'Jó','psa':'Salmos','pro':'Provérbios','ecc':'Eclesiastes',
+            'sng':'Cânticos','wis':'Sabedoria','sir':'Eclesiástico','isa':'Isaías','jer':'Jeremias',
+            'lam':'Lamentações','bar':'Baruc','ezk':'Ezequiel','dan':'Daniel','hos':'Oseias',
+            'jol':'Joel','amo':'Amós','oba':'Obadias','jon':'Jonas','mic':'Miqueias','nam':'Naum',
+            'hab':'Habacuque','zep':'Sofonias','hag':'Ageu','zec':'Zacarias','mal':'Malaquias',
+            'mat':'Mateus','mrk':'Marcos','luk':'Lucas','jhn':'João','act':'Atos','rom':'Romanos',
+            '1co':'1 Coríntios','2co':'2 Coríntios','gal':'Gálatas','eph':'Efésios','php':'Filipenses',
+            'col':'Colossenses','1th':'1 Tessalonicenses','2th':'2 Tessalonicenses','1ti':'1 Timóteo',
+            '2ti':'2 Timóteo','tit':'Tito','phm':'Filemom','heb':'Hebreus','jas':'Tiago',
+            '1pe':'1 Pedro','2pe':'2 Pedro','1jn':'1 João','2jn':'2 João','3jn':'3 João',
+            'jud':'Judas','rev':'Apocalipse',
+          };
+          const bookName = BIBLE_BOOKS_MAP[bookId] || bookId;
+          const action = isGps
+            ? `concluiu "${bookName}" pela Trilha do Discípulo 🧭`
+            : `concluiu o livro de "${bookName}" 📖`;
+          supabase.from('community_feed').insert({
+            user_name: profile.name,
+            user_email: profile.email,
+            avatar_id: profile.avatarId || '',
+            action,
+          }).then(() => {}).catch(() => {});
+        }
+      }
+
       // Check if entire Trilha do Discípulo is now complete → trigger completePlan
       const discipleBookIds = BEGINNER_PATH.flatMap(step => step.books);
       const allDiscipleCompleted = discipleBookIds.every(

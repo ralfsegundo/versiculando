@@ -2221,7 +2221,7 @@ export default function Community() {
                         {isPromotion && pos > myPosition && <span className="text-[9px] text-emerald-600 font-bold mr-1">↑ sobe</span>}
                         {isRelegation && <span className="text-[9px] text-red-500 font-bold mr-1">↓</span>}
                         <div className={`font-mono font-bold text-sm ${user.isMe ? 'text-indigo-600' : 'text-stone-500'}`}>
-                          {user.points} pts
+                          {user.points} XP
                         </div>
                       </div>
                     );
@@ -2230,7 +2230,7 @@ export default function Community() {
 
                 {myPosition > 5 && (
                   <p className="text-center text-xs text-stone-500 bg-amber-50 border border-amber-100 rounded-xl py-2.5 px-4">
-                    🎯 Você está na {myPosition}ª posição. Precisa de <strong>{allEntries[4].points - myPoints + 1} pts</strong> para entrar no top 5!
+                    🎯 Você está na {myPosition}ª posição. Precisa de <strong>{allEntries[4].points - myPoints + 1} XP</strong> para entrar no top 5!
                   </p>
                 )}
               </div>

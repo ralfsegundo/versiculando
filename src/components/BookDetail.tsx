@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { BIBLE_BOOKS, GROUP_COLORS, GROUP_THEMES, BEGINNER_PATH } from '../constants';
 import { generateBookSummary, BookData, MindMapData } from '../services/bookData';
-import { ArrowLeft, Loader2, Map, List, BookOpen, Search, FileText, Clock, Heart, Lightbulb, Key, Hash, Users, CheckCircle2, Trash2, Navigation, Pencil, Palette, Copy, Sparkles, Check, MapPin, X, ArrowRight, Share2 } from 'lucide-react';
+import { ArrowLeft, Map, List, BookOpen, Search, FileText, Clock, Heart, Lightbulb, Key, Hash, Users, CheckCircle2, Trash2, Navigation, Pencil, Palette, Copy, Sparkles, Check, MapPin, X, ArrowRight, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGamification, AVATARS } from '../services/gamification';
 import { useNotes, NoteContext } from '../services/notes';
@@ -10,6 +10,58 @@ import { sharingService } from '../services/sharingService';
 interface BookDetailProps {
   bookId: string;
   onBack: () => void;
+}
+
+// ── Skeleton Screen ───────────────────────────────────────────
+// Exibido enquanto os dados carregam — dá sensação de velocidade
+function BookDetailSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      {/* Tab bar skeleton */}
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {[120, 100, 90, 110, 80].map((w, i) => (
+          <div key={i} className="h-9 rounded-full bg-stone-200 flex-shrink-0" style={{ width: w }} />
+        ))}
+      </div>
+
+      {/* Hero card skeleton */}
+      <div className="rounded-3xl bg-stone-100 border border-stone-200 p-6 space-y-4">
+        <div className="h-5 w-1/3 rounded-full bg-stone-200" />
+        <div className="space-y-2">
+          <div className="h-3 rounded-full bg-stone-200 w-full" />
+          <div className="h-3 rounded-full bg-stone-200 w-5/6" />
+          <div className="h-3 rounded-full bg-stone-200 w-4/6" />
+        </div>
+        {/* Tags row */}
+        <div className="flex gap-2 flex-wrap pt-1">
+          {[80, 100, 70, 90].map((w, i) => (
+            <div key={i} className="h-7 rounded-full bg-stone-200" style={{ width: w }} />
+          ))}
+        </div>
+      </div>
+
+      {/* Content cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="rounded-2xl bg-stone-100 border border-stone-200 p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-stone-200" />
+              <div className="h-4 w-24 rounded-full bg-stone-200" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-3 rounded-full bg-stone-200 w-full" />
+              <div className="h-3 rounded-full bg-stone-200 w-4/5" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bottom action skeleton */}
+      <div className="flex justify-center pt-2">
+        <div className="h-12 w-48 rounded-full bg-stone-200" />
+      </div>
+    </div>
+  );
 }
 
 export default function BookDetail({ bookId, onBack }: BookDetailProps) {
@@ -128,11 +180,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
       {/* Main Content */}
       <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 md:py-8">
         {loading ? (
-          <div className="flex flex-col items-center justify-center h-64 text-stone-500">
-            <Loader2 className="w-10 h-10 animate-spin mb-4 text-stone-400" />
-            <p className="text-lg font-medium">Gerando mapa mental e resumos...</p>
-            <p className="text-sm opacity-70 mt-2">Isso pode levar alguns segundos usando IA.</p>
-          </div>
+          <BookDetailSkeleton />
         ) : error ? (
           <div className="bg-red-50 text-red-800 p-6 rounded-2xl border border-red-200 text-center">
             <p>{error}</p>

@@ -146,64 +146,109 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
     const stepCompletedBooks = step.books.filter(id => profile.completedBooks.includes(id)).length;
     const totalStepBooks = step.books.length;
     const estimatedWeeks = Math.max(1, Math.ceil((step.books.reduce((sum, id) => sum + (BIBLE_BOOKS.find(b => b.id === id)?.chapters || 0), 0) * 3) / (15 * 7)));
+    const stepPct = totalStepBooks > 0 ? Math.round((stepCompletedBooks / totalStepBooks) * 100) : 0;
     return (
-      <div key={globalIndex} className={`relative z-10 md:pl-16 ${!isUnlocked ? 'opacity-75' : ''}`}>
-        <div className={`hidden md:flex absolute left-4 -translate-x-1/2 top-0 w-8 h-8 rounded-full items-center justify-center font-bold text-sm border-4 border-[#fdfbf7] transition-colors ${isCompleted ? 'bg-amber-400 text-white' : isUnlocked ? 'bg-stone-900 text-white' : 'bg-stone-300 text-stone-500'}`}>
-          {isCompleted ? <CheckCircle2 size={16} /> : globalIndex + 1}
+      <motion.div key={globalIndex} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: globalIndex * 0.06 }}
+        className={`relative z-10 md:pl-16 ${!isUnlocked ? 'opacity-60' : ''}`}>
+        {/* Timeline dot (desktop) */}
+        <div className={`hidden md:flex absolute left-4 -translate-x-1/2 top-1 w-9 h-9 rounded-full items-center justify-center font-bold text-sm border-4 border-[#fdfbf7] transition-colors shadow-md ${isCompleted ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white' : isUnlocked ? 'bg-stone-900 text-white' : 'bg-stone-200 text-stone-400'}`}>
+          {isCompleted ? '✓' : globalIndex + 1}
         </div>
         <div className="mb-3">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className={`md:hidden w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${isCompleted ? 'bg-amber-400 text-white' : isUnlocked ? 'bg-stone-900 text-white' : 'bg-stone-300 text-stone-500'}`}>
-              {isCompleted ? <CheckCircle2 size={12} /> : globalIndex + 1}
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`md:hidden w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${isCompleted ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white' : isUnlocked ? 'bg-stone-900 text-white' : 'bg-stone-200 text-stone-400'}`}>
+              {isCompleted ? '✓' : globalIndex + 1}
             </span>
             <h2 className={`text-base font-serif font-bold flex-1 leading-tight ${isCompleted ? 'text-amber-600' : isUnlocked ? 'text-stone-900' : 'text-stone-400'}`}>{step.title}</h2>
-            <span className={`text-xs font-bold shrink-0 ${isCompleted ? 'text-amber-500' : isUnlocked ? 'text-stone-400' : 'invisible'}`}>
-              {isUnlocked ? `${stepCompletedBooks}/${totalStepBooks}` : ''}{isCompleted && ' ✓'}
-            </span>
+            {isCompleted && (
+              <span className="shrink-0 bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">✓ Concluído</span>
+            )}
+            {isUnlocked && !isCompleted && (
+              <span className="shrink-0 text-[10px] font-bold text-stone-500">{stepCompletedBooks}/{totalStepBooks}</span>
+            )}
           </div>
-          <p className={`text-sm md:ml-0 ml-8 leading-snug line-clamp-2 ${isUnlocked ? 'text-stone-500' : 'text-stone-400 italic'}`}>{step.description}</p>
-          <p className="text-[11px] text-stone-400 md:ml-0 ml-8 mt-0.5">⏱ ~{estimatedWeeks} {estimatedWeeks === 1 ? 'semana' : 'semanas'}</p>
+          <p className={`text-sm md:ml-0 ml-9 leading-snug line-clamp-2 ${isUnlocked ? 'text-stone-500' : 'text-stone-400 italic'}`}>{step.description}</p>
+          <div className="flex items-center gap-3 md:ml-0 ml-9 mt-1.5">
+            <p className="text-[11px] text-stone-400">⏱ ~{estimatedWeeks} {estimatedWeeks === 1 ? 'semana' : 'semanas'}</p>
+            {isUnlocked && !isCompleted && stepCompletedBooks > 0 && (
+              <div className="flex-1 max-w-24 h-1.5 bg-stone-200 rounded-full overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all" style={{ width: `${stepPct}%` }} />
+              </div>
+            )}
+          </div>
         </div>
-        <div className="md:ml-0 ml-11 relative">
+        <div className="md:ml-0 ml-9 relative">
           {!isUnlocked && (
-            <div className="absolute inset-0 z-20 bg-[#fdfbf7]/60 backdrop-blur-[1px] flex flex-col items-center justify-center rounded-2xl border border-stone-200/50">
-              <div className="bg-white p-3 rounded-full shadow-sm mb-2 text-stone-400"><Lock size={24} /></div>
+            <div className="absolute inset-0 z-20 bg-[#fdfbf7]/70 backdrop-blur-[2px] flex flex-col items-center justify-center rounded-2xl border border-stone-200/50">
+              <div className="bg-white p-3 rounded-full shadow-sm mb-2 text-stone-400"><Lock size={22} /></div>
               <p className="text-sm font-bold text-stone-500">Conclua o Passo {globalIndex} para desbloquear</p>
             </div>
           )}
           <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-            {step.books.map(bookId => {
+            {step.books.map((bookId, bookIdx) => {
               const book = BIBLE_BOOKS.find(b => b.id === bookId)!;
               const isBookCompleted = profile.completedBooks.includes(bookId);
               const isBookInProgress = profile.visitedBooks?.includes(bookId) && !isBookCompleted;
               const isBookNotStarted = !isBookCompleted && !isBookInProgress;
-              let cardClass = '';
-              if (isBookNotStarted) cardClass = 'bg-white border-2 border-dashed border-stone-200';
-              else if (isBookInProgress) cardClass = 'bg-orange-50 border-2 border-orange-400 relative';
-              else if (isBookCompleted) cardClass = 'bg-emerald-50/50 border-2 border-emerald-400 relative shadow-[0_0_15px_rgba(52,211,153,0.15)]';
               return (
-                <button key={book.id} onClick={() => isUnlocked && onSelectBook(book.id)} disabled={!isUnlocked}
-                  className={`p-3 rounded-xl flex flex-col items-center justify-center text-center transition-all ${cardClass} ${isUnlocked ? 'hover:shadow-md active:scale-95' : ''}`}>
-                  {isBookInProgress && <div className="absolute -top-2 -right-2 bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow-sm uppercase tracking-wider hidden sm:block">Em progresso</div>}
-                  {isBookCompleted && <div className="absolute top-1.5 right-1.5 text-amber-500"><CheckCircle2 size={14} className="fill-amber-100" /></div>}
-                  <span className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${isBookNotStarted ? 'text-stone-400' : isBookInProgress ? 'text-orange-700/70' : 'text-emerald-700/70'} hidden sm:block`}>{book.group}</span>
-                  <span className={`font-serif text-sm font-bold leading-tight ${isBookNotStarted ? 'text-stone-600' : isBookInProgress ? 'text-orange-900' : 'text-emerald-900'}`}>{book.name}</span>
-                  <span className={`text-[10px] mt-1.5 font-medium ${isBookNotStarted ? 'text-stone-400' : isBookInProgress ? 'text-orange-700/70' : 'text-emerald-700/70'}`}>{book.chapters} cap.</span>
-                </button>
+                <motion.button key={book.id}
+                  initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: (globalIndex * 0.06) + (bookIdx * 0.03) }}
+                  onClick={() => isUnlocked && onSelectBook(book.id)} disabled={!isUnlocked}
+                  className={`p-2.5 rounded-xl flex flex-col items-center justify-center text-center transition-all relative group
+                    ${isBookCompleted ? 'bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.2)]' 
+                    : isBookInProgress ? 'bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-orange-400' 
+                    : 'bg-white border-2 border-dashed border-stone-200 hover:border-stone-300'}
+                    ${isUnlocked ? 'hover:shadow-md active:scale-95 cursor-pointer' : 'cursor-not-allowed'}`}>
+                  {isBookInProgress && (
+                    <div className="absolute -top-2 -right-2 bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow-sm uppercase tracking-wider hidden sm:block">
+                      lendo
+                    </div>
+                  )}
+                  {isBookCompleted && (
+                    <div className="absolute top-1.5 right-1.5 text-amber-500">
+                      <CheckCircle2 size={13} className="fill-amber-100" />
+                    </div>
+                  )}
+                  <span className={`text-[9px] font-bold uppercase tracking-wider mb-0.5 hidden sm:block truncate w-full text-center
+                    ${isBookNotStarted ? 'text-stone-300' : isBookInProgress ? 'text-orange-400' : 'text-amber-500'}`}>{book.group}</span>
+                  <span className={`font-serif text-sm font-bold leading-tight
+                    ${isBookNotStarted ? 'text-stone-600' : isBookInProgress ? 'text-orange-900' : 'text-amber-800'}`}>{book.name}</span>
+                  <span className={`text-[10px] mt-1 font-medium
+                    ${isBookNotStarted ? 'text-stone-400' : isBookInProgress ? 'text-orange-500' : 'text-amber-600'}`}>{book.chapters} cap.</span>
+                </motion.button>
               );
             })}
           </div>
         </div>
-      </div>
+      </motion.div>
     );
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#fdfbf7] flex items-center justify-center pb-28">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600" />
-          <p className="text-sm text-stone-500">Carregando trilhas...</p>
+      <div className="min-h-screen bg-[#fdfbf7] pb-28">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 pt-5 md:pt-8 space-y-6 animate-pulse">
+          {/* Header skeleton */}
+          <div className="rounded-3xl bg-gradient-to-br from-amber-100 to-orange-100 h-36 w-full" />
+          {/* Tabs skeleton */}
+          <div className="flex gap-2">
+            <div className="flex-1 h-11 rounded-xl bg-stone-200" />
+            <div className="flex-1 h-11 rounded-xl bg-stone-100" />
+          </div>
+          {/* Banner skeleton */}
+          <div className="h-20 rounded-2xl bg-stone-100" />
+          {/* Progress bar skeleton */}
+          <div className="h-3 rounded-full bg-stone-200" />
+          {/* Step blocks skeleton */}
+          {[1, 2, 3].map(i => (
+            <div key={i} className="space-y-3">
+              <div className="h-5 w-48 rounded-full bg-stone-200" />
+              <div className="h-4 w-72 rounded-full bg-stone-100" />
+              <div className="grid grid-cols-3 gap-2">
+                {[1,2,3,4,5,6].map(j => <div key={j} className="h-16 rounded-xl bg-stone-100" />)}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -214,27 +259,46 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
       <div className="max-w-2xl mx-auto px-4 sm:px-6 pt-5 md:pt-8">
 
         {/* Header */}
-        <header className="mb-6 pr-10 md:pr-0">
-          <div className="flex items-center gap-3 md:flex-col md:text-center md:items-center">
-            <div className="w-9 h-9 md:w-12 md:h-12 bg-gradient-to-br from-rose-600 to-pink-700 text-white rounded-xl flex items-center justify-center shadow-md shrink-0">
-              <Heart size={18} className="md:w-6 md:h-6" />
+        <header className="mb-6 relative rounded-3xl overflow-hidden bg-gradient-to-br from-rose-500 via-pink-500 to-orange-400 p-5 md:p-7 shadow-lg shadow-rose-200/60">
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -top-6 -right-6 w-32 h-32 bg-white/10 rounded-full" />
+            <div className="absolute -bottom-8 -left-4 w-40 h-40 bg-white/10 rounded-full" />
+            <div className="absolute top-1/2 right-16 w-16 h-16 bg-white/10 rounded-full" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/30 shrink-0">
+                <Heart size={20} className="text-white" fill="white" />
+              </div>
+              <div>
+                <h1 className="text-xl md:text-2xl font-serif font-bold text-white tracking-tight">Trilhas de Fé</h1>
+                <p className="text-white/75 text-xs font-medium">Caminhos para os desafios da vida</p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-lg md:text-3xl font-serif font-bold tracking-tight text-stone-900">Trilhas</h1>
-              <p className="text-xs md:text-sm text-stone-500 mt-0.5">Caminhos de fé para os desafios da vida</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1.5 border border-white/20">
+                <Flame size={12} className="text-amber-200" />
+                <span className="text-white font-bold text-xs">{startedCount > 0 ? `${startedCount} em andamento` : 'Comece sua jornada'}</span>
+              </div>
+              {finishedCount > 0 && (
+                <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1.5 border border-white/20">
+                  <CheckCircle2 size={12} className="text-emerald-200" />
+                  <span className="text-white font-bold text-xs">{finishedCount} concluída{finishedCount > 1 ? 's' : ''}</span>
+                </div>
+              )}
             </div>
           </div>
         </header>
 
         {/* Tab switcher */}
-        <div className="flex bg-stone-100 p-1 rounded-xl gap-1 mb-6">
+        <div className="flex bg-stone-100 p-1 rounded-2xl gap-1 mb-6">
           <button onClick={() => setActiveTab('caminho')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg font-medium text-sm transition-all active:scale-95 ${activeTab === 'caminho' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}>
-            <Compass size={15} /> Por onde começar?
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all active:scale-95 ${activeTab === 'caminho' ? 'bg-white text-stone-900 shadow-md' : 'text-stone-400 hover:text-stone-600'}`}>
+            🧭 <span className="hidden xs:inline">Por onde começar?</span><span className="xs:hidden">Caminho</span>
           </button>
           <button onClick={() => setActiveTab('tematicas')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg font-medium text-sm transition-all active:scale-95 ${activeTab === 'tematicas' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}>
-            <Heart size={15} /> Trilhas Temáticas
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all active:scale-95 ${activeTab === 'tematicas' ? 'bg-white text-stone-900 shadow-md' : 'text-stone-400 hover:text-stone-600'}`}>
+            💛 Trilhas Temáticas
           </button>
         </div>
 
@@ -242,54 +306,66 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
         {activeTab === 'caminho' && (
           <div>
             {isFirstTime ? (
-              <div className="bg-gradient-to-br from-amber-100 to-orange-100 rounded-3xl p-6 md:p-8 mb-8 shadow-sm border border-amber-200 text-center relative overflow-hidden">
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                className="bg-gradient-to-br from-amber-400 via-orange-400 to-amber-500 rounded-3xl p-6 md:p-8 mb-8 shadow-lg shadow-amber-200/60 relative overflow-hidden text-center">
                 <div className="absolute top-0 right-0 p-4 opacity-10"><Compass size={120} /></div>
+                <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-white/10 rounded-full" />
                 <div className="relative z-10 flex flex-col items-center">
-                  <div className="w-16 h-16 bg-amber-500 text-white rounded-full flex items-center justify-center mb-4 shadow-md"><Compass size={32} /></div>
-                  <h2 className="text-2xl md:text-3xl font-serif font-bold text-amber-900 mb-2">Sua jornada começa aqui</h2>
-                  <p className="text-amber-800 mb-6 max-w-md">Siga o caminho recomendado pela tradição católica e leia a Bíblia do jeito certo.</p>
-                  <button onClick={() => onSelectBook(BEGINNER_PATH[0].books[0])} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full shadow-md hover:shadow-lg transition-all w-full sm:w-auto text-lg">Começar Agora →</button>
+                  <div className="w-16 h-16 bg-white/20 backdrop-blur-sm text-white rounded-2xl flex items-center justify-center mb-4 shadow-md border border-white/30 text-3xl">🧭</div>
+                  <h2 className="text-2xl md:text-3xl font-serif font-bold text-white mb-2">Sua jornada começa aqui</h2>
+                  <p className="text-amber-100 mb-6 max-w-md text-sm">Siga o caminho recomendado pela tradição católica e leia a Bíblia do jeito certo.</p>
+                  <button onClick={() => onSelectBook(BEGINNER_PATH[0].books[0])}
+                    className="bg-white text-amber-600 hover:bg-amber-50 font-bold py-3 px-8 rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-95 text-base flex items-center gap-2">
+                    Começar Agora <ArrowRight size={18} />
+                  </button>
                 </div>
-              </div>
+              </motion.div>
             ) : currentBook ? (
-              <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-4 mb-8 shadow-sm border border-amber-200">
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-4 mb-8 border-2 border-amber-200 shadow-sm hover:shadow-md transition-all">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 bg-white rounded-xl shadow-sm border border-amber-100 flex items-center justify-center text-amber-500 shrink-0"><BookOpen size={20} /></div>
+                  <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl shadow-md flex items-center justify-center text-2xl shrink-0">📖</div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1 text-amber-700 font-bold text-[10px] uppercase tracking-wider mb-0.5"><MapPin size={10} /> Você está aqui</div>
+                    <div className="flex items-center gap-1.5 text-amber-600 font-bold text-[10px] uppercase tracking-wider mb-0.5">
+                      <MapPin size={10} /> Você está aqui
+                    </div>
                     <h2 className="font-serif font-bold text-stone-900 text-base leading-tight truncate">{currentBook.name}</h2>
-                    <p className="text-stone-500 text-xs mt-0.5">{currentBook.chapters} cap. · ~{currentBook.chapters * 3} min</p>
+                    <p className="text-stone-400 text-xs mt-0.5">{currentBook.chapters} cap. · ~{currentBook.chapters * 3} min</p>
                   </div>
-                  <button onClick={() => onSelectBook(currentBook.id)} className="bg-orange-500 hover:bg-orange-600 active:scale-95 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all shrink-0 flex items-center gap-1.5 text-sm">
+                  <button onClick={() => onSelectBook(currentBook.id)}
+                    className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 text-white font-bold py-2.5 px-4 rounded-xl shadow-md transition-all shrink-0 flex items-center gap-1.5 text-sm">
                     Continuar <ArrowRight size={15} />
                   </button>
                 </div>
-              </div>
+              </motion.div>
             ) : null}
 
             <div className="mb-8 pr-12">
-              <div className="flex justify-between items-center mb-1.5">
-                <span className="text-xs font-medium text-stone-500">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-stone-600">
                   {isDiscipleCompleted && showDeepJourney
-                    ? <>Jornada do Sábio · <strong className="text-stone-700">{progressPercentage}%</strong></>
-                    : <>Passo {Math.min(currentStepIndex + 1, DISCIPLE_PATH_LENGTH)}/{DISCIPLE_PATH_LENGTH} · <strong className="text-stone-700">{discipleProgressPercentage}% concluído</strong></>
+                    ? <>🧭 Jornada do Sábio · <strong className="text-purple-600">{progressPercentage}% concluído</strong></>
+                    : <>📍 Passo {Math.min(currentStepIndex + 1, DISCIPLE_PATH_LENGTH)}/{DISCIPLE_PATH_LENGTH} · <strong className="text-amber-600">{discipleProgressPercentage}% concluído</strong></>
                   }
                 </span>
+                <span className="text-[10px] font-bold text-stone-400">{completedBeginnerBooks.length}/{allBeginnerBookIds.length} livros</span>
               </div>
-              <div className="w-full h-2 bg-stone-200 rounded-full overflow-hidden">
+              <div className="w-full h-3 bg-stone-200 rounded-full overflow-hidden relative">
                 <motion.div initial={{ width: 0 }} animate={{ width: `${isDiscipleCompleted && showDeepJourney ? progressPercentage : discipleProgressPercentage}%` }} transition={{ duration: 1, ease: 'easeOut' }}
-                  className={`h-full rounded-full ${isDiscipleCompleted && showDeepJourney ? 'bg-purple-500' : 'bg-amber-400'}`} />
+                  className={`h-full rounded-full relative overflow-hidden ${isDiscipleCompleted && showDeepJourney ? 'bg-gradient-to-r from-purple-400 to-indigo-500' : 'bg-gradient-to-r from-amber-400 to-orange-500'}`}>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+                </motion.div>
               </div>
             </div>
 
-            <div className="mb-5 flex items-center gap-2.5">
-              <div className="w-7 h-7 bg-amber-400 rounded-lg flex items-center justify-center shrink-0"><MapPin size={13} className="text-white" /></div>
+            <div className="mb-5 flex items-center gap-3">
+              <div className="w-9 h-9 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center shrink-0 shadow-md shadow-amber-200/50 text-lg">🏅</div>
               <div>
                 <h2 className="text-sm font-bold text-stone-900 leading-tight">Trilha do Discípulo</h2>
                 <p className="text-[11px] text-stone-400">6 passos · Para quem está começando</p>
               </div>
               {isDiscipleCompleted && (
-                <div className="ml-auto flex items-center gap-1 bg-amber-100 text-amber-700 text-[11px] font-bold px-2.5 py-1 rounded-full"><Trophy size={11} /> Concluída!</div>
+                <div className="ml-auto flex items-center gap-1.5 bg-amber-100 text-amber-700 text-[11px] font-bold px-3 py-1.5 rounded-full border border-amber-200"><Trophy size={11} /> Concluída!</div>
               )}
             </div>
 
@@ -357,19 +433,33 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
           <div>
             {(startedCount > 0 || finishedCount > 0) && (
               <div className="flex gap-3 mb-6">
-                {startedCount > 0 && <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2"><Flame size={14} className="text-amber-500" /><span className="text-xs font-bold text-amber-800">{startedCount} em andamento</span></div>}
-                {finishedCount > 0 && <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2"><CheckCircle2 size={14} className="text-emerald-500" /><span className="text-xs font-bold text-emerald-800">{finishedCount} concluídas</span></div>}
+                {startedCount > 0 && (
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 shadow-sm">
+                    <Flame size={14} className="text-amber-500" />
+                    <span className="text-xs font-bold text-amber-800">{startedCount} em andamento</span>
+                  </div>
+                )}
+                {finishedCount > 0 && (
+                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 shadow-sm">
+                    <CheckCircle2 size={14} className="text-emerald-500" />
+                    <span className="text-xs font-bold text-emerald-800">{finishedCount} concluída{finishedCount > 1 ? 's' : ''}</span>
+                  </div>
+                )}
               </div>
             )}
 
-            <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide -mx-4 px-4">
+            <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide -mx-4 px-4 pt-1">
               {categories.map((cat: any) => {
                 const meta = cat === 'todos' ? null : CATEGORY_META[cat as keyof typeof CATEGORY_META] || DEFAULT_META;
                 const isActive = activeCategory === cat;
+                const Icon = meta?.icon;
                 return (
                   <button key={cat} onClick={() => setActiveCategory(cat)}
-                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all active:scale-95 ${isActive ? 'bg-stone-900 text-white shadow-sm' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>
-                    {cat === 'todos' ? 'Todas' : (meta?.label || cat)}
+                    className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all active:scale-95 border
+                      ${isActive 
+                        ? cat === 'todos' ? 'bg-stone-900 text-white border-stone-900 shadow-md' : `bg-gradient-to-r ${meta?.gradient} text-white border-transparent shadow-md` 
+                        : 'bg-white text-stone-500 border-stone-200 hover:border-stone-300 hover:text-stone-700'}`}>
+                    {cat === 'todos' ? '✨ Todas' : <>{Icon && <Icon size={11} />}{meta?.label || cat}</>}
                   </button>
                 );
               })}
@@ -437,14 +527,16 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
             </div>
 
             {filtered.length === 0 && (
-              <div className="text-center py-16 text-stone-400">
-                <Heart size={32} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm">Nenhuma trilha nesta categoria ainda.</p>
-              </div>
+              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                className="text-center py-16 bg-stone-50 rounded-3xl border border-stone-100">
+                <div className="text-4xl mb-3">🌿</div>
+                <p className="text-sm font-bold text-stone-500">Nenhuma trilha nesta categoria ainda.</p>
+                <p className="text-xs text-stone-400 mt-1">Novas trilhas são adicionadas regularmente.</p>
+              </motion.div>
             )}
 
-            <div className="mt-10 text-center">
-              <p className="text-xs text-stone-400 leading-relaxed">Novas trilhas são adicionadas regularmente.<br />Todo conteúdo é baseado na Bíblia Católica.</p>
+            <div className="mt-10 text-center bg-stone-50 rounded-2xl p-4 border border-stone-100">
+              <p className="text-xs text-stone-400 leading-relaxed">✝️ Novas trilhas são adicionadas regularmente.<br />Todo conteúdo é baseado na Bíblia Católica.</p>
             </div>
           </div>
         )}

@@ -190,8 +190,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
 
   const handleReadDailyVerse = () => {
     if (!dailyVerseRead) {
-      accessDailyVerse(); // internally calls addPoints(15) and checks Madrugador badge
-      showFloatingPoints(15, 'free');
+      accessDailyVerse(); // internamente chama addPoints com multiplicador de streak
       localStorage.setItem('daily_verse_last_read', new Date().toISOString());
       setDailyVerseRead(true);
     }
@@ -563,7 +562,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         completeFlashChallenge();
                         setFlashVisible(false);
                       }} className="bg-yellow-400 text-stone-900 font-bold text-xs px-4 py-1.5 rounded-full active:scale-95 transition-all">
-                        Concluí! +200pts
+                        Concluí! +300 XP
                       </button>
                     </div>
                   </div>

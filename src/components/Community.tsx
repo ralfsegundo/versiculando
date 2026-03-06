@@ -216,7 +216,7 @@ export default function Community() {
     try {
       const { data, error } = await supabase
         .from('community_feed')
-        .select('id, user_name, avatar_id, action, created_at')
+        .select('id, user_name, user_email, avatar_id, action, created_at')
         .order('created_at', { ascending: false })
         .limit(30);
       if (error) { console.warn('[Community] loadFeed error:', error.message); return; }
@@ -228,9 +228,11 @@ export default function Community() {
           action: r.action,
           time: formatRelativeTime(r.created_at),
         })));
-        // Compute unread count based on last seen id
+        // Compute unread count — ignora ações do próprio usuário
         const lastSeenId = parseInt(localStorage.getItem('feed_last_seen_id') || '0', 10);
-        const newCount = data.filter((r: any) => r.id > lastSeenId).length;
+        const newCount = data.filter((r: any) =>
+          r.id > lastSeenId && r.user_email !== profile.email
+        ).length;
         setUnreadFeedCount(newCount);
       }
     } catch (e) { console.warn('[Community] loadFeed exception:', e); }

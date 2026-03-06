@@ -163,7 +163,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
 
   if (!book) return <div className="p-8 text-center text-stone-500">Livro não encontrado</div>;
 
-  const totalChapters = data?.chapters.length ?? book.chapters;
+  const totalChapters = data?.chapters?.length ?? book.chapters;
   const readCount = (profile.readChapters?.[book.id] || []).length;
   const progressPct = totalChapters > 0 ? Math.round((readCount / totalChapters) * 100) : 0;
   const allRead = readCount >= totalChapters;
@@ -354,7 +354,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
               className="mt-5"
             >
               {activeTab === 'overview'  && <OverviewTab data={data} book={book} theme={theme} colorClass={colorClass} onNavigateToChapter={handleNavigateToChapter} userId={userId} />}
-              {activeTab === 'chapters'  && <ChapterList chapters={data.chapters} colorClass={colorClass} onAnotar={handleAnotarCapitulo} bookId={book.id} readChapters={profile.readChapters?.[book.id] || []} onMarkChapterRead={n => markChapterRead(book.id, n, data.chapters.length)} onMarkAllChaptersRead={() => { const nums = data.chapters.map(ch => typeof ch.chapter === 'string' ? parseInt(ch.chapter) : ch.chapter as number); markAllChaptersRead(book.id, nums); }} />}
+              {activeTab === 'chapters'  && <ChapterList chapters={data.chapters ?? []} colorClass={colorClass} onAnotar={handleAnotarCapitulo} bookId={book.id} readChapters={profile.readChapters?.[book.id] || []} onMarkChapterRead={n => markChapterRead(book.id, n, (data.chapters ?? []).length)} onMarkAllChaptersRead={() => { const nums = (data.chapters ?? []).map(ch => typeof ch.chapter === 'string' ? parseInt(ch.chapter) : ch.chapter as number); markAllChaptersRead(book.id, nums); }} />}
               {activeTab === 'timeline'  && <TimelineTab timeline={data.timeline} bookName={book.name} colorClass={colorClass} />}
               {activeTab === 'verses'    && <VersesTab verses={data.mainVerses} bookName={book.name} colorClass={colorClass} />}
               {activeTab === 'notes'     && <NotesSection bookId={book.id} bookName={book.name} colorClass={colorClass} initialContext={initialNoteContext} onClearContext={() => setInitialNoteContext(null)} onNavigateToChapter={handleNavigateToChapter} />}
@@ -548,7 +548,7 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
       {/* ── TEMAS — grid de pills ── */}
       <DuoCard icon="💡" title="Principais Temas" accent={baseColor} border={borderColor}>
         <div className="flex flex-wrap gap-2">
-          {data.themes.map((t, i) => (
+          {(data.themes ?? []).map((t, i) => (
             <span key={i} className={`text-xs font-bold px-3 py-1.5 rounded-full ${baseColor} ${textColor} border ${borderColor}`}>
               {t}
             </span>
@@ -559,7 +559,7 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
       {/* ── PALAVRAS-CHAVE ── */}
       <DuoCard icon="🔑" title="Palavras-Chave" accent={baseColor} border={borderColor}>
         <div className="flex flex-wrap gap-2">
-          {data.keywords.map((kw, i) => (
+          {(data.keywords ?? []).map((kw, i) => (
             <span key={i} className="text-xs font-bold px-3 py-1.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
               #{kw}
             </span>
@@ -570,7 +570,7 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
       {/* ── PERSONAGENS — cards horizontais ── */}
       <DuoCard icon="👤" title="Personagens" accent={baseColor} border={borderColor}>
         <div className="space-y-3">
-          {data.names.map((person, i) => (
+          {(data.names ?? []).map((person, i) => (
             <div key={i} className={`flex items-start gap-3 p-3 rounded-2xl ${baseColor} border ${borderColor} bg-opacity-40`}>
               <div className={`w-8 h-8 rounded-xl ${baseColor} border ${borderColor} flex items-center justify-center shrink-0 font-black text-sm ${textColor}`}>
                 {person.name[0]}

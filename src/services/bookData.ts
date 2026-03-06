@@ -63,12 +63,18 @@ export async function generateBookSummary(
     return memoryCache[bookName];
   }
 
-  // 2. Busca no Supabase
-  const { data, error } = await supabase
+  // 2. Busca no Supabase com timeout de segurança
+  const fetchPromise = supabase
     .from('bible_books_data')
     .select('data')
     .eq('book_name', bookName)
     .single();
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), 10000)
+  );
+
+  const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>;
 
   if (error || !data) {
     throw new Error(

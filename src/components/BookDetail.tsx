@@ -73,7 +73,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
   const [activeTab, setActiveTab] = useState<'mindmap' | 'timeline' | 'chapters' | 'search' | 'notes'>('mindmap');
   const [initialNoteContext, setInitialNoteContext] = useState<NoteContext | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
-  const { addPoints, markBookCompleted, markBookVisited, markChapterRead, profile, addNote } = useGamification();
 
   const colorClass = book ? GROUP_COLORS[book.group] : 'bg-stone-100 text-stone-900 border-stone-200';
   const textColor = colorClass.split(' ').find(c => c.startsWith('text-')) || 'text-stone-900';

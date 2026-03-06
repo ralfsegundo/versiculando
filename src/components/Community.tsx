@@ -79,6 +79,8 @@ export default function Community() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingConnections, setIsLoadingConnections] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const [activeTab, setActiveTab] = useState<'feed' | 'ranking' | 'groups' | 'prayers' | 'friends'>('feed');
   const tabsScrollRef = useRef<HTMLDivElement>(null);
   const [tabsScroll, setTabsScroll] = useState({ left: false, right: true });
@@ -779,19 +781,28 @@ export default function Community() {
 
   const loadConnections = async () => {
     if (profile.email) {
-      const conns = await sharingService.getConnections(profile.email);
-      setConnections(conns);
+      setIsLoadingConnections(true);
+      try {
+        const conns = await sharingService.getConnections(profile.email);
+        setConnections(conns);
+      } finally {
+        setIsLoadingConnections(false);
+      }
     }
   };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
+    setSearchError('');
     try {
       const results = await sharingService.searchUsers(searchQuery);
-      setSearchResults(results.filter((u: any) => u.email !== profile.email));
+      const filtered = results.filter((u: any) => u.email !== profile.email);
+      setSearchResults(filtered);
+      if (filtered.length === 0) setSearchError('Nenhum usuário encontrado.');
     } catch (error) {
       console.error('Search failed', error);
+      setSearchError('Erro ao buscar. Tente novamente.');
     } finally {
       setIsSearching(false);
     }
@@ -800,18 +811,38 @@ export default function Community() {
   const handleRequestConnection = async (toEmail: string) => {
     if (profile.email) {
       await sharingService.requestConnection(profile.email, toEmail);
-      loadConnections();
-      setSearchResults([]);
-      setSearchQuery('');
-      alert('Convite enviado!');
+      await loadConnections();
+      setSearchResults(prev => prev.map(u =>
+        u.email === toEmail ? { ...u, _requestSent: true } : u
+      ));
     }
   };
 
   const handleRespond = async (fromEmail: string, status: 'accepted' | 'rejected') => {
     if (profile.email) {
       await sharingService.respondToConnection(fromEmail, profile.email, status);
-      loadConnections();
+      await loadConnections();
     }
+  };
+
+  const handleRemoveFriend = (connEmail: string, connName: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Remover Amigo',
+      message: `Tem certeza que deseja remover ${connName} da sua lista de amigos?`,
+      confirmText: 'Remover',
+      confirmColor: 'bg-rose-700 hover:bg-rose-800',
+      onConfirm: async () => {
+        if (profile.email) {
+          // Deleta a conexão nos dois sentidos
+          await supabase.from('user_connections')
+            .delete()
+            .or(`and(from_email.eq.${profile.email},to_email.eq.${connEmail}),and(from_email.eq.${connEmail},to_email.eq.${profile.email})`);
+          await loadConnections();
+        }
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   // Sem campo last_seen no banco — exibe texto neutro
@@ -1875,148 +1906,205 @@ export default function Community() {
 
           {activeTab === 'friends' && !activeGroup && (
             <>
-              {/* Search */}
-          <div className="flex flex-col sm:flex-row gap-2 mb-6">
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
-              <input 
-                type="text" 
-                placeholder="Buscar por nome ou email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
-              />
-            </div>
-            <button 
-              onClick={handleSearch}
-              disabled={isSearching || !searchQuery.trim()}
-              className="px-5 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 text-sm active:scale-95"
-            >
-              {isSearching ? '...' : 'Buscar'}
-            </button>
-          </div>
+              {/* Search Bar */}
+              <div className="flex flex-col sm:flex-row gap-2 mb-6">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nome ou email..."
+                    value={searchQuery}
+                    onChange={(e) => { setSearchQuery(e.target.value); setSearchError(''); if (!e.target.value.trim()) setSearchResults([]); }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                    className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
+                  />
+                </div>
+                <button
+                  onClick={handleSearch}
+                  disabled={isSearching || !searchQuery.trim()}
+                  className="px-5 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 text-sm active:scale-95 flex items-center justify-center gap-2"
+                >
+                  {isSearching
+                    ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    : <Search size={16} />
+                  }
+                  <span>{isSearching ? 'Buscando...' : 'Buscar'}</span>
+                </button>
+              </div>
 
-          {/* Search Results */}
-          {searchResults.length > 0 && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8 space-y-3">
-              <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider px-2">Resultados da Busca</h4>
-              {searchResults.map((user) => {
-                const isConnected = connections.find(c => c.user.email === user.email);
-                return (
-                  <div key={user.email} className="flex items-center justify-between p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-2xl border border-indigo-100 overflow-hidden">
-                        {user.avatarUrl ? (
-                          <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              {/* Search Error / Empty */}
+              {searchError && searchResults.length === 0 && (
+                <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="mb-6 text-sm text-stone-500 bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 flex items-center gap-2">
+                  <Search size={15} className="text-stone-400 shrink-0" />
+                  {searchError}
+                </motion.div>
+              )}
+
+              {/* Search Results */}
+              {searchResults.length > 0 && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8 space-y-3">
+                  <div className="flex items-center justify-between px-2">
+                    <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider">Resultados ({searchResults.length})</h4>
+                    <button onClick={() => { setSearchResults([]); setSearchQuery(''); setSearchError(''); }} className="text-xs text-stone-400 hover:text-stone-600 transition-colors font-medium">Limpar</button>
+                  </div>
+                  {searchResults.map((user) => {
+                    const existingConn = connections.find(c => c.user.email === user.email);
+                    const requestSent = user._requestSent || (existingConn?.status === 'pending' && existingConn?.isRequester);
+                    const isAlreadyFriend = existingConn?.status === 'accepted';
+                    return (
+                      <div key={user.email} className="flex items-center justify-between p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-2xl border border-indigo-100 overflow-hidden">
+                            {user.avatarUrl ? (
+                              <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              AVATARS.find(a => a.id === user.avatarId)?.emoji || '👤'
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-bold text-stone-900 text-base">{user.name || 'Usuário'}</p>
+                            <p className="text-sm text-stone-500">{user.email}</p>
+                          </div>
+                        </div>
+                        {isAlreadyFriend ? (
+                          <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                            <Check size={13} /> Amigos
+                          </span>
+                        ) : requestSent ? (
+                          <span className="flex items-center gap-1.5 text-xs font-bold text-indigo-500 bg-indigo-100 px-3 py-1.5 rounded-xl">
+                            <Clock size={13} /> Enviado
+                          </span>
                         ) : (
-                          AVATARS.find(a => a.id === user.avatarId)?.emoji || '👤'
+                          <button
+                            onClick={() => handleRequestConnection(user.email)}
+                            className="flex items-center gap-2 px-4 py-2 bg-white text-indigo-600 rounded-xl border border-indigo-200 hover:bg-indigo-50 transition-colors font-bold text-sm"
+                          >
+                            <UserPlus size={18} />
+                            <span className="hidden sm:inline">Conectar</span>
+                          </button>
                         )}
                       </div>
-                      <div>
-                        <p className="font-bold text-stone-900 text-base">{user.name}</p>
-                        <p className="text-sm text-stone-500">{user.email}</p>
-                      </div>
-                    </div>
-                    {!isConnected ? (
-                      <button 
-                        onClick={() => handleRequestConnection(user.email)}
-                        className="flex items-center gap-2 px-4 py-2 bg-white text-indigo-600 rounded-xl border border-indigo-200 hover:bg-indigo-50 transition-colors font-bold text-sm"
-                      >
-                        <UserPlus size={18} />
-                        <span className="hidden sm:inline">Conectar</span>
-                      </button>
-                    ) : (
-                      <span className="text-xs font-bold text-indigo-600 bg-indigo-100 px-3 py-1.5 rounded-xl">
-                        {isConnected.status === 'pending' ? 'Pendente' : 'Conectado'}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </motion.div>
-          )}
-
-          {/* Pending Requests */}
-          {connections.some(c => c.status === 'pending' && !c.isRequester) && (
-            <div className="mb-8 space-y-3">
-              <h4 className="text-sm font-bold text-rose-700 uppercase tracking-wider px-2 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-rose-700 animate-pulse"></span>
-                Convites Recebidos
-              </h4>
-              {connections.filter(c => c.status === 'pending' && !c.isRequester).map((conn) => (
-                <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} key={conn.user.email} className="flex items-center justify-between p-4 bg-rose-50/50 rounded-2xl border border-rose-100 shadow-sm">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-2xl shadow-sm border border-rose-100 overflow-hidden">
-                      {conn.user.avatarUrl ? (
-                        <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      ) : (
-                        AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-bold text-stone-900 text-base">{conn.user.name}</p>
-                      <p className="text-sm text-stone-500">quer se conectar com você</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => handleRespond(conn.user.email, 'accepted')}
-                      className="p-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors shadow-sm hover:shadow-md"
-                      title="Aceitar"
-                    >
-                      <Check size={20} />
-                    </button>
-                    <button 
-                      onClick={() => handleRespond(conn.user.email, 'rejected')}
-                      className="p-3 bg-white text-stone-400 border border-stone-200 rounded-xl hover:bg-stone-50 hover:text-rose-700 transition-colors"
-                      title="Recusar"
-                    >
-                      <X size={20} />
-                    </button>
-                  </div>
+                    );
+                  })}
                 </motion.div>
-              ))}
-            </div>
-          )}
+              )}
 
-          {/* Connections List */}
-          <div className="space-y-4">
-            <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider px-2">Meus Amigos</h4>
-            {connections.filter(c => c.status === 'accepted').length === 0 ? (
-              <div className="text-center py-12 bg-stone-50 rounded-3xl border border-dashed border-stone-200">
-                <Users size={32} className="mx-auto text-stone-300 mb-3" />
-                <p className="text-stone-500 font-medium">Você ainda não tem amigos conectados.</p>
-                <p className="text-sm text-stone-400 mt-1">Busque por nome ou email acima para começar.</p>
-              </div>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {connections.filter(c => c.status === 'accepted').map((conn) => (
-                  <div key={conn.user.email} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-4">
-                      <div className="relative">
-                        <div className="w-12 h-12 rounded-full bg-stone-50 flex items-center justify-center text-2xl border border-stone-200 overflow-hidden">
+              {/* Convites Recebidos */}
+              {connections.some(c => c.status === 'pending' && !c.isRequester) && (
+                <div className="mb-8 space-y-3">
+                  <h4 className="text-sm font-bold text-rose-700 uppercase tracking-wider px-2 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-rose-700 animate-pulse" />
+                    Convites Recebidos ({connections.filter(c => c.status === 'pending' && !c.isRequester).length})
+                  </h4>
+                  {connections.filter(c => c.status === 'pending' && !c.isRequester).map((conn) => (
+                    <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} key={conn.user.email} className="flex items-center justify-between p-4 bg-rose-50/50 rounded-2xl border border-rose-100 shadow-sm">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-2xl shadow-sm border border-rose-100 overflow-hidden">
                           {conn.user.avatarUrl ? (
                             <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
                           )}
                         </div>
-                      </div>
-                      <div>
-                        <p className="font-bold text-stone-900 text-base">{conn.user.name}</p>
-                        <div className="flex items-center gap-1 text-xs text-stone-400 mt-0.5">
-                          <Clock size={12} />
-                          <span>Visto {getLastOnline(conn.user.email)}</span>
+                        <div>
+                          <p className="font-bold text-stone-900 text-base">{conn.user.name || conn.user.email}</p>
+                          <p className="text-sm text-stone-500">quer se conectar com você</p>
                         </div>
                       </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleRespond(conn.user.email, 'accepted')}
+                          className="p-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors shadow-sm hover:shadow-md"
+                          title="Aceitar"
+                        >
+                          <Check size={20} />
+                        </button>
+                        <button
+                          onClick={() => handleRespond(conn.user.email, 'rejected')}
+                          className="p-3 bg-white text-stone-400 border border-stone-200 rounded-xl hover:bg-stone-50 hover:text-rose-700 transition-colors"
+                          title="Recusar"
+                        >
+                          <X size={20} />
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+
+              {/* Convites Enviados (aguardando resposta) */}
+              {connections.some(c => c.status === 'pending' && c.isRequester) && (
+                <div className="mb-8 space-y-3">
+                  <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider px-2">
+                    Aguardando Resposta ({connections.filter(c => c.status === 'pending' && c.isRequester).length})
+                  </h4>
+                  {connections.filter(c => c.status === 'pending' && c.isRequester).map((conn) => (
+                    <div key={conn.user.email} className="flex items-center justify-between p-4 bg-stone-50 rounded-2xl border border-stone-200">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-2xl border border-stone-200 overflow-hidden">
+                          {conn.user.avatarUrl ? (
+                            <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-bold text-stone-900 text-base">{conn.user.name || conn.user.email}</p>
+                          <p className="text-sm text-stone-400">Convite enviado</p>
+                        </div>
+                      </div>
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-stone-400 bg-white border border-stone-200 px-3 py-1.5 rounded-xl">
+                        <Clock size={13} /> Pendente
+                      </span>
                     </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Lista de Amigos */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                  <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider">
+                    Meus Amigos {connections.filter(c => c.status === 'accepted').length > 0 && `(${connections.filter(c => c.status === 'accepted').length})`}
+                  </h4>
+                  {isLoadingConnections && <span className="w-4 h-4 border-2 border-stone-200 border-t-indigo-500 rounded-full animate-spin" />}
+                </div>
+                {connections.filter(c => c.status === 'accepted').length === 0 ? (
+                  <div className="text-center py-12 bg-stone-50 rounded-3xl border border-dashed border-stone-200">
+                    <Users size={32} className="mx-auto text-stone-300 mb-3" />
+                    <p className="text-stone-500 font-medium">Você ainda não tem amigos conectados.</p>
+                    <p className="text-sm text-stone-400 mt-1">Busque por nome ou email acima para começar.</p>
                   </div>
-                ))}
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {connections.filter(c => c.status === 'accepted').map((conn) => (
+                      <div key={conn.user.email} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md transition-shadow group">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-full bg-stone-50 flex items-center justify-center text-2xl border border-stone-200 overflow-hidden">
+                            {conn.user.avatarUrl ? (
+                              <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-bold text-stone-900 text-base">{conn.user.name || conn.user.email}</p>
+                            <p className="text-sm text-stone-400">{conn.user.email}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveFriend(conn.user.email, conn.user.name)}
+                          className="opacity-0 group-hover:opacity-100 p-2.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-all"
+                          title="Remover amigo"
+                        >
+                          <UserMinus size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          </>
+            </>
           )}
           {/* Generic Confirm Modal */}
           {confirmModal.isOpen && (

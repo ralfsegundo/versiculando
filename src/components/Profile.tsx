@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useGamification, BADGES, BadgeId, AVATARS } from '../services/gamification';
+import { useGamification, BADGES, BadgeId, AVATARS, getStreakMultiplier } from '../services/gamification';
 import { Flame, Star, Trophy, Target, Award, Lock, Calendar, BookOpen, Heart, Edit3, Share2, X, Download, Instagram, MessageCircle, Clock, Users, Search, UserPlus, Check, UserMinus, Upload, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import html2canvas from 'html2canvas';
@@ -35,6 +35,12 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
   const [isSearching, setIsSearching] = useState(false);
 
   const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  // Sincroniza os campos de edição quando o perfil for carregado do Supabase
+  useEffect(() => {
+    setEditName(profile.name);
+    setEditEmail(profile.email || '');
+  }, [profile.name, profile.email]);
 
   const handleSaveProfile = async () => {
     setIsSaving(true);
@@ -139,18 +145,6 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
     }
   };
 
-  const getFlameSize = (streak: number) => {
-    if (streak >= 30) return 'w-16 h-16 text-orange-500';
-    if (streak >= 7) return 'w-12 h-12 text-orange-400';
-    return 'w-8 h-8 text-orange-300';
-  };
-
-  const getFlameBg = (streak: number) => {
-    if (streak >= 30) return 'bg-orange-100 border-orange-200';
-    if (streak >= 7) return 'bg-orange-50 border-orange-100';
-    return 'bg-stone-50 border-stone-200';
-  };
-
   const completedPercentage = Math.round((profile.completedBooks.length / 73) * 100);
 
   // --- Title Progress Logic ---
@@ -170,44 +164,37 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
     const lockedBadges = (Object.keys(BADGES) as BadgeId[]).filter(id => !badges.find(b => b.id === id));
     if (lockedBadges.length === 0) return null;
 
-    // Prioritize specific badges based on progress
-    if (lockedBadges.includes('escriba')) {
-      return { ...BADGES['escriba'], missing: `Faça mais ${10 - profile.notesCount} anotações para desbloquear Escriba`, progress: (profile.notesCount / 10) * 100 };
-    }
-    if (lockedBadges.includes('coracao_aberto')) {
-      return { ...BADGES['coracao_aberto'], missing: `Favorite mais ${20 - profile.favoritesCount} versículos para desbloquear Coração Aberto`, progress: (profile.favoritesCount / 20) * 100 };
-    }
-    if (lockedBadges.includes('madrugador')) {
-      return { ...BADGES['madrugador'], missing: `Acesse o versículo do dia mais ${30 - profile.dailyVerseCount} vezes para desbloquear Madrugador`, progress: (profile.dailyVerseCount / 30) * 100 };
-    }
-    
-    // Fallback to first locked
-    const firstLocked = BADGES[lockedBadges[0]];
-    return { ...firstLocked, missing: `Continue sua jornada para desbloquear ${firstLocked.title}`, progress: 0 };
+    // Calcula progresso real de cada badge bloqueado
+    const withProgress = lockedBadges.map(id => {
+      switch (id) {
+        case 'escriba':
+          return { id, progress: Math.min(100, (profile.notesCount / 10) * 100), missing: `Faça mais ${Math.max(0, 10 - profile.notesCount)} anotações` };
+        case 'coracao_aberto':
+          return { id, progress: Math.min(100, (profile.favoritesCount / 20) * 100), missing: `Favorite mais ${Math.max(0, 20 - profile.favoritesCount)} versículos` };
+        case 'madrugador':
+          return { id, progress: Math.min(100, (profile.dailyVerseCount / 30) * 100), missing: `Acesse o versículo do dia mais ${Math.max(0, 30 - profile.dailyVerseCount)} vezes` };
+        case 'semente_fe':
+          return { id, progress: Math.min(100, (profile.completedBooks.length / 1) * 100), missing: 'Conclua seu primeiro livro' };
+        case 'leitor_pentateuco':
+          const pentCount = ['gen','exo','lev','num','deu'].filter(b => profile.completedBooks.includes(b)).length;
+          return { id, progress: (pentCount / 5) * 100, missing: `Conclua ${Math.max(0, 5 - pentCount)} livros do Pentateuco` };
+        case 'fogo_espirito':
+          return { id, progress: Math.min(100, (profile.streak / 7) * 100), missing: `Mantenha a sequência por mais ${Math.max(0, 7 - profile.streak)} dias` };
+        case 'missao_diaria':
+          return { id, progress: Math.min(100, ((profile.dailyMissionStreak || 0) / 7) * 100), missing: `Complete missões diárias por mais ${Math.max(0, 7 - (profile.dailyMissionStreak || 0))} dias` };
+        case 'eco_vivo':
+          const ecoCount = Object.keys(profile.ecoReactions || {}).length;
+          return { id, progress: Math.min(100, (ecoCount / 15) * 100), missing: `Reaja a mais ${Math.max(0, 15 - ecoCount)} versículos com Eco` };
+        default:
+          return { id, progress: 0, missing: `Continue sua jornada para desbloquear ${BADGES[id].title}` };
+      }
+    });
+
+    // Mostra o badge com maior progresso (mais perto de desbloquear)
+    const best = withProgress.sort((a, b) => b.progress - a.progress)[0];
+    return { ...BADGES[best.id], progress: best.progress, missing: best.missing };
   };
   const nextAchievement = getNextAchievement();
-
-  // --- Weekly Activity Logic ---
-  const today = new Date();
-  const currentDayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  
-  // Get start of current week (Sunday)
-  const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - currentDayOfWeek);
-  startOfWeek.setHours(0, 0, 0, 0);
-
-  const weekDays = Array.from({ length: 7 }).map((_, i) => {
-    const date = new Date(startOfWeek);
-    date.setDate(startOfWeek.getDate() + i);
-    const dateString = date.toISOString().split('T')[0];
-    
-    // Check if user has activity on this day
-    const hasActivity = profile.weeklyActivity?.some(actDate => actDate.startsWith(dateString));
-    const isToday = i === currentDayOfWeek;
-    
-    return { day: ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'][i], hasActivity, isToday };
-  });
-  const activeDaysCount = weekDays.filter(d => d.hasActivity).length;
 
   // --- Share Logic ---
   const handleShare = async () => {
@@ -281,74 +268,117 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
     <div className="min-h-screen bg-[#fdfbf7] text-stone-900 font-sans pb-28 pt-6 md:pt-12">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Header Profile */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-100 mb-4 relative overflow-hidden">
-          <div className="flex items-center gap-3 mb-3">
-            <button onClick={() => setIsAvatarModalOpen(true)} className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center text-3xl font-bold border-[3px] border-amber-400 shadow-md hover:scale-105 transition-transform relative group overflow-hidden shrink-0" title="Mudar Avatar">
-              {profile.avatarUrl ? (
-                <img src={profile.avatarUrl} alt="Avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-              ) : currentAvatar.emoji}
-              <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Edit3 size={16} className="text-white" /></div>
-            </button>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between">
-                <h1 className="text-base font-serif font-bold text-stone-900 leading-tight truncate">{profile.name}</h1>
-                <button onClick={() => setIsEditModalOpen(true)} className="p-1.5 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors" title="Editar Perfil">
-                  <Edit3 size={14} />
-                </button>
-              </div>
-              {profile.joinDate && <p className="text-[11px] text-stone-400 mt-0.5">⛪ {new Date(profile.joinDate).toLocaleDateString('pt-BR')}</p>}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 mb-2.5">
-            <span className="bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1">
-              <Award size={12} />{profile.title}
-            </span>
-            <div className="relative">
-              <button
-                ref={pointsButtonRef}
-                onClick={() => { if (pointsButtonRef.current) setPointsButtonRect(pointsButtonRef.current.getBoundingClientRect()); setShowPointsBreakdown(v => !v); }}
-                className="bg-stone-100 text-stone-600 px-2.5 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 hover:bg-stone-200 transition-colors"
-              >
-                <Star size={12} className="text-amber-500 fill-amber-500" />
-                {profile.points} XP
+        {/* Header Profile — estilo Duolingo */}
+        <div className="relative overflow-hidden rounded-3xl mb-4">
+          <div className={`absolute inset-0 ${
+            profile.title === 'Santo'    ? 'bg-gradient-to-br from-amber-400 via-yellow-300 to-orange-400' :
+            profile.title === 'Doutor'   ? 'bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-600' :
+            profile.title === 'Profeta'  ? 'bg-gradient-to-br from-blue-500 via-indigo-500 to-violet-600' :
+            profile.title === 'Apóstolo' ? 'bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600' :
+            profile.title === 'Discípulo'? 'bg-gradient-to-br from-rose-400 via-pink-500 to-rose-600' :
+                                           'bg-gradient-to-br from-stone-600 via-stone-700 to-stone-800'
+          }`} />
+          <div className="absolute -top-8 -right-8 w-40 h-40 bg-white/10 rounded-full" />
+          <div className="absolute -bottom-6 -left-6 w-28 h-28 bg-white/10 rounded-full" />
+
+          <div className="relative z-10 p-5">
+            <div className="flex items-center gap-4 mb-4">
+              <button onClick={() => setIsAvatarModalOpen(true)} className="relative shrink-0 group">
+                <div className="w-20 h-20 rounded-2xl bg-white/20 backdrop-blur-sm border-2 border-white/40 flex items-center justify-center text-4xl shadow-lg overflow-hidden">
+                  {profile.avatarUrl
+                    ? <img src={profile.avatarUrl} alt="Avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    : currentAvatar.emoji}
+                </div>
+                <div className="absolute inset-0 rounded-2xl bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Edit3 size={16} className="text-white" />
+                </div>
               </button>
-              <AnimatePresence>
-                {showPointsBreakdown && pointsButtonRect && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowPointsBreakdown(false)} />
-                    <motion.div
-                      initial={{ opacity: 0, y: 6, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                      transition={{ duration: 0.15 }}
-                      className="fixed bg-stone-900 text-white text-xs p-3.5 rounded-2xl shadow-2xl z-50"
-                      style={{ width: 'min(230px, 80vw)', top: pointsButtonRect.bottom + 8, right: window.innerWidth - pointsButtonRect.right }}
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h1 className="text-xl font-serif font-black text-white leading-tight truncate">{profile.name}</h1>
+                    {profile.joinDate && (
+                      <p className="text-white/60 text-xs mt-0.5">⛪ desde {new Date(profile.joinDate).toLocaleDateString('pt-BR')}</p>
+                    )}
+                  </div>
+                  <button onClick={() => setIsEditModalOpen(true)} className="p-1.5 text-white/60 hover:text-white hover:bg-white/10 rounded-full transition-colors shrink-0">
+                    <Edit3 size={14} />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <span className="bg-white/20 backdrop-blur-sm text-white px-2.5 py-0.5 rounded-full text-xs font-bold border border-white/20 flex items-center gap-1">
+                    <Award size={11} />{profile.title}
+                  </span>
+                  <div className="relative">
+                    <button
+                      ref={pointsButtonRef}
+                      onClick={() => { if (pointsButtonRef.current) setPointsButtonRect(pointsButtonRef.current.getBoundingClientRect()); setShowPointsBreakdown(v => !v); }}
+                      className="bg-white/20 backdrop-blur-sm text-white px-2.5 py-0.5 rounded-full text-xs font-bold border border-white/20 flex items-center gap-1 hover:bg-white/30 transition-colors"
                     >
-                      <div className="absolute -top-1.5 right-5 w-3 h-3 bg-stone-900 rotate-45 rounded-sm" />
-                      <p className="text-stone-400 font-bold uppercase tracking-wider text-[10px] mb-2">Detalhamento</p>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center gap-4"><span className="text-stone-400">Exploração livre</span><span className="font-bold">{profile.pointsBreakdown?.freeExploration || 0} pts</span></div>
-                        <div className="flex justify-between items-center gap-4"><span className="text-stone-400">Trilha do Discípulo</span><span className="font-bold text-amber-400">{profile.pointsBreakdown?.discipleTrail || 0} pts</span></div>
-                        <div className="flex justify-between items-center gap-4"><span className="text-stone-400">Bônus de fases</span><span className="font-bold text-orange-400">{profile.pointsBreakdown?.bonus || 0} pts</span></div>
-                        <div className="pt-2 border-t border-stone-700 flex justify-between items-center gap-4"><span className="font-bold text-white">Total</span><span className="font-black text-amber-400">{profile.points} XP</span></div>
-                      </div>
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
+                      <Star size={11} className="fill-white" />
+                      {profile.points} XP
+                    </button>
+                    <AnimatePresence>
+                      {showPointsBreakdown && pointsButtonRect && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowPointsBreakdown(false)} />
+                          <motion.div
+                            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                            transition={{ duration: 0.15 }}
+                            className="fixed bg-stone-900 text-white text-xs p-3.5 rounded-2xl shadow-2xl z-50"
+                            style={{ width: 'min(230px, 80vw)', top: pointsButtonRect.bottom + 8, right: window.innerWidth - pointsButtonRect.right }}
+                          >
+                            <div className="absolute -top-1.5 right-5 w-3 h-3 bg-stone-900 rotate-45 rounded-sm" />
+                            <p className="text-stone-400 font-bold uppercase tracking-wider text-[10px] mb-2">Detalhamento</p>
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-center gap-4"><span className="text-stone-400">Exploração livre</span><span className="font-bold">{profile.pointsBreakdown?.freeExploration || 0} XP</span></div>
+                              <div className="flex justify-between items-center gap-4"><span className="text-stone-400">Trilha do Discípulo</span><span className="font-bold text-amber-400">{profile.pointsBreakdown?.discipleTrail || 0} XP</span></div>
+                              <div className="flex justify-between items-center gap-4"><span className="text-stone-400">Bônus de fases</span><span className="font-bold text-orange-400">{profile.pointsBreakdown?.bonus || 0} XP</span></div>
+                              <div className="pt-2 border-t border-stone-700 flex justify-between items-center gap-4"><span className="font-bold text-white">Total</span><span className="font-black text-amber-400">{profile.points} XP</span></div>
+                            </div>
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  {profile.streak >= 7 && (
+                    <motion.span
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="bg-orange-500 text-white px-2.5 py-0.5 rounded-full text-xs font-black border border-orange-400 flex items-center gap-1 shadow-sm"
+                    >
+                      🔥 {getStreakMultiplier(profile.streak)}x XP
+                    </motion.span>
+                  )}
+                </div>
+              </div>
             </div>
+
+            {nextTitle ? (
+              <div>
+                <div className="flex justify-between text-[10px] text-white/70 font-bold mb-1">
+                  <span>{profile.title}</span>
+                  <span>{profile.points} / {nextTitle.min} XP → {nextTitle.name}</span>
+                </div>
+                <div className="w-full h-2.5 bg-white/20 rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${titleProgress}%` }}
+                    transition={{ duration: 1.2, ease: 'easeOut' }}
+                    className="h-full bg-white rounded-full"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2 bg-white/20 rounded-full py-1.5 px-4">
+                <span className="text-white font-black text-xs">👑 Título máximo desbloqueado!</span>
+              </div>
+            )}
           </div>
-          {nextTitle && (
-            <div className="group relative">
-              <div className="w-full h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                <motion.div initial={{ width: 0 }} animate={{ width: `${titleProgress}%` }} transition={{ duration: 1, ease: "easeOut" }} className="h-full bg-amber-400 rounded-full" />
-              </div>
-              <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-40">
-                {profile.points} / {nextTitle.min} XP para {nextTitle.name}
-              </div>
-            </div>
-          )}
         </div>
 
                 {/* Stats Grid — estilo Duolingo */}
@@ -440,7 +470,7 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
             </div>
             <div className="bg-amber-400 text-amber-900 px-2.5 py-1 rounded-lg flex items-center gap-1 shrink-0 font-bold text-xs">
               <Star size={12} className="fill-amber-900" />
-              +{weeklyChallenge.rewardPoints} pts
+              +{weeklyChallenge.rewardPoints} XP
             </div>
           </div>
           
@@ -465,7 +495,13 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
           </div>
           <div className="text-[10px] text-purple-500 font-medium flex items-center gap-1">
             <Clock size={10} />
-            Termina em {Math.ceil((new Date(weeklyChallenge.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24))} dias
+            {weeklyChallenge.completed
+              ? '✅ Desafio concluído!'
+              : (() => {
+                  const daysLeft = Math.ceil((new Date(weeklyChallenge.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                  return daysLeft > 0 ? `Termina em ${daysLeft} ${daysLeft === 1 ? 'dia' : 'dias'}` : 'Prazo encerrado';
+                })()
+            }
           </div>
         </div>
 
@@ -486,7 +522,6 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const WEEKS = 12;
-            const totalDays = WEEKS * 7;
             // Alinha para domingo anterior
             const startDate = new Date(today);
             startDate.setDate(today.getDate() - (today.getDay()) - (WEEKS - 1) * 7);

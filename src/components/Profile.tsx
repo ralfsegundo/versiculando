@@ -350,73 +350,80 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
           )}
         </div>
 
-                {/* Stats Grid */}
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className={`rounded-xl p-2.5 border flex flex-col items-center justify-center text-center ${getFlameBg(profile.streak)}`}>
-            <Flame className="w-6 h-6 text-orange-500" />
-            <span className="text-sm font-bold mt-1 leading-tight">{profile.streak}</span>
-            <span className="text-[10px] font-medium text-stone-500 uppercase tracking-wide mt-0.5 leading-tight text-center">Dias Seguidos</span>
-          </div>
-          
-          <div className="bg-white rounded-xl p-2.5 border border-stone-100 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center mb-1">
-              <BookOpen size={13} />
+                {/* Stats Grid — estilo Duolingo */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {/* Streak — destaque maior */}
+          <div className={`col-span-3 rounded-2xl p-3.5 border-2 flex items-center gap-3 overflow-hidden relative ${
+            profile.streak >= 7 ? 'bg-gradient-to-r from-orange-500 to-amber-400 border-orange-400' :
+            profile.streak >= 1 ? 'bg-orange-50 border-orange-200' :
+            'bg-stone-50 border-stone-200'
+          }`}>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-5xl opacity-10 pointer-events-none select-none">🔥</div>
+            <motion.div
+              animate={profile.streak >= 1 ? { rotate: [-3, 3, -3] } : {}}
+              transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+              className="text-3xl leading-none"
+            >🔥</motion.div>
+            <div className="flex-1 min-w-0">
+              <p className={`text-2xl font-black leading-none ${profile.streak >= 7 ? 'text-white' : 'text-stone-900'}`}>
+                {profile.streak} <span className={`text-base font-semibold ${profile.streak >= 7 ? 'text-white/80' : 'text-stone-500'}`}>{profile.streak === 1 ? 'dia' : 'dias'}</span>
+              </p>
+              <p className={`text-xs font-bold mt-0.5 ${profile.streak >= 7 ? 'text-white/80' : 'text-stone-500'}`}>
+                {profile.streak === 0 ? 'Comece hoje!' : profile.streak < 7 ? `Faltam ${7 - profile.streak} para 7 🔥` : profile.streak < 30 ? `Rumo a 30 dias!` : '30+ dias! Incrível! 🏆'}
+              </p>
             </div>
-            <span className="text-sm font-bold leading-tight">{profile.completedBooks.length}/73</span>
-            <span className="text-[10px] font-medium text-stone-500 uppercase tracking-wide mt-0.5 leading-tight text-center">Livros Lidos</span>
-          </div>
-
-          <div className="bg-white rounded-xl p-2.5 border border-stone-100 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center mb-1">
-              <Edit3 size={13} />
+            <div className={`shrink-0 text-right ${profile.streak >= 7 ? 'text-white/80' : 'text-stone-400'}`}>
+              <p className="text-[10px] font-bold uppercase tracking-wider">melhor</p>
+              <p className={`text-lg font-black ${profile.streak >= 7 ? 'text-white' : 'text-stone-700'}`}>{Math.max(profile.streak, profile.longestStreak || 0)}</p>
             </div>
-            <span className="text-sm font-bold leading-tight">{profile.notesCount}</span>
-            <span className="text-[10px] font-medium text-stone-500 uppercase tracking-wide mt-0.5 leading-tight text-center">Anotações</span>
-          </div>
-
-          <div className="bg-white rounded-xl p-2.5 border border-stone-100 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center mb-1">
-              <Heart size={13} />
-            </div>
-            <span className="text-sm font-bold leading-tight">{profile.favoritesCount}</span>
-            <span className="text-[10px] font-medium text-stone-500 uppercase tracking-wide mt-0.5 leading-tight text-center">Favoritos</span>
           </div>
 
-          <div className="bg-white rounded-xl p-2.5 border border-stone-100 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center mb-1">
-              <span className="text-sm">🔊</span>
+          {/* Livros */}
+          <div className="bg-white rounded-xl p-3 border border-stone-100 shadow-sm flex flex-col items-center gap-1 text-center">
+            <div className="text-xl">📚</div>
+            <span className="text-lg font-black text-stone-900 leading-none">{profile.completedBooks.length}</span>
+            <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wide leading-tight">Livros</span>
+            <div className="w-full h-1 bg-stone-100 rounded-full overflow-hidden mt-1">
+              <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${(profile.completedBooks.length / 73) * 100}%` }} />
             </div>
-            <span className="text-sm font-bold leading-tight">{Object.keys(profile.ecoReactions || {}).length}</span>
-            <span className="text-[10px] font-medium text-stone-500 uppercase tracking-wide mt-0.5 leading-tight text-center">Ecos</span>
           </div>
 
-          <div className="bg-white rounded-xl p-2.5 border border-stone-100 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="w-7 h-7 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center mb-1">
-              <span className="text-sm">🕊️</span>
-            </div>
-            <span className="text-sm font-bold leading-tight">{profile.streakFreezes ?? 0}/2</span>
-            <span className="text-[10px] font-medium text-stone-500 uppercase tracking-wide mt-0.5 leading-tight text-center">Graças</span>
+          {/* Anotações */}
+          <div className="bg-white rounded-xl p-3 border border-stone-100 shadow-sm flex flex-col items-center gap-1 text-center">
+            <div className="text-xl">✏️</div>
+            <span className="text-lg font-black text-stone-900 leading-none">{profile.notesCount}</span>
+            <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wide leading-tight">Anotações</span>
+          </div>
+
+          {/* Favoritos */}
+          <div className="bg-white rounded-xl p-3 border border-stone-100 shadow-sm flex flex-col items-center gap-1 text-center">
+            <div className="text-xl">❤️</div>
+            <span className="text-lg font-black text-stone-900 leading-none">{profile.favoritesCount}</span>
+            <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wide leading-tight">Favoritos</span>
           </div>
         </div>
 
-        {/* Next Achievement Card */}
+        {/* Next Achievement Card — mais impactante */}
         {nextAchievement && (
-          <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100 mb-4 flex items-center gap-3 relative overflow-hidden">
-            <div className="w-12 h-12 rounded-2xl bg-white border border-amber-100 flex items-center justify-center text-2xl shrink-0 shadow-sm">
+          <div className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-2xl p-4 border-2 border-amber-200 mb-4 flex items-center gap-3 relative overflow-hidden">
+            <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-amber-100/50 to-transparent pointer-events-none" />
+            <div className="w-14 h-14 rounded-2xl bg-white border-2 border-amber-100 flex items-center justify-center text-3xl shrink-0 shadow-sm">
               {nextAchievement.emoji}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] text-amber-600 font-bold uppercase tracking-wider mb-0.5">Você está quase lá!</p>
-              <p className="font-bold text-stone-900 text-sm leading-tight truncate">{nextAchievement.title}</p>
-              <p className="text-stone-500 text-xs mt-0.5 mb-2 truncate">{nextAchievement.missing}</p>
-              <div className="w-full h-1.5 bg-amber-100 rounded-full overflow-hidden">
-                <motion.div 
+            <div className="flex-1 min-w-0 relative z-10">
+              <p className="text-[9px] text-amber-600 font-black uppercase tracking-widest mb-0.5">🎯 Quase lá!</p>
+              <p className="font-black text-stone-900 text-sm leading-tight">{nextAchievement.title}</p>
+              <p className="text-stone-500 text-xs mt-0.5 mb-2 leading-snug line-clamp-1">{nextAchievement.missing}</p>
+              <div className="w-full h-2 bg-amber-100 rounded-full overflow-hidden">
+                <motion.div
                   initial={{ width: 0 }}
                   animate={{ width: `${nextAchievement.progress}%` }}
-                  transition={{ duration: 1, ease: "easeOut" }}
-                  className="h-full bg-amber-400 rounded-full"
+                  transition={{ duration: 1.2, ease: 'easeOut' }}
+                  className="h-full rounded-full"
+                  style={{ background: 'linear-gradient(90deg, #f59e0b, #fbbf24)' }}
                 />
               </div>
+              <p className="text-[10px] text-amber-600 font-bold mt-1">{Math.round(nextAchievement.progress)}%</p>
             </div>
           </div>
         )}

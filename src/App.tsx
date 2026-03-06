@@ -200,8 +200,6 @@ export default function App() {
         <TrailDetail trail={selectedTrail} onBack={() => setSelectedTrail(null)} />
       ) : (
         <>
-          <Navigation currentTab={currentTab} onTabChange={setCurrentTab} />
-
           {currentTab === 'home' && (
             <Home
               onSelectBook={setSelectedBookId}

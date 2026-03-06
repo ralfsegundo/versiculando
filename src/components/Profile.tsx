@@ -448,7 +448,7 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
         {/* Weekly Activity Chart - includes progress */}
         <div className="bg-white rounded-2xl p-3.5 border border-stone-100 shadow-sm mb-4">
           <div className="flex justify-between items-center mb-2.5">
-            <h3 className="font-bold text-stone-900 text-sm">Sua Semana</h3>
+            <h3 className="font-bold text-stone-900 text-sm">Atividade — 12 semanas</h3>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-emerald-600">{completedPercentage}%</span>
               <div className="w-14 h-1.5 bg-stone-100 rounded-full overflow-hidden">
@@ -456,23 +456,103 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
               </div>
             </div>
           </div>
-          <div className="flex justify-between items-center mb-2">
-            {weekDays.map((day, idx) => (
-              <div key={idx} className="flex flex-col items-center gap-1.5">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
-                  day.hasActivity 
-                    ? 'bg-amber-400 text-amber-900 shadow-sm' 
-                    : 'bg-stone-50 border-2 border-stone-100 text-stone-400'
-                } ${day.isToday ? 'ring-3 ring-amber-100 ring-offset-1' : ''}`}>
-                  {day.hasActivity && <Flame size={14} className={day.hasActivity ? 'fill-amber-900' : ''} />}
+
+          {/* Contribution graph — 12 semanas × 7 dias */}
+          {(() => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const WEEKS = 12;
+            const totalDays = WEEKS * 7;
+            // Alinha para domingo anterior
+            const startDate = new Date(today);
+            startDate.setDate(today.getDate() - (today.getDay()) - (WEEKS - 1) * 7);
+
+            const activitySet = new Set(
+              (profile.weeklyActivity || []).map(d => d.split('T')[0])
+            );
+
+            // Build grid: columns = weeks, rows = days of week
+            const weeks: { date: Date; active: boolean; isToday: boolean; isFuture: boolean }[][] = [];
+            for (let w = 0; w < WEEKS; w++) {
+              const week = [];
+              for (let d = 0; d < 7; d++) {
+                const date = new Date(startDate);
+                date.setDate(startDate.getDate() + w * 7 + d);
+                const dateStr = date.toISOString().split('T')[0];
+                week.push({
+                  date,
+                  active: activitySet.has(dateStr),
+                  isToday: dateStr === today.toISOString().split('T')[0],
+                  isFuture: date > today,
+                });
+              }
+              weeks.push(week);
+            }
+
+            const monthLabels = weeks.map((week, i) => {
+              const firstDay = week[0].date;
+              return (i === 0 || firstDay.getDate() <= 7)
+                ? { idx: i, label: firstDay.toLocaleDateString('pt-BR', { month: 'short' }) }
+                : null;
+            }).filter(Boolean);
+
+            const totalActive = [...activitySet].filter(d => {
+              const date = new Date(d);
+              return date >= startDate && date <= today;
+            }).length;
+
+            return (
+              <div className="overflow-x-auto pb-1">
+                {/* Month labels */}
+                <div className="flex gap-[3px] mb-1 ml-0">
+                  {weeks.map((_, i) => {
+                    const label = monthLabels.find(m => m?.idx === i);
+                    return (
+                      <div key={i} className="w-[14px] flex-shrink-0">
+                        {label && (
+                          <span className="text-[8px] text-stone-400 font-medium capitalize">
+                            {label.label.replace('.', '')}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                <span className={`text-[10px] font-bold ${day.isToday ? 'text-stone-900' : 'text-stone-400'}`}>{day.day}</span>
+                {/* Grid */}
+                <div className="flex gap-[3px]">
+                  {weeks.map((week, wi) => (
+                    <div key={wi} className="flex flex-col gap-[3px]">
+                      {week.map((day, di) => (
+                        <div
+                          key={di}
+                          title={day.date.toLocaleDateString('pt-BR')}
+                          className={`w-[14px] h-[14px] rounded-[3px] flex-shrink-0 transition-all ${
+                            day.isFuture
+                              ? 'bg-stone-100'
+                              : day.active
+                              ? 'bg-amber-400'
+                              : 'bg-stone-100'
+                          } ${day.isToday ? 'ring-1 ring-amber-500 ring-offset-[1px]' : ''}`}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs text-stone-500">
+                    <strong className="text-stone-900">{totalActive}</strong> dias ativos nas últimas 12 semanas
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-stone-400">menos</span>
+                    <div className="w-2.5 h-2.5 rounded-[2px] bg-stone-100" />
+                    <div className="w-2.5 h-2.5 rounded-[2px] bg-amber-200" />
+                    <div className="w-2.5 h-2.5 rounded-[2px] bg-amber-400" />
+                    <span className="text-[10px] text-stone-400">mais</span>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
-          <p className="text-xs text-stone-500 text-center">
-            Você acessou <strong className="text-stone-900">{activeDaysCount} dias</strong> essa semana.
-          </p>
+            );
+          })()}
         </div>
 
         {/* Badges */}
@@ -503,13 +583,13 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
                     </div>
                   )}
                   <div className={`text-3xl mb-2 transition-all ${isUnlocked ? 'scale-110' : 'grayscale opacity-30'}`}>
-                    {badgeDef.emoji}
+                    {isUnlocked ? badgeDef.emoji : '🔒'}
                   </div>
                   <h4 className={`font-bold text-sm mb-1 leading-tight ${isUnlocked ? 'text-stone-900' : 'text-stone-400'}`}>
-                    {badgeDef.title}
+                    {isUnlocked ? badgeDef.title : '???'}
                   </h4>
                   <p className="text-[11px] text-stone-500 leading-relaxed px-1">
-                    {badgeDef.description}
+                    {isUnlocked ? badgeDef.description : 'Continue sua jornada para descobrir'}
                   </p>
                   {isUnlocked && unlockedBadge.unlockedAt && (
                     <span className="text-[10px] text-amber-700 font-bold mt-2 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-100">

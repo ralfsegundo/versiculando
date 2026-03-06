@@ -184,13 +184,17 @@ export default function Community() {
 
   // ── Carregamento de dados ─────────────────────────────────
   const loadCommunityData = async () => {
-    if (!profile.email) return;
     setIsLoadingCommunity(true);
 
     // Timeout de segurança — nunca trava o loading indefinidamente
     const timeoutId = setTimeout(() => setIsLoadingCommunity(false), 8000);
 
     try {
+      // Se não tem email (sem auth), apenas carrega feed e ranking públicos
+      if (!profile.email) {
+        await Promise.allSettled([loadFeed(), loadRanking()]);
+        return;
+      }
       // Cada função tem seu próprio try/catch — uma falha não bloqueia as outras
       await Promise.allSettled([
         loadFeed(),
@@ -232,18 +236,39 @@ export default function Community() {
         .select('id, name, avatar_id, avatar_url, points')
         .order('points', { ascending: false })
         .limit(20);
-      if (error) { console.warn('[Community] loadRanking error:', error.message); return; }
-      if (data) {
-        setMockRankingData(data.map((u: any, i: number) => ({
-          id: u.id,
-          name: u.name || 'Usuário',
-          avatarId: u.avatar_id || '',
-          avatarUrl: u.avatar_url,
-          points: u.points || 0,
-          position: i + 1,
-        })));
-      }
-    } catch (e) { console.warn('[Community] loadRanking exception:', e); }
+
+      const rows = (!error && data && data.length > 0) ? data : [];
+
+      // Garante que o usuário local sempre aparece no ranking
+      const profileAlreadyIn = rows.some((u: any) => u.id === profile.id);
+      const finalRows = profileAlreadyIn ? rows : [...rows, {
+        id: profile.id,
+        name: profile.name,
+        avatar_id: profile.avatarId || '',
+        avatar_url: profile.avatarUrl,
+        points: profile.points,
+      }];
+
+      setMockRankingData(finalRows.sort((a: any, b: any) => (b.points || 0) - (a.points || 0)).map((u: any, i: number) => ({
+        id: u.id,
+        name: u.name || 'Usuário',
+        avatarId: u.avatar_id || '',
+        avatarUrl: u.avatar_url,
+        points: u.points || 0,
+        position: i + 1,
+      })));
+    } catch (e) {
+      // Mesmo em erro total, mostra o usuário local
+      setMockRankingData([{
+        id: profile.id,
+        name: profile.name,
+        avatarId: profile.avatarId || '',
+        avatarUrl: profile.avatarUrl,
+        points: profile.points,
+        position: 1,
+      }]);
+      console.warn('[Community] loadRanking exception:', e);
+    }
   };
 
   const loadGroups = async () => {
@@ -914,18 +939,18 @@ export default function Community() {
     });
   };
   useEffect(() => {
-    const email = profile.email;
-    if (!email) return;
-
-    loadConnections();
+    // Carrega sempre — ranking e feed são públicos mesmo sem login
     loadCommunityData();
 
-    const removeListener = sharingService.addListener((data) => {
-      if (data.type === 'CONNECTION_REQUEST' || data.type === 'CONNECTION_ACCEPTED' || data.type === 'CONNECTION_REJECTED') {
-        loadConnections();
-      }
-    });
-    return removeListener;
+    if (profile.email) {
+      loadConnections();
+      const removeListener = sharingService.addListener((data) => {
+        if (data.type === 'CONNECTION_REQUEST' || data.type === 'CONNECTION_ACCEPTED' || data.type === 'CONNECTION_REJECTED') {
+          loadConnections();
+        }
+      });
+      return removeListener;
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.email]);
 

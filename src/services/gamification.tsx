@@ -243,11 +243,15 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           .select('*')
           .eq('id', session.user.id)
           .single();
+
+        // Email do auth é a fonte de verdade — garante que nunca fique vazio
+        const authEmail = session.user.email || '';
           
         if (profileData) {
           setProfile(prev => ({
             ...prev,
             ...profileData,
+            email: profileData.email || authEmail,
             completedBooks: profileData.completed_books || [],
             discipleCompletedBooks: profileData.disciple_completed_books || [],
             visitedBooks: profileData.visited_books || [],
@@ -263,6 +267,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             dailyVerseCount: profileData.daily_verse_count || 0,
             completedPlans: profileData.completed_plans || 0,
           }));
+        } else {
+          // Perfil ainda não existe no banco — seta email do auth no estado
+          setProfile(prev => ({ ...prev, email: authEmail }));
         }
 
         // Load badges

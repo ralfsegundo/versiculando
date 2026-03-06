@@ -32,7 +32,12 @@ export type BadgeId =
   | 'coracao_aberto' 
   | 'madrugador' 
   | 'peregrino' 
-  | 'doutor_fe';
+  | 'doutor_fe'
+  | 'missao_diaria'
+  | 'comunhao_santos'
+  | 'guerreiro_luz'
+  | 'eco_vivo'
+  | 'graca_dia';
 
 export interface Badge {
   id: BadgeId;
@@ -60,13 +65,23 @@ export interface UserProfile {
   lastActiveDate: string;
   title: string;
   completedBooks: string[];
-  discipleCompletedBooks: string[]; // livros concluídos pela Trilha do Discípulo
+  discipleCompletedBooks: string[];
   visitedBooks?: string[];
-  readChapters?: Record<string, number[]>; // bookId -> chapter numbers read
+  readChapters?: Record<string, number[]>;
   notesCount: number;
   favoritesCount: number;
   dailyVerseCount: number;
   completedPlans: number;
+  // Streak freeze ("Graça do Dia")
+  streakFreezes: number;          // quantas graças disponíveis (máx 2)
+  lastFreezeEarnedWeek?: string;  // semana ISO em que ganhou a última graça
+  // Missão diária
+  lastDailyMissionDate?: string;
+  dailyMissionStreak: number;
+  // Liga semanal
+  leagueId?: string;
+  // Eco reactions
+  ecoReactions?: Record<string, string>; // verseRef -> emoji usado
 }
 
 export interface WeeklyChallenge {
@@ -102,6 +117,12 @@ export const BADGES: Record<BadgeId, Omit<Badge, 'unlockedAt'>> = {
   madrugador: { id: 'madrugador', title: 'Madrugador', description: 'Acessou o versículo do dia 30 vezes', emoji: '🌅' },
   peregrino: { id: 'peregrino', title: 'Peregrino', description: 'Completou um plano de leitura inteiro', emoji: '🎯' },
   doutor_fe: { id: 'doutor_fe', title: 'Doutor da Fé', description: 'Desbloqueou todas as conquistas', emoji: '🏆' },
+  // Novos
+  missao_diaria: { id: 'missao_diaria', title: 'Missão Cumprida', description: 'Completou 7 missões diárias', emoji: '📋' },
+  comunhao_santos: { id: 'comunhao_santos', title: 'Comunhão dos Santos', description: 'Encontrou 10 santos do dia', emoji: '✨' },
+  guerreiro_luz: { id: 'guerreiro_luz', title: 'Guerreiro da Luz', description: 'Completou um desafio relâmpago', emoji: '⚔️' },
+  eco_vivo: { id: 'eco_vivo', title: 'Eco Vivo', description: 'Reagiu a 15 versículos com Eco', emoji: '🔊' },
+  graca_dia: { id: 'graca_dia', title: 'Graça Recebida', description: 'Usou a Graça do Dia pela primeira vez', emoji: '🕊️' },
 };
 
 export const getTitleByPoints = (points: number): string => {
@@ -133,6 +154,9 @@ const getLocalProfile = (): UserProfile => {
     // Migration: add discipleCompletedBooks if not present
     if (!parsed.discipleCompletedBooks) parsed.discipleCompletedBooks = [];
     if (!parsed.readChapters) parsed.readChapters = {};
+    if (parsed.streakFreezes === undefined) parsed.streakFreezes = 1; // começa com 1 graça
+    if (parsed.dailyMissionStreak === undefined) parsed.dailyMissionStreak = 0;
+    if (!parsed.ecoReactions) parsed.ecoReactions = {};
     return parsed;
   }
   return {
@@ -159,6 +183,9 @@ const getLocalProfile = (): UserProfile => {
     favoritesCount: 0,
     dailyVerseCount: 0,
     completedPlans: 0,
+    streakFreezes: 1,
+    dailyMissionStreak: 0,
+    ecoReactions: {},
   };
 };
 
@@ -186,6 +213,11 @@ interface GamificationContextType {
   checkStreak: () => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
   showFloatingPoints: (amount: number, type: FloatingPointType) => void;
+  useStreakFreeze: () => boolean;
+  completeDailyMission: (missionDate: string) => void;
+  addEcoReaction: (verseRef: string, emoji: string) => void;
+  recordSaintEncounter: (saintKey: string) => void;
+  completeFlashChallenge: () => void;
 }
 
 export const GamificationContext = createContext<GamificationContextType | null>(null);
@@ -506,33 +538,112 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     const now = new Date();
     const lastActive = new Date(profile.lastActiveDate);
 
-    // Compare by calendar date, not milliseconds
     const toDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     const diffDays = Math.round((toDay(now) - toDay(lastActive)) / (1000 * 60 * 60 * 24));
 
     setProfile(prev => {
       let newStreak = prev.streak;
+      let newFreezes = prev.streakFreezes ?? 1;
+
+      // Ganhar 1 Graça por semana (máx 2)
+      const weekKey = `${now.getFullYear()}-W${Math.ceil(now.getDate() / 7)}`;
+      if (prev.lastFreezeEarnedWeek !== weekKey && newFreezes < 2) {
+        newFreezes = Math.min(2, newFreezes + 1);
+      }
 
       if (diffDays === 0) {
-        // Same calendar day — just ensure streak is at least 1
         if (newStreak === 0) newStreak = 1;
-        const newProfile = { ...prev, streak: newStreak, lastActiveDate: now.toISOString() };
+        const newProfile = { ...prev, streak: newStreak, streakFreezes: newFreezes, lastFreezeEarnedWeek: weekKey, lastActiveDate: now.toISOString() };
         checkBadges(newProfile);
         return newProfile;
       } else if (diffDays === 1) {
-        newStreak += 1; // Consecutive day
+        newStreak += 1;
+      } else if (diffDays === 2 && newFreezes > 0) {
+        // Usou Graça automaticamente para 1 dia perdido
+        newFreezes -= 1;
+        newStreak += 1; // mantém streak
+        unlockBadge('graca_dia');
       } else {
-        newStreak = 1; // Gap — reset but count today
+        newStreak = 1;
       }
 
       const newProfile = {
         ...prev,
         streak: newStreak,
+        streakFreezes: newFreezes,
+        lastFreezeEarnedWeek: weekKey,
         lastActiveDate: now.toISOString()
       };
       checkBadges(newProfile);
       return newProfile;
     });
+  };
+
+  // Usa Graça do Dia manualmente (o usuário pode clicar se viu que perdeu um dia)
+  const useStreakFreeze = (): boolean => {
+    if (profile.streakFreezes <= 0) return false;
+    setProfile(prev => ({
+      ...prev,
+      streakFreezes: prev.streakFreezes - 1,
+    }));
+    unlockBadge('graca_dia');
+    return true;
+  };
+
+  // Completa missão diária
+  const completeDailyMission = (missionDate: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    if (profile.lastDailyMissionDate === today) return; // já completou hoje
+    setProfile(prev => {
+      const newMissionStreak = (prev.lastDailyMissionDate === new Date(Date.now() - 86400000).toISOString().split('T')[0])
+        ? prev.dailyMissionStreak + 1
+        : 1;
+      const newProfile = { ...prev, lastDailyMissionDate: today, dailyMissionStreak: newMissionStreak };
+      if (newMissionStreak >= 7) unlockBadge('missao_diaria');
+      return newProfile;
+    });
+    addPoints(25, 'Missão diária concluída', 'bonus');
+    showFloatingPoints(25, 'bonus_step');
+  };
+
+  // Eco reaction em versículo
+  const addEcoReaction = (verseRef: string, emoji: string) => {
+    setProfile(prev => {
+      const current = prev.ecoReactions || {};
+      const newEco = { ...current, [verseRef]: emoji };
+      const ecoCount = Object.keys(newEco).length;
+      const newProfile = { ...prev, ecoReactions: newEco };
+      if (ecoCount >= 15) unlockBadge('eco_vivo');
+      return newProfile;
+    });
+    // Salva no Supabase em background
+    const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (hasSupabase && profile.email) {
+      supabase.from('verse_eco_reactions').upsert({
+        user_email: profile.email,
+        verse_ref: verseRef,
+        emoji,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_email,verse_ref' }).then(() => {}).catch(() => {});
+    }
+  };
+
+  // Badge: encontrou santo do dia
+  const recordSaintEncounter = (saintKey: string) => {
+    const key = 'saints_encountered';
+    const existing: string[] = JSON.parse(safeStorage.getItem(key) || '[]');
+    if (!existing.includes(saintKey)) {
+      const updated = [...existing, saintKey];
+      safeStorage.setItem(key, JSON.stringify(updated));
+      if (updated.length >= 10) unlockBadge('comunhao_santos');
+    }
+  };
+
+  // Badge: desafio relâmpago
+  const completeFlashChallenge = () => {
+    unlockBadge('guerreiro_luz');
+    addPoints(200, 'Desafio relâmpago concluído', 'bonus');
+    showFloatingPoints(200, 'bonus_trail');
   };
 
   const markBookCompleted = (bookId: string, isGps: boolean = false) => {
@@ -705,7 +816,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       completePlan,
       checkStreak,
       updateProfile,
-      showFloatingPoints
+      showFloatingPoints,
+      useStreakFreeze,
+      completeDailyMission,
+      addEcoReaction,
+      recordSaintEncounter,
+      completeFlashChallenge,
     }}>
       {children}
       

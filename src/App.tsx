@@ -70,18 +70,30 @@ export default function App() {
       setIsInitializing(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
-      // Quando um novo usuário loga, reseta o onboarding para não mostrar dados do usuário anterior
-      if (event === 'SIGNED_IN') {
+      if (event === 'SIGNED_IN' && session?.user) {
         const savedUserId = localStorage.getItem('current_user_id');
-        if (session?.user && savedUserId !== session.user.id) {
+        localStorage.setItem('current_user_id', session.user.id);
+
+        // Verifica se o onboarding já foi feito no banco (outro dispositivo)
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('onboarding_done')
+          .eq('id', session.user.id)
+          .single();
+
+        if (profileData?.onboarding_done) {
+          // Já completou em outro dispositivo — pula onboarding
+          localStorage.setItem('onboarding_done', 'true');
+          setOnboardingDone(true);
+        } else if (savedUserId !== session.user.id) {
+          // Novo usuário neste dispositivo — mostra onboarding
           localStorage.removeItem('onboarding_done');
           localStorage.removeItem('onboarding_profile');
           localStorage.removeItem('onboarding_welcome');
           localStorage.removeItem('user_profile');
           localStorage.removeItem('user_badges');
-          localStorage.setItem('current_user_id', session.user.id);
           setOnboardingDone(false);
           setWelcomeMessage(null);
           setShowAdmin(false);
@@ -92,7 +104,7 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, [hasSupabase]);
 
-  const handleOnboardingComplete = (profile: OnboardingProfile) => {
+  const handleOnboardingComplete = async (profile: OnboardingProfile) => {
     const config = getWelcomeConfig(profile);
     localStorage.setItem('onboarding_done', 'true');
     localStorage.setItem('onboarding_profile', JSON.stringify(profile));
@@ -101,6 +113,14 @@ export default function App() {
     setHomeViewMode(config.recommendation);
     setOnboardingDone(true);
     setSelectedBookId(config.startBookId);
+
+    // Salva no banco para persistir entre dispositivos
+    if (session?.user?.id) {
+      await supabase
+        .from('profiles')
+        .update({ onboarding_done: true })
+        .eq('id', session.user.id);
+    }
   };
 
   const isAdmin = session?.user?.email === ADMIN_EMAIL;

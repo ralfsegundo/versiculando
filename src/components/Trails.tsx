@@ -5,6 +5,7 @@ import { fetchTrails, fetchUserProgress, getTrailCompletedDays, Trail, UserTrail
 import { useGamification } from '../services/gamification';
 import { BIBLE_BOOKS, BEGINNER_PATH } from '../constants';
 import confetti from 'canvas-confetti';
+import { getStreakMultiplier } from '../services/gamification';
 import BibleGames from './BibleGames';
 
 interface TrailsProps {
@@ -82,8 +83,8 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
           const wasGraduated = localStorage.getItem(`${userId}_disciple_trail_graduated`);
           if (!wasGraduated) {
             localStorage.setItem(`${userId}_disciple_trail_graduated`, 'true');
-            addPoints(500, 'Concluiu a Trilha do Discípulo!', 'bonus');
-            showFloatingPoints(500, 'bonus_step');
+            addPoints(1000, 'Concluiu a Trilha do Discípulo!', 'bonus');
+            showFloatingPoints(1000, 'bonus_trail');
             setTimeout(() => {
               confetti({ particleCount: 200, spread: 100, origin: { y: 0.5 }, colors: ['#f59e0b', '#10b981', '#3b82f6', '#a855f7', '#ef4444'] });
               setTimeout(() => confetti({ particleCount: 150, spread: 120, origin: { y: 0.6 }, angle: 60, colors: ['#f59e0b', '#fcd34d'] }), 400);
@@ -94,16 +95,17 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
           }
         }
         setCompletedStepModal(index);
-        addPoints(200, `Concluiu o Passo ${index + 1} da trilha`, 'bonus');
-        showFloatingPoints(200, 'bonus_step');
+        const stepXp = Math.round(300 * getStreakMultiplier(profile.streak));
+        addPoints(stepXp, `Concluiu o Passo ${index + 1} da trilha`, 'bonus');
+        showFloatingPoints(stepXp, 'bonus_step');
         confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#f59e0b', '#10b981', '#3b82f6', '#ef4444'] });
       }
     });
     const wasTrailCompleted = localStorage.getItem(`${userId}_trail_completed`);
     if (allStepsCompleted && !wasTrailCompleted) {
       localStorage.setItem(`${userId}_trail_completed`, 'true');
-      addPoints(500, 'Concluiu a Trilha do Discípulo', 'bonus');
-      setTimeout(() => showFloatingPoints(500, 'bonus_trail'), 1500);
+      // XP de conclusão da Trilha gerenciado pelo gamification.tsx (markBookCompleted)
+      // Aqui apenas dispara o confetti e modal de graduação
     }
   }, [profile.completedBooks, activeTab, addPoints, showFloatingPoints, userId]);
 

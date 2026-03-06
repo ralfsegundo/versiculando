@@ -85,6 +85,9 @@ export default function Community() {
   const [activeTab, setActiveTab] = useState<'feed' | 'ranking' | 'groups' | 'prayers' | 'friends'>('groups');
   const tabsScrollRef = useRef<HTMLDivElement>(null);
   const [tabsScroll, setTabsScroll] = useState({ left: false, right: true });
+  const [unreadFeedCount, setUnreadFeedCount] = useState(0);
+  const [unreadGroupsCount, setUnreadGroupsCount] = useState(0);
+  const [unreadPrayersCount, setUnreadPrayersCount] = useState(0);
 
   // Toast notifications
   const [toasts, setToasts] = useState<{ id: number; message: string; type: 'success' | 'info' | 'error' }[]>([]);
@@ -225,6 +228,10 @@ export default function Community() {
           action: r.action,
           time: formatRelativeTime(r.created_at),
         })));
+        // Compute unread count based on last seen id
+        const lastSeenId = parseInt(localStorage.getItem('feed_last_seen_id') || '0', 10);
+        const newCount = data.filter((r: any) => r.id > lastSeenId).length;
+        setUnreadFeedCount(newCount);
       }
     } catch (e) { console.warn('[Community] loadFeed exception:', e); }
   };
@@ -303,10 +310,21 @@ export default function Community() {
         const myGroups = data.filter((g: any) =>
           Array.isArray(g.members) && g.members.some((m: any) => m.email === profile.email)
         );
-        setMockGroups(myGroups.map((g: any) => ({
+        const mapped = myGroups.map((g: any) => ({
           id: g.id, name: g.name, targetId: g.target_id, targetName: g.target_name,
           members: g.members || [], messages: g.messages || [], materials: g.materials || [],
-        })));
+        }));
+        setMockGroups(mapped);
+
+        // Count new messages across all groups since last visit
+        const lastSeenTs = parseInt(localStorage.getItem('groups_last_seen_ts') || '0', 10);
+        const newMsgs = mapped.reduce((acc, g) => {
+          return acc + g.messages.filter((m: any) => {
+            const ts = new Date(m.timestamp).getTime();
+            return ts > lastSeenTs && m.userEmail !== profile.email;
+          }).length;
+        }, 0);
+        setUnreadGroupsCount(newMsgs);
       }
     } catch (e) { console.warn('[Community] loadGroups exception:', e); }
   };
@@ -360,6 +378,13 @@ export default function Community() {
         prayedCount: p.prayed_count || 0,
         hasPrayed: prayedSet.has(p.id),
       })));
+
+      // Count new prayers since last visit
+      const lastSeenTs = parseInt(localStorage.getItem('prayers_last_seen_ts') || '0', 10);
+      const newPrayers = prayers.filter((p: any) =>
+        new Date(p.created_at).getTime() > lastSeenTs && p.user_id !== (profile.id || '')
+      ).length;
+      setUnreadPrayersCount(newPrayers);
     } catch (e) { console.warn('[Community] loadPrayers exception:', e); }
   };
 
@@ -1132,19 +1157,39 @@ export default function Community() {
           <div className="relative mb-4">
             <div ref={tabsScrollRef} onScroll={handleTabsScroll} className="flex overflow-x-auto hide-scrollbar gap-2 pb-1">
               {[
-                { id: 'groups', label: 'Grupos', icon: BookOpen, emoji: '👥' },
-                { id: 'feed', label: 'Feed', icon: Activity, emoji: '⚡' },
-                { id: 'ranking', label: 'Ranking', icon: Trophy, emoji: '🏆' },
-                { id: 'prayers', label: 'Orações', icon: Heart, emoji: '🙏' },
-                { id: 'friends', label: 'Amigos', icon: Users, emoji: '✨' },
+                { id: 'groups', label: 'Grupos', emoji: '👥' },
+                { id: 'feed', label: 'Feed', emoji: '⚡' },
+                { id: 'ranking', label: 'Ranking', emoji: '🏆' },
+                { id: 'prayers', label: 'Orações', emoji: '🙏' },
+                { id: 'friends', label: 'Amigos', emoji: '✨' },
               ].map(tab => {
-                const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
+                const badge = tab.id === 'feed' ? unreadFeedCount
+                  : tab.id === 'groups' ? unreadGroupsCount
+                  : tab.id === 'prayers' ? unreadPrayersCount
+                  : 0;
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl whitespace-nowrap text-xs font-bold transition-all flex-shrink-0 active:scale-95 ${
+                    onClick={() => {
+                      setActiveTab(tab.id as any);
+                      if (tab.id === 'feed') {
+                        if (mockFeed.length > 0) {
+                          const maxId = Math.max(...mockFeed.map(f => f.id));
+                          localStorage.setItem('feed_last_seen_id', String(maxId));
+                        }
+                        setUnreadFeedCount(0);
+                      }
+                      if (tab.id === 'groups') {
+                        localStorage.setItem('groups_last_seen_ts', String(Date.now()));
+                        setUnreadGroupsCount(0);
+                      }
+                      if (tab.id === 'prayers') {
+                        localStorage.setItem('prayers_last_seen_ts', String(Date.now()));
+                        setUnreadPrayersCount(0);
+                      }
+                    }}
+                    className={`relative flex items-center gap-2 px-4 py-2.5 rounded-2xl whitespace-nowrap text-xs font-bold transition-all flex-shrink-0 active:scale-95 ${
                       isActive
                         ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
                         : 'bg-white text-stone-500 hover:bg-stone-50 border border-stone-200 hover:border-indigo-200'
@@ -1152,6 +1197,15 @@ export default function Community() {
                   >
                     <span className="text-sm">{tab.emoji}</span>
                     {tab.label}
+                    {badge > 0 && (
+                      <motion.span
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-sm"
+                      >
+                        {badge > 9 ? '9+' : badge}
+                      </motion.span>
+                    )}
                   </button>
                 );
               })}
@@ -2077,7 +2131,7 @@ export default function Community() {
             const myEntry = { id: 'me', name: profile.name, avatarId: profile.avatarId || 'cruz', avatarUrl: profile.avatarUrl, points: myPoints, isMe: true };
 
             // Mistura reais do Supabase com fictícios para completar 20
-            const realOthers = mockRanking.filter(u => u.id !== userId && u.id !== 'me').slice(0, 8).map(u => ({ ...u, isMe: false }));
+            const realOthers = mockRanking.filter(u => u.id !== (profile.id || '') && u.id !== 'me').slice(0, 8).map(u => ({ ...u, isMe: false }));
             const fakeCount = Math.max(0, 19 - realOthers.length);
             const fakeRivals = Array.from({ length: fakeCount }, (_, i) => leagueRival(i));
             const allEntries = [...realOthers, ...fakeRivals, myEntry].sort((a, b) => b.points - a.points).slice(0, 20);

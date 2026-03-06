@@ -81,9 +81,20 @@ export default function Community() {
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingConnections, setIsLoadingConnections] = useState(false);
   const [searchError, setSearchError] = useState('');
-  const [activeTab, setActiveTab] = useState<'feed' | 'ranking' | 'groups' | 'prayers' | 'friends'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'ranking' | 'groups' | 'prayers' | 'friends'>('groups');
   const tabsScrollRef = useRef<HTMLDivElement>(null);
   const [tabsScroll, setTabsScroll] = useState({ left: false, right: true });
+
+  // Toast notifications
+  const [toasts, setToasts] = useState<{ id: number; message: string; type: 'success' | 'info' | 'error' }[]>([]);
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  };
+
+  // Debounced search
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleTabsScroll = () => {
     const el = tabsScrollRef.current;
@@ -104,6 +115,7 @@ export default function Community() {
 
   // Active Group State
   const [activeGroup, setActiveGroup] = useState<Group | null>(null);
+  const [groupSubTab, setGroupSubTab] = useState<'mural' | 'membros' | 'materiais'>('mural');
   const [newMessage, setNewMessage] = useState('');
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteModalSelected, setInviteModalSelected] = useState<string[]>([]);
@@ -342,7 +354,7 @@ export default function Community() {
           status: 'pending',
         }));
         await supabase.from('community_group_invites').insert(invites);
-        alert(`Convites enviados para ${newGroupInvites.length} amigo(s)!`);
+        showToast(`Convites enviados para ${newGroupInvites.length} amigo(s)! 🎉`);
       }
     }
 
@@ -373,7 +385,7 @@ export default function Community() {
     }
     setMockGroupInvites(prev => prev.filter(i => i.id !== inviteId));
     await loadGroups();
-    alert('Você entrou no grupo!');
+    showToast('Você entrou no grupo! 🎉', 'success');
   };
 
   const handleRejectGroupInvite = async (inviteId: string) => {
@@ -518,7 +530,7 @@ export default function Community() {
       text: `📚 Novo material de apoio adicionado: "${materialTitle.trim()}". Confira na seção de Materiais de Apoio!`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       type: 'text',
-      isPinned: true
+      isPinned: false
     };
     const updatedGroup = {
       ...activeGroup,
@@ -649,7 +661,7 @@ export default function Community() {
     await supabase.from('community_group_invites').insert(invites);
     setInviteModalSelected([]);
     setShowInviteModal(false);
-    alert(`Convite${inviteModalSelected.length > 1 ? 's' : ''} enviado${inviteModalSelected.length > 1 ? 's' : ''}!`);
+    showToast(`Convite${inviteModalSelected.length > 1 ? 's' : ''} enviado${inviteModalSelected.length > 1 ? 's' : ''}! 🎉`);
   };
 
   const handleLeaveGroup = () => {
@@ -815,12 +827,13 @@ export default function Community() {
     }
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
+  const handleSearch = async (query?: string) => {
+    const q = (query !== undefined ? query : searchQuery).trim();
+    if (!q) { setSearchResults([]); setSearchError(''); return; }
     setIsSearching(true);
     setSearchError('');
     try {
-      const results = await sharingService.searchUsers(searchQuery);
+      const results = await sharingService.searchUsers(q);
       const filtered = results.filter((u: any) => u.email !== profile.email);
       setSearchResults(filtered);
       if (filtered.length === 0) setSearchError('Nenhum usuário encontrado.');
@@ -830,6 +843,13 @@ export default function Community() {
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleSearchInputChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (!value.trim()) { setSearchResults([]); setSearchError(''); return; }
+    searchDebounceRef.current = setTimeout(() => handleSearch(value), 350);
   };
 
   const handleRequestConnection = async (toEmail: string) => {
@@ -900,9 +920,9 @@ export default function Community() {
           <div className="relative mb-4">
             <div ref={tabsScrollRef} onScroll={handleTabsScroll} className="flex overflow-x-auto hide-scrollbar gap-1.5 pb-1">
               {[
+                { id: 'groups', label: 'Grupos', icon: BookOpen },
                 { id: 'feed', label: 'Feed', icon: Activity },
                 { id: 'ranking', label: 'Ranking', icon: Trophy },
-                { id: 'groups', label: 'Grupos', icon: BookOpen },
                 { id: 'prayers', label: 'Orações', icon: Heart },
                 { id: 'friends', label: 'Amigos', icon: Users },
               ].map(tab => {
@@ -948,7 +968,7 @@ export default function Community() {
                   <>
                     <div className="flex items-center gap-3 border-b border-stone-100 pb-4">
                 <button 
-                  onClick={() => setActiveGroup(null)}
+                  onClick={() => { setActiveGroup(null); setGroupSubTab('mural'); }}
                   className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors flex-shrink-0"
                 >
                   <ChevronLeft size={24} />
@@ -961,7 +981,7 @@ export default function Community() {
                 </div>
               </div>
 
-              {/* Collective Progress */}
+              {/* Collective Progress — always visible */}
               <div className="bg-indigo-50 rounded-xl p-3.5 border border-indigo-100">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="font-bold text-indigo-900 text-sm">Progresso Coletivo</h3>
@@ -975,152 +995,177 @@ export default function Community() {
                 </div>
               </div>
 
-              {/* Members List */}
-              <div>
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-bold text-stone-900 text-sm">Membros ({activeGroup.members.length})</h3>
-                  <button 
-                    onClick={() => setShowInviteModal(true)}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
+              {/* Sub-tabs */}
+              <div className="flex gap-1.5 border-b border-stone-100 pb-0">
+                {([
+                  { id: 'mural', label: '📋 Mural' },
+                  { id: 'membros', label: `👥 Membros (${activeGroup.members.length})` },
+                  { id: 'materiais', label: `📎 Materiais (${activeGroup.materials?.length || 0})` },
+                ] as { id: 'mural' | 'membros' | 'materiais'; label: string }[]).map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setGroupSubTab(tab.id)}
+                    className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all ${
+                      groupSubTab === tab.id
+                        ? 'bg-white border border-b-white border-stone-200 text-indigo-700 -mb-px'
+                        : 'text-stone-400 hover:text-stone-600'
+                    }`}
                   >
-                    <UserPlus size={14} /> Convidar
+                    {tab.label}
                   </button>
-                </div>
-                <div className="space-y-2">
-                  {activeGroup.members.sort((a, b) => b.progress - a.progress).map((member, idx) => (
-                    <div key={idx} className="flex items-center justify-between px-3 py-2 bg-stone-50 rounded-xl border border-stone-100">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-base border border-stone-200 overflow-hidden shrink-0">
-                          {member.avatarUrl ? (
-                            <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            AVATARS.find(a => a.id === member.avatarId)?.emoji || '👤'
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-bold text-stone-900 text-sm flex items-center gap-1 leading-none">
-                            {member.name}
-                            {member.isLeader && <Crown size={12} className="text-amber-500" title="Admin do Grupo" />}
-                          </p>
-                          <div className="w-20 h-1.5 bg-stone-200 rounded-full mt-1.5 overflow-hidden">
-                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${member.progress}%` }}></div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-stone-400">{member.progress}%</span>
-                        {isCurrentUserAdmin && !member.isLeader && (
-                          <button 
-                            onClick={() => handleRemoveMember(member.email, member.name)}
-                            className="p-1.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
-                            title="Remover membro"
-                          >
-                            <X size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                ))}
               </div>
 
-              {/* Materiais de Apoio */}
-              <div className="mb-4">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-bold text-stone-900 text-sm flex items-center gap-1.5">
-                    <Paperclip size={15} className="text-indigo-500" /> Materiais de Apoio
-                  </h3>
-                  {isCurrentUserAdmin && !isAddingMaterial && (
+              {/* Sub-tab: Membros */}
+              {groupSubTab === 'membros' && (
+                <div>
+                  <div className="flex justify-end mb-3">
                     <button 
-                      onClick={() => setIsAddingMaterial(true)}
-                      className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
+                      onClick={() => setShowInviteModal(true)}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100"
                     >
-                      <Plus size={14} /> Adicionar
+                      <UserPlus size={14} /> Convidar amigo
                     </button>
-                  )}
-                </div>
-
-                {isAddingMaterial && (
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-4">
-                    <div className="flex justify-between items-center mb-3">
-                      <h4 className="font-bold text-indigo-900 text-sm">Novo Material</h4>
-                      <button onClick={() => setIsAddingMaterial(false)} className="text-indigo-400 hover:text-indigo-600">
-                        <X size={16} />
-                      </button>
-                    </div>
-                    <div className="space-y-3">
-                      <input 
-                        type="text" 
-                        placeholder="Título (ex: Planilha de Leitura)"
-                        value={materialTitle}
-                        onChange={(e) => setMaterialTitle(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                      />
-                      <input 
-                        type="url" 
-                        placeholder="Link (Google Drive, PDF, etc)"
-                        value={materialUrl}
-                        onChange={(e) => setMaterialUrl(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                      />
-                      <div className="flex justify-end">
-                        <button 
-                          onClick={handleAddMaterial}
-                          disabled={!materialTitle.trim() || !materialUrl.trim()}
-                          className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                        >
-                          Salvar Link
-                        </button>
-                      </div>
-                    </div>
                   </div>
-                )}
-
-                {(!activeGroup.materials || activeGroup.materials.length === 0) && !isAddingMaterial ? (
-                  <p className="text-xs text-stone-400 italic px-1">Nenhum material adicionado ainda.</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {activeGroup.materials?.map(material => (
-                      <div key={material.id} className="flex items-center justify-between p-3 bg-white border border-stone-200 rounded-xl hover:border-indigo-300 hover:shadow-sm transition-all group">
-                        <a href={material.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                            material.type === 'spreadsheet' ? 'bg-emerald-100 text-emerald-600' :
-                            material.type === 'document' ? 'bg-blue-100 text-blue-600' :
-                            material.type === 'pdf' ? 'bg-rose-100 text-rose-700' :
-                            material.type === 'video' ? 'bg-red-100 text-red-600' :
-                            'bg-stone-100 text-stone-600'
-                          }`}>
-                            {material.type === 'spreadsheet' ? <FileSpreadsheet size={20} /> :
-                             material.type === 'document' ? <FileText size={20} /> :
-                             material.type === 'pdf' ? <FileText size={20} /> :
-                             material.type === 'video' ? <Youtube size={20} /> :
-                             <LinkIcon size={20} />}
+                  <div className="space-y-2">
+                    {activeGroup.members.sort((a, b) => b.progress - a.progress).map((member, idx) => (
+                      <div key={idx} className="flex items-center justify-between px-3 py-2 bg-stone-50 rounded-xl border border-stone-100">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-base border border-stone-200 overflow-hidden shrink-0">
+                            {member.avatarUrl ? (
+                              <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              AVATARS.find(a => a.id === member.avatarId)?.emoji || '👤'
+                            )}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-bold text-stone-900 text-sm truncate">{material.title}</p>
-                            <p className="text-xs text-stone-500 truncate flex items-center gap-1">
-                              <ExternalLink size={10} /> Abrir link
+                          <div>
+                            <p className="font-bold text-stone-900 text-sm flex items-center gap-1 leading-none">
+                              {member.name}
+                              {member.isLeader && <Crown size={12} className="text-amber-500" title="Admin do Grupo" />}
                             </p>
+                            <div className="w-20 h-1.5 bg-stone-200 rounded-full mt-1.5 overflow-hidden">
+                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${member.progress}%` }}></div>
+                            </div>
                           </div>
-                        </a>
-                        {isCurrentUserAdmin && (
-                          <button 
-                            onClick={() => handleDeleteMaterial(material.id)}
-                            className="p-2 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all shrink-0"
-                            title="Remover material"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-stone-400">{member.progress}%</span>
+                          {isCurrentUserAdmin && !member.isLeader && (
+                            <button 
+                              onClick={() => handleRemoveMember(member.email, member.name)}
+                              className="p-1.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="Remover membro"
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
-              {/* Message Board */}
+              {/* Sub-tab: Materiais */}
+              {groupSubTab === 'materiais' && (
+                <div>
+                  {isCurrentUserAdmin && !isAddingMaterial && (
+                    <div className="flex justify-end mb-3">
+                      <button 
+                        onClick={() => setIsAddingMaterial(true)}
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100"
+                      >
+                        <Plus size={14} /> Adicionar material
+                      </button>
+                    </div>
+                  )}
+
+                  {isAddingMaterial && (
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-4">
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="font-bold text-indigo-900 text-sm">Novo Material</h4>
+                        <button onClick={() => setIsAddingMaterial(false)} className="text-indigo-400 hover:text-indigo-600">
+                          <X size={16} />
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <input 
+                          type="text" 
+                          placeholder="Título (ex: Planilha de Leitura)"
+                          value={materialTitle}
+                          onChange={(e) => setMaterialTitle(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                        />
+                        <input 
+                          type="url" 
+                          placeholder="Link (Google Drive, PDF, etc)"
+                          value={materialUrl}
+                          onChange={(e) => setMaterialUrl(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                        />
+                        <div className="flex justify-end">
+                          <button 
+                            onClick={handleAddMaterial}
+                            disabled={!materialTitle.trim() || !materialUrl.trim()}
+                            className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                          >
+                            Salvar Link
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {(!activeGroup.materials || activeGroup.materials.length === 0) && !isAddingMaterial ? (
+                    <div className="text-center py-10 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
+                      <Paperclip size={28} className="mx-auto text-stone-300 mb-2" />
+                      <p className="text-stone-400 text-sm">Nenhum material adicionado ainda.</p>
+                      {isCurrentUserAdmin && <p className="text-xs text-stone-300 mt-1">Adicione links, PDFs ou vídeos acima.</p>}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {activeGroup.materials?.map(material => (
+                        <div key={material.id} className="flex items-center justify-between p-3 bg-white border border-stone-200 rounded-xl hover:border-indigo-300 hover:shadow-sm transition-all group">
+                          <a href={material.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                              material.type === 'spreadsheet' ? 'bg-emerald-100 text-emerald-600' :
+                              material.type === 'document' ? 'bg-blue-100 text-blue-600' :
+                              material.type === 'pdf' ? 'bg-rose-100 text-rose-700' :
+                              material.type === 'video' ? 'bg-red-100 text-red-600' :
+                              'bg-stone-100 text-stone-600'
+                            }`}>
+                              {material.type === 'spreadsheet' ? <FileSpreadsheet size={20} /> :
+                               material.type === 'document' ? <FileText size={20} /> :
+                               material.type === 'pdf' ? <FileText size={20} /> :
+                               material.type === 'video' ? <Youtube size={20} /> :
+                               <LinkIcon size={20} />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-stone-900 text-sm truncate">{material.title}</p>
+                              <p className="text-xs text-stone-500 truncate flex items-center gap-1">
+                                <ExternalLink size={10} /> Abrir link
+                              </p>
+                            </div>
+                          </a>
+                          {isCurrentUserAdmin && (
+                            <button 
+                              onClick={() => handleDeleteMaterial(material.id)}
+                              className="p-2 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"
+                              title="Remover material"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sub-tab: Mural */}
+              {groupSubTab === 'mural' && (
               <div>
-                <h3 className="font-bold text-stone-900 mb-4">Mural do Grupo</h3>
                 <div className="bg-stone-50 rounded-2xl border border-stone-200 flex flex-col overflow-hidden">
                   <div className="overflow-y-auto space-y-4 p-3 pr-2" style={{ maxHeight: 'calc(100svh - 480px)' }}>
                     {activeGroup.messages.length === 0 ? (
@@ -1174,13 +1219,17 @@ export default function Community() {
                                       <button
                                         onClick={() => handleVote(msg.id, opt.id)}
                                         disabled={false}
+                                        title={votedForThis ? 'Clique para remover seu voto' : ''}
                                         className={`w-full text-left p-2 rounded-xl border text-sm relative overflow-hidden transition-all z-10 ${
                                           votedForThis ? 'border-indigo-500 bg-indigo-50/50' : 'border-stone-200 hover:border-indigo-300 bg-white'
                                         }`}
                                       >
-                                        <div className="flex justify-between relative z-20">
+                                        <div className="flex justify-between items-center relative z-20 gap-2">
                                           <span className={votedForThis ? 'font-bold text-indigo-900' : 'text-stone-700'}>{opt.text}</span>
-                                          {hasVoted && <span className="text-stone-500 font-medium">{percentage}%</span>}
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            {hasVoted && <span className="text-stone-500 font-medium">{percentage}%</span>}
+                                            {votedForThis && <span className="text-[10px] text-indigo-400 font-medium hidden sm:inline">(clique para desvolar)</span>}
+                                          </div>
                                         </div>
                                         {hasVoted && (
                                           <div 
@@ -1213,6 +1262,11 @@ export default function Community() {
                                   <p className="font-bold text-indigo-900 text-sm flex items-center gap-2">
                                     <HelpCircle size={16} className="text-indigo-500" />
                                     {msg.questionBox.question}
+                                  </p>
+                                  <p className="text-xs text-indigo-400 mt-1.5">
+                                    {msg.questionBox.answers.length === 0
+                                      ? 'Nenhuma resposta ainda — seja o primeiro!'
+                                      : `${msg.questionBox.answers.length} ${msg.questionBox.answers.length === 1 ? 'resposta' : 'respostas'} recebidas`}
                                   </p>
                                 </div>
                                 
@@ -1511,6 +1565,7 @@ export default function Community() {
                   )}
                 </div>
               </div>
+              )} {/* end groupSubTab === 'mural' */}
 
               {/* Leave / Delete Group — discreto no rodapé */}
               <div className="pt-2 flex justify-center">
@@ -1588,7 +1643,13 @@ export default function Community() {
           ) : activeTab === 'feed' && (
             <div className="space-y-2">
               <h4 className="text-[11px] font-bold text-stone-400 uppercase tracking-wider px-1 mb-2">Atividades Recentes</h4>
-              {mockFeed.map(item => (
+              {mockFeed.length === 0 ? (
+                <div className="text-center py-14 bg-stone-50 rounded-3xl border border-dashed border-stone-200">
+                  <Activity size={32} className="mx-auto text-stone-300 mb-3" />
+                  <p className="text-stone-500 font-medium">Nenhuma atividade ainda.</p>
+                  <p className="text-sm text-stone-400 mt-1">As ações da comunidade aparecerão aqui.</p>
+                </div>
+              ) : mockFeed.map(item => (
                 <div key={item.id} className="flex items-center gap-2.5 p-2.5 bg-stone-50 rounded-xl border border-stone-100">
                   <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-base border border-stone-200 shrink-0">
                     {AVATARS.find(a => a.id === item.avatarId)?.emoji || '👤'}
@@ -1608,7 +1669,7 @@ export default function Community() {
 
           {activeTab === 'ranking' && (
             <div className="space-y-3">
-              <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider px-1 mb-4">Ranking Semanal</h4>
+              <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider px-1 mb-4">Ranking Geral de Pontos</h4>
               <div className="space-y-2.5">
                 {mockRanking.map((user) => (
                   <div key={user.id} className={`flex items-center justify-between p-3 rounded-2xl border ${
@@ -1700,10 +1761,9 @@ export default function Community() {
                           </button>
                           <button 
                             onClick={() => handleRejectGroupInvite(invite.id)}
-                            className="px-3.5 py-2.5 bg-stone-100 text-stone-400 rounded-xl hover:bg-stone-200 hover:text-stone-600 active:scale-95 transition-all"
-                            title="Recusar"
+                            className="px-3.5 py-2.5 bg-stone-100 text-stone-500 rounded-xl hover:bg-stone-200 hover:text-stone-700 active:scale-95 transition-all flex items-center gap-1.5 text-sm font-medium"
                           >
-                            <X size={16} />
+                            <X size={15} /> Recusar
                           </button>
                         </div>
                       </div>
@@ -1945,8 +2005,8 @@ export default function Community() {
                             : 'bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100'
                         }`}
                       >
-                        <ThumbsUp size={13} />
-                        {prayer.hasPrayed ? 'Orei por isso' : 'Vou orar'}
+                        <Heart size={13} className={prayer.hasPrayed ? 'fill-emerald-500' : ''} />
+                        {prayer.hasPrayed ? 'Orei por isso 🙏' : 'Vou orar'}
                       </button>
                     </div>
                   </div>
@@ -1965,21 +2025,21 @@ export default function Community() {
                     type="text"
                     placeholder="Buscar por nome ou email..."
                     value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setSearchError(''); if (!e.target.value.trim()) setSearchResults([]); }}
+                    onChange={(e) => handleSearchInputChange(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                     className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
                   />
+                  {isSearching && (
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-stone-300 border-t-indigo-500 rounded-full animate-spin" />
+                  )}
                 </div>
                 <button
-                  onClick={handleSearch}
+                  onClick={() => handleSearch()}
                   disabled={isSearching || !searchQuery.trim()}
                   className="px-5 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 text-sm active:scale-95 flex items-center justify-center gap-2"
                 >
-                  {isSearching
-                    ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    : <Search size={16} />
-                  }
-                  <span>{isSearching ? 'Buscando...' : 'Buscar'}</span>
+                  <Search size={16} />
+                  <span>Buscar</span>
                 </button>
               </div>
 
@@ -2145,7 +2205,7 @@ export default function Community() {
                         </div>
                         <button
                           onClick={() => handleRemoveFriend(conn.user.email, conn.user.name)}
-                          className="opacity-0 group-hover:opacity-100 p-2.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-all"
+                          className="sm:opacity-0 sm:group-hover:opacity-100 p-2.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-all"
                           title="Remover amigo"
                         >
                           <UserMinus size={18} />
@@ -2184,6 +2244,26 @@ export default function Community() {
           )}
 
         </div>
+      </div>
+
+      {/* Toast Notifications */}
+      <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none w-full max-w-sm px-4">
+        {toasts.map(toast => (
+          <motion.div
+            key={toast.id}
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8 }}
+            className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-lg text-sm font-bold pointer-events-auto ${
+              toast.type === 'error' ? 'bg-rose-600 text-white' :
+              toast.type === 'info' ? 'bg-stone-800 text-white' :
+              'bg-emerald-600 text-white'
+            }`}
+          >
+            <span className="text-base">{toast.type === 'error' ? '❌' : toast.type === 'info' ? 'ℹ️' : '✅'}</span>
+            {toast.message}
+          </motion.div>
+        ))}
       </div>
     </div>
   );

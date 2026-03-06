@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { BIBLE_BOOKS, GROUP_COLORS, BEGINNER_PATH } from '../constants';
 import { generateBookSummary, BookData } from '../services/bookData';
 import {
@@ -47,7 +48,7 @@ function BookDetailSkeleton({ accent }: { accent: string }) {
 function DuoButton({
   children, onClick, disabled, color = 'amber', size = 'md', className = '',
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   color?: 'amber' | 'green' | 'stone' | 'red' | 'indigo';
@@ -743,7 +744,7 @@ function OverviewTab({ data, book, colorClass, onNavigateToChapter, userId }: {
 
 // ── DuoCard — card genérico estilo Duolingo ──────────────────
 function DuoCard({ icon, title, children, accent, border }: {
-  icon: string; title: string; children: React.ReactNode; accent: string; border: string;
+  icon: string; title: string; children: ReactNode; accent: string; border: string;
 }) {
   return (
     <div className="bg-white border-2 border-stone-100 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">

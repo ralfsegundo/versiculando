@@ -151,8 +151,27 @@ export default function App() {
 
   if (isInitializing) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-stone-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600" />
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#fdfbf7] gap-4">
+        <div className="relative">
+          <div className="w-16 h-16 bg-stone-900 rounded-2xl flex items-center justify-center shadow-xl">
+            <span className="text-amber-400 text-2xl">📖</span>
+          </div>
+          {/* Anel pulsante */}
+          <div className="absolute inset-0 rounded-2xl border-2 border-amber-400/50 animate-ping" />
+        </div>
+        <div className="text-center">
+          <p className="font-serif font-bold text-stone-900 text-lg">Versiculando</p>
+          <p className="text-stone-400 text-sm mt-0.5">Preparando sua jornada...</p>
+        </div>
+        <div className="flex gap-1.5 mt-2">
+          {[0, 1, 2].map(i => (
+            <div
+              key={i}
+              className="w-2 h-2 rounded-full bg-amber-400 animate-bounce"
+              style={{ animationDelay: `${i * 0.15}s` }}
+            />
+          ))}
+        </div>
       </div>
     );
   }

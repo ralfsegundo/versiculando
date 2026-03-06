@@ -459,6 +459,7 @@ function VisualMindMap({ data, book, theme, onNavigateToChapter }: { data: MindM
     });
   };
   const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const pillsScrollRef = useRef<HTMLDivElement>(null);
 
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');

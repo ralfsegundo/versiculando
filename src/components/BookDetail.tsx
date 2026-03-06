@@ -1141,9 +1141,12 @@ function ChapterCard({
           )}
 
           <div className={`mt-5 flex gap-3 flex-wrap ${idx % 2 === 0 ? 'justify-start' : 'md:justify-end justify-start'}`}>
-            {/* Mark as read */}
-            <button
+            {/* Mark as read — com feedback animado */}
+            <motion.button
               onClick={() => onMarkChapterRead(chapterNum)}
+              whileTap={{ scale: 0.92 }}
+              animate={isRead ? { scale: [1, 1.12, 1] } : {}}
+              transition={{ type: 'spring', stiffness: 500, damping: 15 }}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold border-2 border-b-4 transition-all active:border-b-2 active:translate-y-[2px] ${
                 isRead
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
@@ -1152,7 +1155,7 @@ function ChapterCard({
             >
               <CheckCircle2 size={15} className={isRead ? 'text-emerald-500' : 'text-stone-400'} />
               {isRead ? 'Lido ✓' : 'Marcar como lido'}
-            </button>
+            </motion.button>
 
             {/* Inline note toggle */}
             <button
@@ -1272,30 +1275,43 @@ function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onM
         </h2>
         <p className="text-stone-600 text-lg">Marque cada capítulo conforme você for lendo.</p>
 
-        {/* Progress bar */}
-        <div className="mt-6 max-w-xs mx-auto">
-          <div className="flex justify-between text-sm font-bold text-stone-600 mb-1.5">
-            <span>Progresso de leitura</span>
-            <span>{readCount}/{total}</span>
+        {/* Progress bar — Duolingo-style */}
+        <div className="mt-6 max-w-sm mx-auto">
+          <div className="bg-white border-2 border-stone-100 rounded-2xl p-4 shadow-sm">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">Progresso</span>
+              <span className={`text-sm font-black ${progressPct === 100 ? 'text-emerald-600' : 'text-indigo-600'}`}>
+                {readCount}/{total} · {progressPct}%
+              </span>
+            </div>
+            <div className="w-full bg-stone-100 rounded-full h-4 overflow-hidden">
+              <motion.div
+                className={`h-full rounded-full relative ${progressPct === 100 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-indigo-400 to-indigo-500'}`}
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPct}%` }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
+              >
+                {/* Brilho */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent rounded-full" />
+              </motion.div>
+            </div>
+            {progressPct === 100 ? (
+              <motion.p
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-emerald-600 font-bold text-sm mt-2 text-center"
+              >
+                🎉 Todos os capítulos lidos! Marque como concluído abaixo.
+              </motion.p>
+            ) : total >= 10 && (
+              <button
+                onClick={onMarkAllChaptersRead}
+                className="mt-2 text-xs font-bold text-indigo-500 hover:text-indigo-700 underline underline-offset-2 transition-colors"
+              >
+                Marcar todos como lidos de uma vez
+              </button>
+            )}
           </div>
-          <div className="w-full bg-stone-200 rounded-full h-3 overflow-hidden">
-            <motion.div
-              className={`h-full rounded-full ${progressPct === 100 ? 'bg-emerald-500' : 'bg-indigo-400'}`}
-              initial={{ width: 0 }}
-              animate={{ width: `${progressPct}%` }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
-            />
-          </div>
-          {progressPct === 100 ? (
-            <p className="text-emerald-600 font-bold text-sm mt-2">🎉 Todos os capítulos lidos! Marque o livro como concluído abaixo.</p>
-          ) : total >= 10 && (
-            <button
-              onClick={onMarkAllChaptersRead}
-              className="mt-3 text-xs font-bold text-indigo-500 hover:text-indigo-700 underline underline-offset-2 transition-colors"
-            >
-              Marcar todos como lidos de uma vez
-            </button>
-          )}
         </div>
       </div>
 

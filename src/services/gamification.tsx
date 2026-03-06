@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
-import { BEGINNER_PATH } from '../constants';
+import { BEGINNER_PATH, BIBLE_BOOKS } from '../constants';
 import confetti from 'canvas-confetti';
 import { motion, AnimatePresence } from 'motion/react';
 import { sharingService } from './sharingService';
@@ -96,7 +96,7 @@ export interface WeeklyChallenge {
   completed: boolean;
 }
 
-export type FloatingPointType = 'free' | 'disciple' | 'bonus_step' | 'bonus_trail';
+export type FloatingPointType = 'free' | 'disciple' | 'bonus_step' | 'bonus_trail' | 'streak';
 
 interface FloatingPoint {
   id: number;
@@ -126,12 +126,25 @@ export const BADGES: Record<BadgeId, Omit<Badge, 'unlockedAt'>> = {
 };
 
 export const getTitleByPoints = (points: number): string => {
-  if (points >= 5000) return 'Santo';
-  if (points >= 2001) return 'Profeta';
-  if (points >= 501) return 'Apóstolo';
-  if (points >= 101) return 'Discípulo';
+  if (points >= 15000) return 'Santo';
+  if (points >= 6000)  return 'Doutor';
+  if (points >= 2500)  return 'Profeta';
+  if (points >= 800)   return 'Apóstolo';
+  if (points >= 200)   return 'Discípulo';
   return 'Iniciante';
 };
+
+// Multiplicador de XP baseado na streak do usuário
+export const getStreakMultiplier = (streak: number): number => {
+  if (streak >= 30) return 2.0;
+  if (streak >= 14) return 1.5;
+  if (streak >= 7)  return 1.25;
+  return 1.0;
+};
+
+// Aplica multiplicador e arredonda para inteiro
+export const applyMultiplier = (base: number, streak: number): number =>
+  Math.round(base * getStreakMultiplier(streak));
 
 // --- Safe localStorage wrapper ---
 const safeStorage = {
@@ -233,10 +246,10 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const WEEKLY_CHALLENGES: Omit<WeeklyChallenge, 'id' | 'progress' | 'deadline' | 'completed'>[] = [
-    { title: 'Conclua 3 livros esta semana', description: 'Complete a leitura de qualquer 3 livros.', target: 3, rewardPoints: 100 },
-    { title: 'Conclua 5 livros esta semana', description: 'Complete a leitura de qualquer 5 livros.', target: 5, rewardPoints: 150 },
-    { title: 'Conclua 2 livros do NT esta semana', description: 'Leia e complete 2 livros do Novo Testamento.', target: 2, rewardPoints: 80 },
-    { title: 'Conclua 4 livros esta semana', description: 'Complete a leitura de qualquer 4 livros.', target: 4, rewardPoints: 120 },
+    { title: 'Conclua 3 livros esta semana', description: 'Complete a leitura de qualquer 3 livros.', target: 3, rewardPoints: 300 },
+    { title: 'Conclua 5 livros esta semana', description: 'Complete a leitura de qualquer 5 livros.', target: 5, rewardPoints: 500 },
+    { title: 'Conclua 2 livros do NT esta semana', description: 'Leia e complete 2 livros do Novo Testamento.', target: 2, rewardPoints: 250 },
+    { title: 'Conclua 4 livros esta semana', description: 'Complete a leitura de qualquer 4 livros.', target: 4, rewardPoints: 400 },
   ];
 
   // Desafios personalizados por tempo disponível (do onboarding)
@@ -247,26 +260,26 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       const { timePerDay, goal } = JSON.parse(saved);
       if (timePerDay === '5') {
         return [
-          { title: 'Leia 1 livro esta semana', description: 'Pequenos passos levam longe. Conclua qualquer 1 livro.', target: 1, rewardPoints: 50 },
-          { title: 'Acesse o versículo do dia 5 vezes', description: 'Uma dose diária da Palavra. 5 dias seguidos.', target: 5, rewardPoints: 60 },
+          { title: 'Leia 1 livro esta semana', description: 'Pequenos passos levam longe. Conclua qualquer 1 livro.', target: 1, rewardPoints: 150 },
+          { title: 'Acesse o versículo do dia 5 vezes', description: 'Uma dose diária da Palavra. 5 dias seguidos.', target: 5, rewardPoints: 200 },
         ];
       }
       if (timePerDay === '15') {
         return [
-          { title: 'Conclua 2 livros esta semana', description: '15 minutos por dia, resultados reais.', target: 2, rewardPoints: 75 },
-          { title: 'Conclua 3 livros esta semana', description: 'Continue no ritmo. Mais 3 livros!', target: 3, rewardPoints: 100 },
+          { title: 'Conclua 2 livros esta semana', description: '15 minutos por dia, resultados reais.', target: 2, rewardPoints: 250 },
+          { title: 'Conclua 3 livros esta semana', description: 'Continue no ritmo. Mais 3 livros!', target: 3, rewardPoints: 300 },
         ];
       }
       if (timePerDay === '60') {
         return [
-          { title: 'Conclua 7 livros esta semana', description: 'Você tem tempo e disposição. Use os dois!', target: 7, rewardPoints: 200 },
-          { title: 'Conclua 5 livros esta semana', description: 'Semana intensa. Bora lá!', target: 5, rewardPoints: 150 },
+          { title: 'Conclua 7 livros esta semana', description: 'Você tem tempo e disposição. Use os dois!', target: 7, rewardPoints: 600 },
+          { title: 'Conclua 5 livros esta semana', description: 'Semana intensa. Bora lá!', target: 5, rewardPoints: 500 },
         ];
       }
       if (goal === 'complete') {
         return [
-          { title: 'Conclua 5 livros esta semana', description: 'Rumo aos 73! Mais 5 livros.', target: 5, rewardPoints: 150 },
-          { title: 'Conclua 4 livros esta semana', description: 'Cada livro é um passo para a meta.', target: 4, rewardPoints: 120 },
+          { title: 'Conclua 5 livros esta semana', description: 'Rumo aos 73! Mais 5 livros.', target: 5, rewardPoints: 500 },
+          { title: 'Conclua 4 livros esta semana', description: 'Cada livro é um passo para a meta.', target: 4, rewardPoints: 400 },
         ];
       }
     } catch { /* ignora */ }
@@ -606,8 +619,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       if (newMissionStreak >= 7) unlockBadge('missao_diaria');
       return newProfile;
     });
-    addPoints(25, 'Missão diária concluída', 'bonus');
-    showFloatingPoints(25, 'bonus_step');
+    const xp = applyMultiplier(50, profile.streak);
+    addPoints(xp, 'Missão diária concluída', 'bonus');
+    showFloatingPoints(xp, 'bonus_step');
   };
 
   // Eco reaction em versículo
@@ -646,13 +660,25 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   // Badge: desafio relâmpago
   const completeFlashChallenge = () => {
     unlockBadge('guerreiro_luz');
-    addPoints(200, 'Desafio relâmpago concluído', 'bonus');
-    showFloatingPoints(200, 'bonus_trail');
+    const xp = applyMultiplier(300, profile.streak);
+    addPoints(xp, 'Desafio relâmpago concluído', 'bonus');
+    showFloatingPoints(xp, 'bonus_trail');
   };
 
   const markBookCompleted = (bookId: string, isGps: boolean = false) => {
     if (!profile.completedBooks.includes(bookId)) {
+      // XP proporcional ao tamanho do livro (número de capítulos)
+      const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
+      const chapters = bookData?.chapters || 1;
+
       setProfile(prev => {
+        const mult = getStreakMultiplier(prev.streak);
+
+        // Base: 50 + 1xp/cap (livre) | 100 + 2xp/cap (trilha) — multiplicado pela streak
+        const baseXp = isGps
+          ? Math.round((100 + chapters * 2) * mult)
+          : Math.round((50 + chapters * 1) * mult);
+
         const newCompletedBooks = [...prev.completedBooks, bookId];
         const newProfile = {
           ...prev,
@@ -662,10 +688,17 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             : (prev.discipleCompletedBooks || []),
         };
         checkBadges(newProfile);
+
+        // XP com delay para não colidir com setState
+        setTimeout(() => {
+          addPoints(baseXp, `Completou ${bookData?.name || bookId}${isGps ? ' (Trilha)' : ''}`, isGps ? 'discipleTrail' : 'freeExploration');
+          showFloatingPoints(baseXp, isGps ? 'disciple' : 'free');
+        }, 0);
+
         return newProfile;
       });
 
-      // Update WeeklyChallenge progress if this book matches the challenge
+      // Atualiza desafio semanal
       setWeeklyChallenge(prev => {
         if (prev.completed) return prev;
         const newProgress = prev.progress + 1;
@@ -673,15 +706,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         return { ...prev, progress: newProgress, completed };
       });
 
-      if (isGps) {
-        addPoints(100, `Completou livro ${bookId} na Trilha do Discípulo`, 'discipleTrail');
-        showFloatingPoints(100, 'disciple');
-      } else {
-        addPoints(50, `Completou livro ${bookId} livremente`, 'freeExploration');
-        showFloatingPoints(50, 'free');
-      }
-
-      // Post automático no feed da comunidade
+      // Post no feed da comunidade
       if (profile.email) {
         const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
         if (hasSupabase) {
@@ -715,7 +740,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Check if entire Trilha do Discípulo is now complete → trigger completePlan
+      // Verifica se toda a Trilha do Discípulo foi concluída
       const discipleBookIds = BEGINNER_PATH.flatMap(step => step.books);
       const allDiscipleCompleted = discipleBookIds.every(
         id => id === bookId || profile.completedBooks.includes(id)
@@ -726,16 +751,25 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           checkBadges(newProfile);
           return newProfile;
         });
+        // Bônus épico pela conclusão da Trilha do Discípulo
+        setTimeout(() => {
+          addPoints(1000, 'Trilha do Discípulo completa! 🏆', 'bonus');
+          showFloatingPoints(1000, 'bonus_trail');
+        }, 500);
       }
 
     } else if (isGps && !profile.discipleCompletedBooks?.includes(bookId)) {
-      // Book already completed freely, now completing via Trilha do Discipulo — register completion
+      // Livro já concluído livremente, agora reconquistado pela Trilha
+      const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
+      const chapters = bookData?.chapters || 1;
+      const xp = applyMultiplier(50 + chapters, profile.streak);
+
       setProfile(prev => ({
         ...prev,
         discipleCompletedBooks: [...(prev.discipleCompletedBooks || []), bookId],
       }));
-      addPoints(50, `Reconquistou ${bookId} pela Trilha do Discípulo`, 'discipleTrail');
-      showFloatingPoints(50, 'disciple');
+      addPoints(xp, `Reconquistou ${bookData?.name || bookId} pela Trilha`, 'discipleTrail');
+      showFloatingPoints(xp, 'disciple');
     }
   };
 
@@ -745,8 +779,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         ...prev,
         visitedBooks: [...(prev.visitedBooks || []), bookId]
       }));
-      addPoints(10, `Visitou livro ${bookId}`, 'freeExploration');
-      showFloatingPoints(10, 'free');
+      // Visita não gera XP — apenas registra para histórico e desbloqueio de conteúdo
     }
   };
 
@@ -757,6 +790,17 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       const updatedRead = isAlreadyRead
         ? currentRead.filter(c => c !== chapterNum)
         : [...currentRead, chapterNum];
+
+      // Ganha XP ao marcar como lido (não ao desmarcar)
+      if (!isAlreadyRead) {
+        const xp = applyMultiplier(5, prev.streak);
+        // Usa setTimeout para não colidir com o setState atual
+        setTimeout(() => {
+          addPoints(xp, `Leu capítulo ${chapterNum} de ${bookId}`, 'freeExploration');
+          showFloatingPoints(xp, 'free');
+        }, 0);
+      }
+
       return {
         ...prev,
         readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead }
@@ -770,7 +814,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       checkBadges(newProfile);
       return newProfile;
     });
-    addPoints(20, 'Fez uma anotação', 'freeExploration');
+    const xp = applyMultiplier(25, profile.streak);
+    addPoints(xp, 'Fez uma anotação', 'freeExploration');
+    showFloatingPoints(xp, 'free');
   };
 
   const addFavorite = () => {
@@ -779,7 +825,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       checkBadges(newProfile);
       return newProfile;
     });
-    addPoints(5, 'Favoritou um versículo', 'freeExploration');
+    // Favoritar não gera XP — alimenta contador para badges (Coração Aberto)
   };
 
   const accessDailyVerse = () => {
@@ -788,7 +834,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       checkBadges(newProfile);
       return newProfile;
     });
-    addPoints(15, 'Acessou versículo do dia', 'freeExploration');
+    const xp = applyMultiplier(15, profile.streak);
+    addPoints(xp, 'Acessou versículo do dia', 'freeExploration');
+    showFloatingPoints(xp, 'free');
   };
 
   const completePlan = () => {
@@ -829,7 +877,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     }}>
       {children}
       
-      {/* Floating Points Overlay */}
+      {/* Floating XP Overlay */}
       <div className="fixed inset-0 pointer-events-none z-[100] flex items-center justify-center">
         <AnimatePresence>
           {floatingPoints.map(fp => (
@@ -842,23 +890,28 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               className="absolute"
             >
               {fp.type === 'free' && (
-                <div className="text-stone-900 font-bold text-2xl drop-shadow-md">
-                  +{fp.amount} pts
+                <div className="text-stone-700 font-bold text-2xl drop-shadow-md">
+                  +{fp.amount} XP
                 </div>
               )}
               {fp.type === 'disciple' && (
                 <div className="text-amber-500 font-bold text-3xl drop-shadow-lg flex items-center gap-2 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full border border-amber-200">
-                  +{fp.amount} pts ⭐
+                  +{fp.amount} XP ⭐
                 </div>
               )}
               {fp.type === 'bonus_step' && (
                 <div className="text-orange-500 font-black text-4xl drop-shadow-xl flex items-center gap-2 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full border-2 border-orange-300">
-                  +{fp.amount} pts BÔNUS!
+                  +{fp.amount} XP BÔNUS!
                 </div>
               )}
               {fp.type === 'bonus_trail' && (
                 <div className="text-amber-400 font-black text-5xl drop-shadow-2xl flex items-center gap-3 bg-stone-900/90 backdrop-blur-md px-8 py-4 rounded-full border-4 border-amber-400">
-                  +{fp.amount} pts 🏆
+                  +{fp.amount} XP 🏆
+                </div>
+              )}
+              {fp.type === 'streak' && (
+                <div className="text-rose-500 font-black text-3xl drop-shadow-xl flex items-center gap-2 bg-white/90 backdrop-blur-sm px-5 py-2.5 rounded-full border-2 border-rose-300">
+                  🔥 {fp.amount}x STREAK!
                 </div>
               )}
             </motion.div>

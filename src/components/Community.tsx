@@ -171,114 +171,141 @@ export default function Community() {
   const loadCommunityData = async () => {
     if (!profile.email) return;
     setIsLoadingCommunity(true);
+
+    // Timeout de segurança — nunca trava o loading indefinidamente
+    const timeoutId = setTimeout(() => setIsLoadingCommunity(false), 8000);
+
     try {
-      await Promise.all([loadFeed(), loadRanking(), loadGroups(), loadGroupInvites(), loadPrayers()]);
+      // Cada função tem seu próprio try/catch — uma falha não bloqueia as outras
+      await Promise.allSettled([
+        loadFeed(),
+        loadRanking(),
+        loadGroups(),
+        loadGroupInvites(),
+        loadPrayers(),
+      ]);
     } finally {
+      clearTimeout(timeoutId);
       setIsLoadingCommunity(false);
     }
   };
 
   const loadFeed = async () => {
-    const { data } = await supabase
-      .from('community_feed')
-      .select('id, user_name, avatar_id, action, created_at')
-      .order('created_at', { ascending: false })
-      .limit(30);
-    if (data) {
-      setMockFeed(data.map((r: any) => ({
-        id: r.id,
-        user: r.user_name,
-        avatarId: r.avatar_id,
-        action: r.action,
-        time: formatRelativeTime(r.created_at),
-      })));
-    }
+    try {
+      const { data, error } = await supabase
+        .from('community_feed')
+        .select('id, user_name, avatar_id, action, created_at')
+        .order('created_at', { ascending: false })
+        .limit(30);
+      if (error) { console.warn('[Community] loadFeed error:', error.message); return; }
+      if (data) {
+        setMockFeed(data.map((r: any) => ({
+          id: r.id,
+          user: r.user_name,
+          avatarId: r.avatar_id,
+          action: r.action,
+          time: formatRelativeTime(r.created_at),
+        })));
+      }
+    } catch (e) { console.warn('[Community] loadFeed exception:', e); }
   };
 
   const loadRanking = async () => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, name, avatar_id, avatar_url, points')
-      .order('points', { ascending: false })
-      .limit(20);
-    if (data) {
-      setMockRankingData(data.map((u: any, i: number) => ({
-        id: u.id,
-        name: u.name || 'Usuário',
-        avatarId: u.avatar_id || '',
-        avatarUrl: u.avatar_url,
-        points: u.points || 0,
-        position: i + 1,
-      })));
-    }
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, name, avatar_id, avatar_url, points')
+        .order('points', { ascending: false })
+        .limit(20);
+      if (error) { console.warn('[Community] loadRanking error:', error.message); return; }
+      if (data) {
+        setMockRankingData(data.map((u: any, i: number) => ({
+          id: u.id,
+          name: u.name || 'Usuário',
+          avatarId: u.avatar_id || '',
+          avatarUrl: u.avatar_url,
+          points: u.points || 0,
+          position: i + 1,
+        })));
+      }
+    } catch (e) { console.warn('[Community] loadRanking exception:', e); }
   };
 
   const loadGroups = async () => {
     if (!profile.email) return;
-    const { data } = await supabase
-      .from('community_groups')
-      .select('id, name, target_id, target_name, members, messages, materials')
-      .order('created_at', { ascending: false });
-    if (data) {
-      const myGroups = data.filter((g: any) =>
-        Array.isArray(g.members) && g.members.some((m: any) => m.email === profile.email)
-      );
-      setMockGroups(myGroups.map((g: any) => ({
-        id: g.id,
-        name: g.name,
-        targetId: g.target_id,
-        targetName: g.target_name,
-        members: g.members || [],
-        messages: g.messages || [],
-        materials: g.materials || [],
-      })));
-    }
+    try {
+      const { data, error } = await supabase
+        .from('community_groups')
+        .select('id, name, target_id, target_name, members, messages, materials')
+        .order('created_at', { ascending: false });
+      if (error) { console.warn('[Community] loadGroups error:', error.message); return; }
+      if (data) {
+        const myGroups = data.filter((g: any) =>
+          Array.isArray(g.members) && g.members.some((m: any) => m.email === profile.email)
+        );
+        setMockGroups(myGroups.map((g: any) => ({
+          id: g.id,
+          name: g.name,
+          targetId: g.target_id,
+          targetName: g.target_name,
+          members: g.members || [],
+          messages: g.messages || [],
+          materials: g.materials || [],
+        })));
+      }
+    } catch (e) { console.warn('[Community] loadGroups exception:', e); }
   };
 
   const loadGroupInvites = async () => {
     if (!profile.email) return;
-    const { data } = await supabase
-      .from('community_group_invites')
-      .select('id, group_id, group_name, target_name, from_name, from_avatar_id')
-      .eq('to_email', profile.email)
-      .eq('status', 'pending');
-    if (data) {
-      setMockGroupInvites(data.map((i: any) => ({
-        id: i.id,
-        groupId: i.group_id,
-        groupName: i.group_name,
-        targetName: i.target_name,
-        from: i.from_name,
-        fromAvatarId: i.from_avatar_id,
-      })));
-    }
+    try {
+      const { data, error } = await supabase
+        .from('community_group_invites')
+        .select('id, group_id, group_name, target_name, from_name, from_avatar_id')
+        .eq('to_email', profile.email)
+        .eq('status', 'pending');
+      if (error) { console.warn('[Community] loadGroupInvites error:', error.message); return; }
+      if (data) {
+        setMockGroupInvites(data.map((i: any) => ({
+          id: i.id,
+          groupId: i.group_id,
+          groupName: i.group_name,
+          targetName: i.target_name,
+          from: i.from_name,
+          fromAvatarId: i.from_avatar_id,
+        })));
+      }
+    } catch (e) { console.warn('[Community] loadGroupInvites exception:', e); }
   };
 
   const loadPrayers = async () => {
-    const { data: prayers } = await supabase
-      .from('community_prayers')
-      .select('id, user_name, user_id, avatar_id, avatar_url, request, prayed_count')
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (!prayers) return;
+    try {
+      const { data: prayers, error: prayersError } = await supabase
+        .from('community_prayers')
+        .select('id, user_name, user_id, avatar_id, avatar_url, request, prayed_count')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (prayersError) { console.warn('[Community] loadPrayers error:', prayersError.message); return; }
+      if (!prayers) return;
 
-    const { data: myPrayers } = await supabase
-      .from('community_prayer_votes')
-      .select('prayer_id')
-      .eq('user_email', profile.email || '');
+      const { data: myPrayers } = await supabase
+        .from('community_prayer_votes')
+        .select('prayer_id')
+        .eq('user_email', profile.email || '');
 
-    const prayedSet = new Set((myPrayers || []).map((p: any) => p.prayer_id));
+      const prayedSet = new Set((myPrayers || []).map((p: any) => p.prayer_id));
 
-    setMockPrayers(prayers.map((p: any) => ({
-      id: p.id,
-      user: p.user_name,
-      userId: p.user_id,
-      avatarId: p.avatar_id || '',
-      avatarUrl: p.avatar_url,
-      request: p.request,
-      prayedCount: p.prayed_count || 0,
-      hasPrayed: prayedSet.has(p.id),
-    })));
+      setMockPrayers(prayers.map((p: any) => ({
+        id: p.id,
+        user: p.user_name,
+        userId: p.user_id,
+        avatarId: p.avatar_id || '',
+        avatarUrl: p.avatar_url,
+        request: p.request,
+        prayedCount: p.prayed_count || 0,
+        hasPrayed: prayedSet.has(p.id),
+      })));
+    } catch (e) { console.warn('[Community] loadPrayers exception:', e); }
   };
 
   const formatRelativeTime = (isoString: string) => {
@@ -803,16 +830,21 @@ export default function Community() {
     });
   };
   useEffect(() => {
-    if (profile.email) {
-      loadConnections();
-      loadCommunityData();
-      const removeListener = sharingService.addListener((data) => {
-        if (data.type === 'CONNECTION_REQUEST' || data.type === 'CONNECTION_ACCEPTED' || data.type === 'CONNECTION_REJECTED') {
-          loadConnections();
-        }
-      });
-      return removeListener;
-    }
+    // Dispara tanto no mount quanto quando profile.email muda
+    // (ex: perfil carregado do Supabase após mount inicial)
+    const email = profile.email;
+    if (!email) return;
+
+    loadConnections();
+    loadCommunityData();
+
+    const removeListener = sharingService.addListener((data) => {
+      if (data.type === 'CONNECTION_REQUEST' || data.type === 'CONNECTION_ACCEPTED' || data.type === 'CONNECTION_REJECTED') {
+        loadConnections();
+      }
+    });
+    return removeListener;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.email]);
 
   const loadConnections = async () => {
@@ -956,6 +988,11 @@ export default function Community() {
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
               <p className="text-sm text-stone-400">Carregando comunidade...</p>
+              <p className="text-xs text-stone-300">Se demorar muito, verifique sua conexão.</p>
+            </div>
+          ) : !profile.email ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <p className="text-sm text-stone-400">Faça login para acessar a comunidade.</p>
             </div>
           ) : (
           <>{activeGroup ? (

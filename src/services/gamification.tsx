@@ -346,6 +346,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             favoritesCount: profileData.favorites_count || 0,
             dailyVerseCount: profileData.daily_verse_count || 0,
             completedPlans: profileData.completed_plans || 0,
+            streakFreezes: profileData.streak_freezes ?? prev.streakFreezes ?? 1,
+            ecoReactions: profileData.eco_reactions || prev.ecoReactions || {},
           }));
         } else {
           setProfile(prev => ({ ...prev, email: authEmail }));
@@ -420,6 +422,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           points: profile.points,
           points_breakdown: profile.pointsBreakdown,
           streak: profile.streak,
+          streak_freezes: profile.streakFreezes,
           last_active_date: profile.lastActiveDate,
           title: profile.title,
           completed_books: profile.completedBooks,
@@ -430,6 +433,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           favorites_count: profile.favoritesCount,
           daily_verse_count: profile.dailyVerseCount,
           completed_plans: profile.completedPlans,
+          eco_reactions: profile.ecoReactions || {},
           updated_at: new Date().toISOString()
         });
       } catch (err) {

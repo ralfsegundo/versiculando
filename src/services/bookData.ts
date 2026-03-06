@@ -113,10 +113,74 @@ function pruneOldCaches() {
   }
 }
 
-// ── Busca principal: memória → localStorage → Supabase ───────
+// ── Geração via Anthropic API (fallback quando Supabase não tem dados) ──
+async function generateBookSummaryFromAI(bookName: string, chaptersCount: number): Promise<BookData> {
+  const prompt = `Você é um especialista em Bíblia Católica. Gere um resumo completo e rico do livro bíblico "${bookName}" (${chaptersCount} capítulos) em português brasileiro.
+
+Responda APENAS com JSON válido, sem markdown, sem texto extra, no formato exato abaixo:
+{
+  "mindmap": {
+    "author": "nome do autor ou tradição",
+    "abbreviation": "abreviação comum (ex: Gn)",
+    "verses": "número aproximado de versículos",
+    "period": "período histórico (ex: séc. X a.C.)",
+    "location": "local de origem ou contexto geográfico",
+    "order": "posição no cânon católico (ex: 1º livro)",
+    "meaning": "significado do nome do livro",
+    "summary": "resumo de 2-3 frases sobre o livro",
+    "historicalContext": "contexto histórico em 2-3 frases",
+    "curiosity": "curiosidade interessante sobre o livro",
+    "practicalApplication": "como aplicar o livro na vida hoje (2 frases)",
+    "keywords": ["palavra1", "palavra2", "palavra3", "palavra4", "palavra5"],
+    "themes": ["tema1", "tema2", "tema3"],
+    "names": [
+      {"name": "nome1", "description": "descrição breve"},
+      {"name": "nome2", "description": "descrição breve"},
+      {"name": "nome3", "description": "descrição breve"}
+    ],
+    "quote": "versículo mais famoso do livro",
+    "quoteReference": "referência do versículo (ex: Jo 3,16)"
+  },
+  "chapters": [
+    {"chapter": "1", "title": "título do capítulo", "summary": "resumo em 1-2 frases"}
+  ],
+  "timeline": [
+    {"title": "evento", "description": "descrição breve", "emoji": "emoji relevante"}
+  ],
+  "mainVerses": [
+    {"reference": "referência", "text": "texto do versículo", "explanation": "explicação em 1-2 frases", "emoji": "emoji temático"}
+  ]
+}
+
+Gere exatamente ${chaptersCount} entradas no array "chapters" (um por capítulo).
+Gere 5-7 eventos no "timeline".
+Gere 6-8 versículos principais em "mainVerses".`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Anthropic API error: ${response.status}`);
+  }
+
+  const aiData = await response.json();
+  const text = aiData.content?.map((b: any) => b.text || '').join('') || '';
+  const clean = text.replace(/```json|```/g, '').trim();
+  const parsed = JSON.parse(clean) as BookData;
+  return parsed;
+}
+
+// ── Busca principal: memória → localStorage → Supabase → IA ─────
 export async function generateBookSummary(
   bookName: string,
-  _chaptersCount: number
+  chaptersCount: number
 ): Promise<BookData> {
 
   // 1. Memória (instantâneo)
@@ -132,31 +196,34 @@ export async function generateBookSummary(
   }
 
   // 3. Supabase (só chega aqui na primeira visita)
-  const fetchPromise = supabase
-    .from('bible_books_data')
-    .select('data')
-    .eq('book_name', bookName)
-    .single();
+  try {
+    const fetchPromise = supabase
+      .from('bible_books_data')
+      .select('data')
+      .eq('book_name', bookName)
+      .single();
 
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('timeout')), 10000)
-  );
-
-  const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>;
-
-  if (error || !data) {
-    throw new Error(
-      `O conteúdo do livro "${bookName}" ainda não está disponível. Em breve será adicionado! 📖`
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 8000)
     );
+
+    const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>;
+
+    if (!error && data?.data) {
+      const result = data.data as BookData;
+      memoryCache[bookName] = result;
+      setLocalCache(bookName, result);
+      return result;
+    }
+  } catch {
+    // Supabase indisponível ou sem dados — cai para IA
   }
 
-  const result = data.data as BookData;
-
-  // Salva nas duas camadas de cache
-  memoryCache[bookName] = result;
-  setLocalCache(bookName, result);
-
-  return result;
+  // 4. Fallback: gera via Anthropic API
+  const aiResult = await generateBookSummaryFromAI(bookName, chaptersCount);
+  memoryCache[bookName] = aiResult;
+  setLocalCache(bookName, aiResult);
+  return aiResult;
 }
 
 // ── Pré-carregamento em background ───────────────────────────

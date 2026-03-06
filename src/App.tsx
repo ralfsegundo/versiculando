@@ -68,7 +68,12 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setIsInitializing(false);
+    }).catch(() => {
+      setIsInitializing(false);
     });
+
+    // Timeout de segurança — garante que o loading nunca trava
+    const timeout = setTimeout(() => setIsInitializing(false), 3000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
@@ -101,7 +106,10 @@ export default function App() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, [hasSupabase]);
 
   const handleOnboardingComplete = async (profile: OnboardingProfile) => {

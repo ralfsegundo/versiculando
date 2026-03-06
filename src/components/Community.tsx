@@ -64,7 +64,7 @@ interface GroupMaterial {
 }
 
 interface Group {
-  id: number;
+  id: string;
   name: string;
   targetId: string; // book.id or path.id
   targetName: string;
@@ -104,6 +104,7 @@ export default function Community() {
   const [activeGroup, setActiveGroup] = useState<Group | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteModalSelected, setInviteModalSelected] = useState<string[]>([]);
   const [postType, setPostType] = useState<'text' | 'verse' | 'goal'>('text');
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [showReactionMenu, setShowReactionMenu] = useState<number | null>(null);
@@ -145,7 +146,7 @@ export default function Community() {
   const [mockFeed, setMockFeed] = useState<{ id: number; user: string; avatarId: string; action: string; time: string }[]>([]);
   const [mockRankingData, setMockRankingData] = useState<{ id: string; name: string; avatarId: string; avatarUrl?: string; points: number; position: number }[]>([]);
   const [mockGroups, setMockGroups] = useState<Group[]>([]);
-  const [mockGroupInvites, setMockGroupInvites] = useState<{ id: string; groupName: string; targetName: string; from: string; fromAvatarId: string }[]>([]);
+  const [mockGroupInvites, setMockGroupInvites] = useState<{ id: string; groupId: string; groupName: string; targetName: string; from: string; fromAvatarId: string }[]>([]);
   const [mockPrayers, setMockPrayers] = useState<{ id: string; user: string; userId: string; avatarId: string; avatarUrl?: string; request: string; prayedCount: number; hasPrayed: boolean }[]>([]);
   const [isLoadingCommunity, setIsLoadingCommunity] = useState(false);
 
@@ -224,12 +225,13 @@ export default function Community() {
     if (!profile.email) return;
     const { data } = await supabase
       .from('community_group_invites')
-      .select('id, group_name, target_name, from_name, from_avatar_id')
+      .select('id, group_id, group_name, target_name, from_name, from_avatar_id')
       .eq('to_email', profile.email)
       .eq('status', 'pending');
     if (data) {
       setMockGroupInvites(data.map((i: any) => ({
         id: i.id,
+        groupId: i.group_id,
         groupName: i.group_name,
         targetName: i.target_name,
         from: i.from_name,
@@ -351,19 +353,21 @@ export default function Community() {
   const handleAcceptGroupInvite = async (inviteId: string) => {
     const invite = mockGroupInvites.find(i => i.id === inviteId);
     if (!invite || !profile.email) return;
-    // Accept invite: update status and add user to group
     await supabase.from('community_group_invites').update({ status: 'accepted' }).eq('id', inviteId);
-    // Fetch group and add member
+    // Fetch group by ID (not name) to avoid collision with same-name groups
     const { data: groupData } = await supabase
       .from('community_groups')
       .select('*')
-      .eq('name', invite.groupName)
+      .eq('id', invite.groupId)
       .single();
     if (groupData) {
-      const updatedMembers = [...(groupData.members || []),
-        { email: profile.email, name: profile.name, avatarId: profile.avatarId, avatarUrl: profile.avatarUrl, progress: 0 }
-      ];
-      await supabase.from('community_groups').update({ members: updatedMembers }).eq('id', groupData.id);
+      const alreadyMember = (groupData.members || []).some((m: any) => m.email === profile.email);
+      if (!alreadyMember) {
+        const updatedMembers = [...(groupData.members || []),
+          { email: profile.email, name: profile.name, avatarId: profile.avatarId, avatarUrl: profile.avatarUrl, progress: 0 }
+        ];
+        await supabase.from('community_groups').update({ members: updatedMembers }).eq('id', groupData.id);
+      }
     }
     setMockGroupInvites(prev => prev.filter(i => i.id !== inviteId));
     await loadGroups();
@@ -616,6 +620,24 @@ export default function Community() {
     setQuestionBoxAnswers(prev => { const s = { ...prev }; delete s[messageId]; return s; });
   };
 
+  const handleSendGroupInvites = async () => {
+    if (!activeGroup || inviteModalSelected.length === 0 || !profile.email) return;
+    const invites = inviteModalSelected.map(email => ({
+      group_id: activeGroup.id,
+      group_name: activeGroup.name,
+      target_name: activeGroup.targetName,
+      from_email: profile.email,
+      from_name: profile.name,
+      from_avatar_id: profile.avatarId || '',
+      to_email: email,
+      status: 'pending',
+    }));
+    await supabase.from('community_group_invites').insert(invites);
+    setInviteModalSelected([]);
+    setShowInviteModal(false);
+    alert(`Convite${inviteModalSelected.length > 1 ? 's' : ''} enviado${inviteModalSelected.length > 1 ? 's' : ''}!`);
+  };
+
   const handleLeaveGroup = () => {
     if (!activeGroup || !profile.email) return;
     setConfirmModal({
@@ -792,13 +814,9 @@ export default function Community() {
     }
   };
 
-  // Mock last online for demo purposes
-  const getLastOnline = (email: string) => {
-    const hash = email.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-    const minutes = hash % 60;
-    if (minutes < 5) return 'Agora mesmo';
-    if (minutes < 60) return `Há ${minutes} minutos`;
-    return `Há ${Math.floor(minutes / 10)} horas`;
+  // Sem campo last_seen no banco — exibe texto neutro
+  const getLastOnline = (_email: string) => {
+    return 'recentemente';
   };
 
   return (
@@ -854,8 +872,13 @@ export default function Community() {
 
         <div className="bg-white rounded-2xl p-3 sm:p-6 md:p-8 border border-stone-100 shadow-sm mb-8 overflow-x-hidden">
           
-          {/* Active Group View */}
-          {activeGroup ? (
+          {isLoadingCommunity && !activeGroup ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+              <p className="text-sm text-stone-400">Carregando comunidade...</p>
+            </div>
+          ) : (
+          <>{activeGroup ? (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
               {(() => {
                 const isCurrentUserAdmin = activeGroup.members.find(m => (m.email === profile.email || m.email === 'me'))?.isLeader;
@@ -1452,10 +1475,10 @@ export default function Community() {
                   <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
                     <h3 className="font-bold text-stone-900 text-lg mb-4">Convidar Amigos</h3>
                     <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
-                      {connections.filter(c => c.status === 'accepted').length === 0 ? (
-                        <p className="text-stone-500 text-sm text-center py-4">Você não tem amigos para convidar.</p>
+                      {connections.filter(c => c.status === 'accepted' && !activeGroup?.members.some(m => m.email === c.user.email)).length === 0 ? (
+                        <p className="text-stone-500 text-sm text-center py-4">Todos os seus amigos já estão no grupo.</p>
                       ) : (
-                        connections.filter(c => c.status === 'accepted').map(conn => (
+                        connections.filter(c => c.status === 'accepted' && !activeGroup?.members.some(m => m.email === c.user.email)).map(conn => (
                           <label key={conn.user.email} className="flex items-center justify-between p-2 hover:bg-stone-50 rounded-xl cursor-pointer">
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center overflow-hidden">
@@ -1467,14 +1490,31 @@ export default function Community() {
                               </div>
                               <span className="font-medium text-stone-900">{conn.user.name}</span>
                             </div>
-                            <input type="checkbox" className="w-5 h-5 rounded border-stone-300 text-indigo-600 focus:ring-indigo-500" />
+                            <input
+                              type="checkbox"
+                              className="w-5 h-5 rounded border-stone-300 text-indigo-600 focus:ring-indigo-500"
+                              checked={inviteModalSelected.includes(conn.user.email)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setInviteModalSelected(prev => [...prev, conn.user.email]);
+                                } else {
+                                  setInviteModalSelected(prev => prev.filter(em => em !== conn.user.email));
+                                }
+                              }}
+                            />
                           </label>
                         ))
                       )}
                     </div>
                     <div className="flex justify-end gap-2">
-                      <button onClick={() => setShowInviteModal(false)} className="px-4 py-2 text-stone-500 font-medium">Cancelar</button>
-                      <button onClick={() => { alert('Convites enviados!'); setShowInviteModal(false); }} className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold">Enviar</button>
+                      <button onClick={() => { setShowInviteModal(false); setInviteModalSelected([]); }} className="px-4 py-2 text-stone-500 font-medium">Cancelar</button>
+                      <button
+                        onClick={handleSendGroupInvites}
+                        disabled={inviteModalSelected.length === 0}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50"
+                      >
+                        Enviar {inviteModalSelected.length > 0 ? `(${inviteModalSelected.length})` : ''}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1962,7 +2002,6 @@ export default function Community() {
                             AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
                           )}
                         </div>
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full"></div>
                       </div>
                       <div>
                         <p className="font-bold text-stone-900 text-base">{conn.user.name}</p>
@@ -2001,6 +2040,8 @@ export default function Community() {
                 </div>
               </div>
             </div>
+          )}
+          </>
           )}
 
         </div>

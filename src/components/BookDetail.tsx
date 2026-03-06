@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { BIBLE_BOOKS, GROUP_COLORS, GROUP_THEMES, BEGINNER_PATH } from '../constants';
-import { generateBookSummary, BookData, MindMapData } from '../services/bookData';
+import { BIBLE_BOOKS, GROUP_COLORS, BEGINNER_PATH } from '../constants';
+import { generateBookSummary, BookData } from '../services/bookData';
 import {
-  ArrowLeft, Map, List, BookOpen, Search, FileText, Clock, Heart,
-  Lightbulb, Key, Hash, Users, CheckCircle2, Trash2, Navigation,
+  ArrowLeft, Map, List, Search, FileText, Clock, Heart,
+  Users, CheckCircle2, Trash2, Navigation,
   Pencil, Palette, Copy, Sparkles, Check, MapPin, X, ArrowRight,
-  Share2, Flame, Star, Lock, Zap, Trophy
+  Share2, Flame, Star, Lock, Trophy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGamification, AVATARS } from '../services/gamification';
@@ -94,7 +94,7 @@ function XpPill({ xp, color = 'amber' }: { xp: number | string; color?: string }
 
 // ── Main Component ────────────────────────────────────────────
 export default function BookDetail({ bookId, onBack }: BookDetailProps) {
-  const { addPoints, markBookCompleted, markBookVisited, markChapterRead, markAllChaptersRead, profile, addNote, userId } = useGamification();
+  const { addPoints, markBookCompleted, markBookVisited, markChapterRead, markAllChaptersRead, profile, userId } = useGamification();
   const book = BIBLE_BOOKS.find(b => b.id === bookId);
   const [data, setData] = useState<BookData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,7 +104,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   const colorClass = book ? GROUP_COLORS[book.group] : 'bg-stone-100 text-stone-900 border-stone-200';
-  const theme = book ? (GROUP_THEMES[book.group] || GROUP_THEMES['Pentateuco']) : GROUP_THEMES['Pentateuco'];
   const baseColor = colorClass.split(' ')[0];
   const textColor = colorClass.split(' ').find(c => c.startsWith('text-')) || 'text-stone-900';
   const borderColor = colorClass.split(' ').find(c => c.startsWith('border-')) || 'border-stone-200';
@@ -128,17 +127,29 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
 
   const isGpsBook = BEGINNER_PATH.some(step => step.books.includes(bookId));
   const hasVisited = useRef(false);
+  const tooltipShownRef = useRef(false);
 
+  // Compute early (before early-return) so useEffect below can use them
+  const _readCount = book ? (profile.readChapters?.[book.id] || []).length : 0;
+  const _totalChapters = data?.chapters.length ?? (book?.chapters ?? 1);
+  const _allRead = _readCount >= _totalChapters && _totalChapters > 0;
+  const _isCompleted = book ? profile.completedBooks.includes(book.id) : false;
+
+  // Bug 11 fix: tooltip fires when user finishes all chapters, not on page load
   useEffect(() => {
-    if (!isGpsBook && !localStorage.getItem(`${userId}_seen_free_exploration_tooltip`)) {
-      const timer = setTimeout(() => {
-        setShowTooltip(true);
-        localStorage.setItem(`${userId}_seen_free_exploration_tooltip`, 'true');
-        setTimeout(() => setShowTooltip(false), 3500);
-      }, 1800);
-      return () => clearTimeout(timer);
+    if (
+      !isGpsBook &&
+      _allRead &&
+      !_isCompleted &&
+      !tooltipShownRef.current &&
+      !localStorage.getItem(`${userId}_seen_free_exploration_tooltip`)
+    ) {
+      tooltipShownRef.current = true;
+      setShowTooltip(true);
+      localStorage.setItem(`${userId}_seen_free_exploration_tooltip`, 'true');
+      setTimeout(() => setShowTooltip(false), 4000);
     }
-  }, [isGpsBook]);
+  }, [_allRead, isGpsBook, _isCompleted]);
 
   useEffect(() => {
     if (!book) return;
@@ -166,8 +177,14 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
   const totalChapters = data?.chapters.length ?? book.chapters;
   const readCount = (profile.readChapters?.[book.id] || []).length;
   const progressPct = totalChapters > 0 ? Math.round((readCount / totalChapters) * 100) : 0;
-  const allRead = readCount >= totalChapters;
+  // Bug 14 fix: use === not >= (readCount should never exceed totalChapters, but defensive)
+  const allRead = readCount > 0 && readCount >= totalChapters;
   const isCompleted = profile.completedBooks.includes(book.id);
+
+  // Real XP values that match gamification.tsx: base + chapters*multiplier
+  const completionXp = isGpsBook
+    ? 100 + book.chapters * 2
+    : 50 + book.chapters;
 
   const TABS = [
     { id: 'overview',  label: 'Visão Geral', icon: <Map size={16} /> },
@@ -299,9 +316,9 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
 
           {/* XP reward strip */}
           <div className="bg-white px-6 py-3 flex items-center justify-between border-t-2 border-stone-100">
-            <span className="text-xs font-bold text-stone-500">Recompensas por concluir</span>
+            <span className="text-xs font-bold text-stone-500">Recompensa por concluir</span>
             <div className="flex items-center gap-2">
-              <XpPill xp={isGpsBook ? 100 : 50} color={isGpsBook ? 'green' : 'amber'} />
+              <XpPill xp={completionXp} color={isGpsBook ? 'green' : 'amber'} />
               {isGpsBook && <XpPill xp="Trilha" color="green" />}
             </div>
           </div>
@@ -353,8 +370,8 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
               transition={{ duration: 0.2 }}
               className="mt-5"
             >
-              {activeTab === 'overview'  && <OverviewTab data={data} book={book} theme={theme} colorClass={colorClass} onNavigateToChapter={handleNavigateToChapter} userId={userId} />}
-              {activeTab === 'chapters'  && <ChapterList chapters={data.chapters} colorClass={colorClass} onAnotar={handleAnotarCapitulo} bookId={book.id} readChapters={profile.readChapters?.[book.id] || []} onMarkChapterRead={n => markChapterRead(book.id, n, data.chapters.length)} onMarkAllChaptersRead={() => { const nums = data.chapters.map(ch => typeof ch.chapter === 'string' ? parseInt(ch.chapter) : ch.chapter as number); markAllChaptersRead(book.id, nums); }} />}
+              {activeTab === 'overview'  && <OverviewTab data={data} book={book} colorClass={colorClass} onNavigateToChapter={handleNavigateToChapter} userId={userId} />}
+              {activeTab === 'chapters'  && <ChapterList chapters={data.chapters} colorClass={colorClass} bookId={book.id} readChapters={profile.readChapters?.[book.id] || []} onMarkChapterRead={n => markChapterRead(book.id, n, data.chapters.length)} onMarkAllChaptersRead={() => { const nums = data.chapters.map(ch => typeof ch.chapter === 'string' ? parseInt(ch.chapter) : ch.chapter as number); markAllChaptersRead(book.id, nums); }} />}
               {activeTab === 'timeline'  && <TimelineTab timeline={data.timeline} bookName={book.name} colorClass={colorClass} />}
               {activeTab === 'verses'    && <VersesTab verses={data.mainVerses} bookName={book.name} colorClass={colorClass} />}
               {activeTab === 'notes'     && <NotesSection bookId={book.id} bookName={book.name} colorClass={colorClass} initialContext={initialNoteContext} onClearContext={() => setInitialNoteContext(null)} onNavigateToChapter={handleNavigateToChapter} />}
@@ -380,7 +397,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                 </div>
                 {isGpsBook && !profile.discipleCompletedBooks?.includes(book.id) && (
                   <DuoButton color="green" size="sm" onClick={() => { markBookCompleted(book.id, true); onBack(); }}>
-                    <Navigation size={14} /> Reconquistar (+50 XP)
+                    <Navigation size={14} /> Reconquistar (+{completionXp} XP)
                   </DuoButton>
                 )}
               </div>
@@ -415,7 +432,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                     onClick={() => { if (allRead) { markBookCompleted(book.id, isGpsBook); onBack(); } }}
                   >
                     {allRead ? (
-                      <><CheckCircle2 size={16} /> Concluir {isGpsBook ? '(+100 XP)' : '(+50 XP)'}</>
+                      <><CheckCircle2 size={16} /> Concluir (+{completionXp} XP)</>
                     ) : (
                       <><Lock size={14} /> {progressPct}%</>
                     )}
@@ -461,10 +478,9 @@ function NotesBadge({ bookId, userId }: { bookId: string; userId: string | null 
 // ══════════════════════════════════════════════════════════════
 // OVERVIEW TAB — "Mapa" reformulado
 // ══════════════════════════════════════════════════════════════
-function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userId }: {
+function OverviewTab({ data, book, colorClass, onNavigateToChapter, userId }: {
   data: BookData;
   book: typeof BIBLE_BOOKS[0];
-  theme: any;
   colorClass: string;
   onNavigateToChapter: (ch: string | number) => void;
   userId: string | null;
@@ -474,7 +490,8 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
   const borderColor = colorClass.split(' ').find(c => c.startsWith('border-')) || 'border-stone-200';
 
   const { addNote: addGamificationNote } = useGamification();
-  const { notes, addNote: saveNote } = useNotes(book.id, userId);
+  // Bug 5 fix: single useNotes call — all operations (add/delete/update) on the same instance
+  const { notes, addNote: saveNote, deleteNote, updateNote } = useNotes(book.id, userId);
   const [noteDrawerOpen, setNoteDrawerOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [selectedColor, setSelectedColor] = useState(NOTE_COLORS[0].id);
@@ -485,7 +502,6 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [fabVisible, setFabVisible] = useState(true);
   const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const { deleteNote, updateNote } = useNotes(book.id, userId);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -743,10 +759,9 @@ function DuoCard({ icon, title, children, accent, border }: {
 // ══════════════════════════════════════════════════════════════
 // CHAPTERS TAB — cards estilo "lições" Duolingo
 // ══════════════════════════════════════════════════════════════
-function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onMarkChapterRead, onMarkAllChaptersRead }: {
+function ChapterList({ chapters, colorClass, bookId, readChapters, onMarkChapterRead, onMarkAllChaptersRead }: {
   chapters: BookData['chapters'];
   colorClass: string;
-  onAnotar: (ch: string | number, title: string) => void;
   bookId: string;
   readChapters: number[];
   onMarkChapterRead: (n: number) => void;
@@ -783,7 +798,7 @@ function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onM
           <motion.p initial={{opacity:0}} animate={{opacity:1}} className="text-emerald-600 font-bold text-xs mt-2 text-center">
             🎉 Todos os capítulos lidos! Conclua o livro na barra abaixo.
           </motion.p>
-        ) : total >= 10 && (
+        ) : (
           <button onClick={onMarkAllChaptersRead}
             className="mt-2 text-xs font-bold text-indigo-500 hover:text-indigo-700 underline underline-offset-2 w-full text-center">
             Marcar todos como lidos de uma vez
@@ -792,31 +807,55 @@ function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onM
       </div>
 
       {/* Chapter cards estilo "lições" */}
+      {(() => {
+        // Bug 6 fix: call hooks once in parent, pass as props to cards
+        // (can't call hooks in a callback, so we use a rendered sub-component)
+        return <ChapterCardList chapters={chapters} baseColor={baseColor} textColor={textColor}
+          borderColor={borderColor} readChapters={readChapters} onMarkChapterRead={onMarkChapterRead}
+          bookId={bookId} />;
+      })()}
+    </div>
+  );
+}
+
+// Bug 6 fix: wrapper renders the hook ONCE and passes addGamificationNote + userId as props
+function ChapterCardList({ chapters, baseColor, textColor, borderColor, readChapters, onMarkChapterRead, bookId }: {
+  chapters: BookData['chapters']; baseColor: string; textColor: string; borderColor: string;
+  readChapters: number[]; onMarkChapterRead: (n: number) => void; bookId: string;
+}) {
+  const { addNote: addGamificationNote, userId, profile } = useGamification();
+  return (
+    <>
       {chapters.map((ch, idx) => {
         const chapterNum = typeof ch.chapter === 'string' ? parseInt(ch.chapter) : ch.chapter as number;
         const isRead = readChapters.includes(chapterNum);
         return (
           <ChapterCard key={idx} ch={ch} idx={idx} baseColor={baseColor} textColor={textColor}
             borderColor={borderColor} isRead={isRead} onMarkChapterRead={onMarkChapterRead}
-            bookId={bookId} chapterNum={chapterNum} />
+            bookId={bookId} chapterNum={chapterNum}
+            addGamificationNote={addGamificationNote} userId={userId} streak={profile.streak} />
         );
       })}
-    </div>
+    </>
   );
 }
 
-function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMarkChapterRead, bookId, chapterNum }: {
+function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMarkChapterRead, bookId, chapterNum, addGamificationNote, userId, streak }: {
   ch: BookData['chapters'][0]; idx: number; baseColor: string; textColor: string; borderColor: string;
   isRead: boolean; onMarkChapterRead: (n: number) => void; bookId: string; chapterNum: number;
+  addGamificationNote: () => void; userId: string | null; streak: number;
 }) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [selectedColor, setSelectedColor] = useState(NOTE_COLORS[0].id);
   const [saved, setSaved] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { addNote: addGamificationNote, userId } = useGamification();
   const { notes, addNote: saveNote } = useNotes(bookId, userId);
-  const chapterNotes = notes.filter(n => n.context?.chapter === chapterNum || n.context?.chapter === ch.chapter.toString());
+  // Bug 11 (note context): normalize to number for reliable comparison
+  const chapterNotes = notes.filter(n => {
+    const ctx = n.context?.chapter;
+    return ctx !== undefined && Number(ctx) === chapterNum;
+  });
 
   useEffect(() => {
     if (noteOpen) setTimeout(() => textareaRef.current?.focus(), 150);
@@ -859,7 +898,8 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
           </h4>
           {isRead && <p className="text-[11px] text-emerald-600 font-bold">✓ Capítulo lido</p>}
         </div>
-        <XpPill xp={5} color={isRead ? 'green' : 'stone'} />
+        {/* Bug 7 fix: show real XP — base 5 × streak multiplier */}
+        {!isRead && <XpPill xp={streak >= 30 ? '10' : streak >= 14 ? '7' : streak >= 7 ? '6' : '5'} color="stone" />}
       </div>
 
       {/* Conteúdo */}
@@ -879,17 +919,22 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
 
         {/* Botões */}
         <div className="flex items-center gap-2 mt-4 flex-wrap">
+          {/* Bug 13 fix: when already read, show "Desmarcar?" with red hover to prevent accidental unmark */}
           <motion.button
             whileTap={{ scale: 0.93, y: 1 }}
             onClick={() => onMarkChapterRead(chapterNum)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black border-b-[3px] transition-all active:border-b-0 active:border-t-[2px]
+            title={isRead ? 'Clique para desmarcar este capítulo' : 'Marcar como lido'}
+            className={`group flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black border-b-[3px] transition-all active:border-b-0 active:border-t-[2px]
               ${isRead
-                ? 'bg-emerald-100 border-emerald-300 text-emerald-700 hover:bg-emerald-200'
+                ? 'bg-emerald-100 border-emerald-300 text-emerald-700 hover:bg-red-100 hover:border-red-300 hover:text-red-700'
                 : 'bg-stone-100 border-stone-300 text-stone-600 hover:bg-stone-200'
               }`}
           >
-            <CheckCircle2 size={14} className={isRead ? 'text-emerald-500' : 'text-stone-400'} />
-            {isRead ? 'Lido ✓' : 'Marcar lido'}
+            <CheckCircle2 size={14} className={isRead ? 'text-emerald-500 group-hover:text-red-500' : 'text-stone-400'} />
+            <span className={isRead ? 'group-hover:hidden' : ''}>
+              {isRead ? 'Lido ✓' : 'Marcar lido'}
+            </span>
+            {isRead && <span className="hidden group-hover:inline">Desmarcar?</span>}
           </motion.button>
 
           <motion.button
@@ -1010,10 +1055,17 @@ function VersesTab({ verses, bookName, colorClass }: { verses: BookData['mainVer
   const textColor  = colorClass.split(' ').find(c => c.startsWith('text-')) || 'text-stone-900';
   const borderColor = colorClass.split(' ').find(c => c.startsWith('border-')) || 'border-stone-200';
   const { addFavorite, userId, addEcoReaction, profile } = useGamification();
-  const [favorites, setFavorites] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem(`${userId}_bible_favorites`) || '{}'); }
-    catch { return {}; }
-  });
+
+  // Bug 12 fix: userId is null on first render (async auth). Load favorites in useEffect
+  // so we read from the correct key once userId is available.
+  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      const stored = localStorage.getItem(`${userId}_bible_favorites`);
+      setFavorites(stored ? JSON.parse(stored) : {});
+    } catch { setFavorites({}); }
+  }, [userId]);
 
   const ECO_EMOJIS = [
     { emoji: '🙏', label: 'Me tocou' }, { emoji: '💡', label: 'Aprendi' },

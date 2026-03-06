@@ -386,9 +386,12 @@ export default function Community() {
     let updatedMessages = [...activeGroup.messages];
 
     if (editingMessageId) {
-      updatedMessages = updatedMessages.map(msg =>
-        msg.id === editingMessageId ? { ...msg, text: newMessage, type: postType } : msg
-      );
+      updatedMessages = updatedMessages.map(msg => {
+        if (msg.id !== editingMessageId) return msg;
+        // Preserve special types (poll, question_box) — only allow editing text/verse/goal
+        if (msg.type === 'poll' || msg.type === 'question_box') return msg;
+        return { ...msg, text: newMessage, type: postType };
+      });
     } else {
       updatedMessages.push({
         id: Date.now(),
@@ -532,6 +535,7 @@ export default function Community() {
 
   const handleDeleteMaterial = (materialId: string) => {
     if (!activeGroup) return;
+    const materialToDelete = activeGroup.materials?.find(m => m.id === materialId);
     setConfirmModal({
       isOpen: true,
       title: 'Excluir Material',
@@ -542,7 +546,10 @@ export default function Community() {
         const updatedGroup = {
           ...activeGroup,
           materials: (activeGroup.materials || []).filter(m => m.id !== materialId),
-          messages: activeGroup.messages.filter(msg => !msg.text.includes(activeGroup.materials?.find(m => m.id === materialId)?.title || '____'))
+          // Remove a mensagem de alerta pelo título exato do material deletado
+          messages: activeGroup.messages.filter(msg =>
+            !(materialToDelete && msg.text.includes(`"${materialToDelete.title}"`))
+          ),
         };
         setActiveGroup(updatedGroup);
         setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
@@ -558,9 +565,14 @@ export default function Community() {
     const updatedMessages = activeGroup.messages.map(msg => {
       if (msg.id === messageId && msg.type === 'poll' && msg.poll) {
         const alreadyVotedThis = msg.poll.options.find(opt => opt.id === optionId)?.votes.includes(userEmail);
-        if (alreadyVotedThis) return msg;
+        // Toggle: clicking the same option removes the vote
         const updatedOptions = msg.poll.options.map(opt => {
-          if (opt.id === optionId) return { ...opt, votes: [...opt.votes.filter(v => v !== userEmail), userEmail] };
+          if (opt.id === optionId) {
+            return alreadyVotedThis
+              ? { ...opt, votes: opt.votes.filter(v => v !== userEmail) } // unvote
+              : { ...opt, votes: [...opt.votes.filter(v => v !== userEmail), userEmail] }; // vote
+          }
+          // Remove vote from other options (single choice)
           return { ...opt, votes: opt.votes.filter(v => v !== userEmail) };
         });
         return { ...msg, poll: { ...msg.poll, options: updatedOptions } };
@@ -752,19 +764,31 @@ export default function Community() {
     const prayer = mockPrayers.find(p => p.id === id);
     if (!prayer || prayer.hasPrayed) return;
 
-    // Upsert vote
-    const { error } = await supabase.from('community_prayer_votes').upsert(
-      { prayer_id: id, user_email: profile.email },
-      { onConflict: 'prayer_id,user_email' }
-    );
-    if (error) return;
-
-    // Increment count
-    await supabase.from('community_prayers').update({ prayed_count: prayer.prayedCount + 1 }).eq('id', id);
-
+    // Optimistically update UI first
     setMockPrayers(prev => prev.map(p =>
       p.id === id ? { ...p, prayedCount: p.prayedCount + 1, hasPrayed: true } : p
     ));
+
+    // Register vote
+    const { error: voteError } = await supabase.from('community_prayer_votes').upsert(
+      { prayer_id: id, user_email: profile.email },
+      { onConflict: 'prayer_id,user_email' }
+    );
+    if (voteError) {
+      // Rollback optimistic update on error
+      setMockPrayers(prev => prev.map(p =>
+        p.id === id ? { ...p, prayedCount: prayer.prayedCount, hasPrayed: false } : p
+      ));
+      return;
+    }
+
+    // Use server-side increment to avoid race conditions
+    await supabase.rpc('increment_prayer_count', { prayer_id: id }).catch(async () => {
+      // Fallback: manual increment if RPC not available
+      await supabase.from('community_prayers')
+        .update({ prayed_count: prayer.prayedCount + 1 })
+        .eq('id', id);
+    });
   };
   useEffect(() => {
     if (profile.email) {
@@ -834,10 +858,15 @@ export default function Community() {
       confirmColor: 'bg-rose-700 hover:bg-rose-800',
       onConfirm: async () => {
         if (profile.email) {
-          // Deleta a conexão nos dois sentidos
+          // Delete both directions separately to avoid complex OR syntax issues
           await supabase.from('user_connections')
             .delete()
-            .or(`and(from_email.eq.${profile.email},to_email.eq.${connEmail}),and(from_email.eq.${connEmail},to_email.eq.${profile.email})`);
+            .eq('from_email', profile.email)
+            .eq('to_email', connEmail);
+          await supabase.from('user_connections')
+            .delete()
+            .eq('from_email', connEmail)
+            .eq('to_email', profile.email);
           await loadConnections();
         }
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
@@ -912,7 +941,9 @@ export default function Community() {
           <>{activeGroup ? (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
               {(() => {
-                const isCurrentUserAdmin = activeGroup.members.find(m => (m.email === profile.email || m.email === 'me'))?.isLeader;
+                const isCurrentUserAdmin = profile.email
+                  ? activeGroup.members.find(m => m.email === profile.email)?.isLeader === true
+                  : false;
                 return (
                   <>
                     <div className="flex items-center gap-3 border-b border-stone-100 pb-4">
@@ -1784,7 +1815,27 @@ export default function Community() {
                 {mockGroups.map(group => (
                   <div 
                     key={group.id} 
-                    onClick={() => setActiveGroup(group)}
+                    onClick={async () => {
+                      // Fetch the freshest version of this group directly from Supabase
+                      const { data } = await supabase
+                        .from('community_groups')
+                        .select('id, name, target_id, target_name, members, messages, materials')
+                        .eq('id', group.id)
+                        .single();
+                      if (data) {
+                        setActiveGroup({
+                          id: data.id,
+                          name: data.name,
+                          targetId: data.target_id,
+                          targetName: data.target_name,
+                          members: data.members || [],
+                          messages: data.messages || [],
+                          materials: data.materials || [],
+                        });
+                      } else {
+                        setActiveGroup(group);
+                      }
+                    }}
                     className="p-4 bg-white rounded-2xl border border-stone-200 hover:border-indigo-200 hover:shadow-md transition-all cursor-pointer group"
                   >
                     {/* Nome + livro */}

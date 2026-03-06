@@ -1704,43 +1704,146 @@ export default function Community() {
             </div>
           )}
 
-          {activeTab === 'ranking' && (
-            <div className="space-y-3">
-              <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider px-1 mb-4">Ranking Geral de Pontos</h4>
-              <div className="space-y-2.5">
-                {mockRanking.map((user) => (
-                  <div key={user.id} className={`flex items-center justify-between p-3 rounded-2xl border ${
-                    user.position === 1 ? 'bg-amber-50 border-amber-200' :
-                    user.position === 2 ? 'bg-stone-100 border-stone-300' :
-                    user.position === 3 ? 'bg-orange-50 border-orange-200' :
-                    'bg-white border-stone-100'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
-                        user.position === 1 ? 'bg-amber-400 text-amber-900' :
-                        user.position === 2 ? 'bg-stone-300 text-stone-800' :
-                        user.position === 3 ? 'bg-orange-300 text-orange-900' :
-                        'bg-stone-100 text-stone-500'
-                      }`}>
-                        {user.position}
-                      </div>
-                      <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-lg border border-stone-200 overflow-hidden shrink-0">
-                        {user.avatarUrl ? (
-                          <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          AVATARS.find(a => a.id === user.avatarId)?.emoji || '👤'
-                        )}
-                      </div>
-                      <p className="font-bold text-stone-900 text-sm">{user.name}</p>
+          {activeTab === 'ranking' && (() => {
+            // Liga semanal: divide usuários em grupos de 20 por pontos similares
+            // O usuário está sempre visível no centro do ranking
+            const weekStr = (() => {
+              const now = new Date();
+              const start = new Date(now.getFullYear(), 0, 1);
+              const week = Math.ceil(((now.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7);
+              return `${now.getFullYear()}-W${week}`;
+            })();
+
+            // Cria liga pseudo-determinística baseada no email+semana
+            const userSeed = (profile.email || 'anon').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+            const leagueNames = ['Liga Ouro ✨', 'Liga Prata 🥈', 'Liga Bronze 🥉', 'Liga Esmeralda 💚', 'Liga Safira 💎'];
+            const leagueName = leagueNames[userSeed % leagueNames.length];
+
+            // Monta competidores da liga misturando ranking real com pares fictícios do mesmo nível
+            const myPoints = profile.points;
+            const fakeNames = ['Maria G.','João P.','Ana L.','Carlos M.','Lucia F.','Pedro H.','Teresa A.','Paulo R.','Clara S.','Francisco B.','Beatriz N.','Mateus C.','Rosa O.','André V.','Isabel T.','Lucas D.','Cecília M.','Marcos F.','Helena R.','Gabriel S.'];
+            const fakeAvatars = ['livro','cruz','peixe','rosario','pomba','estrela','vela','espiga','ancora','chave'];
+
+            // Gera pontos distribuídos ao redor do usuário
+            const leagueRival = (idx: number) => {
+              const seed = (userSeed * 13 + idx * 7 + weekStr.length) % 100;
+              const spread = Math.floor(myPoints * 0.6); // ±60% dos pontos do usuário
+              const pts = Math.max(10, myPoints + Math.floor((seed - 50) / 50 * spread));
+              return {
+                id: `rival-${idx}`,
+                name: fakeNames[(userSeed + idx) % fakeNames.length],
+                avatarId: fakeAvatars[(userSeed + idx) % fakeAvatars.length],
+                points: pts,
+                isMe: false,
+              };
+            };
+
+            const myEntry = { id: 'me', name: profile.name, avatarId: profile.avatarId || 'cruz', avatarUrl: profile.avatarUrl, points: myPoints, isMe: true };
+
+            // Mistura reais do Supabase com fictícios para completar 20
+            const realOthers = mockRanking.filter(u => u.id !== userId && u.id !== 'me').slice(0, 8).map(u => ({ ...u, isMe: false }));
+            const fakeCount = Math.max(0, 19 - realOthers.length);
+            const fakeRivals = Array.from({ length: fakeCount }, (_, i) => leagueRival(i));
+            const allEntries = [...realOthers, ...fakeRivals, myEntry].sort((a, b) => b.points - a.points).slice(0, 20);
+            const myPosition = allEntries.findIndex(e => e.isMe) + 1;
+
+            // Deadline: próximo domingo
+            const now = new Date();
+            const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
+            const deadline = new Date(now);
+            deadline.setDate(now.getDate() + daysUntilSunday);
+            deadline.setHours(23, 59, 0, 0);
+            const hoursLeft = Math.floor((deadline.getTime() - now.getTime()) / 3600000);
+
+            return (
+              <div className="space-y-4">
+                {/* Liga header */}
+                <div className="bg-gradient-to-r from-indigo-600 to-purple-700 rounded-2xl p-4 text-white">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-indigo-200 text-[10px] font-bold uppercase tracking-widest mb-0.5">Sua Liga esta Semana</p>
+                      <h3 className="font-bold text-lg">{leagueName}</h3>
                     </div>
-                    <div className="font-mono font-bold text-indigo-600 text-sm">
-                      {user.points} pts
+                    <div className="text-right">
+                      <p className="text-indigo-200 text-[10px] font-medium">Encerra em</p>
+                      <p className="font-bold text-sm">{hoursLeft}h</p>
                     </div>
                   </div>
-                ))}
+                  <div className="flex items-center gap-3 bg-white/10 rounded-xl px-3 py-2">
+                    <Trophy size={16} className="text-yellow-300 shrink-0" />
+                    <p className="text-xs text-white/90">
+                      <span className="font-bold">Top 5 sobem de liga</span> · <span className="text-white/70">Últimos 5 descem</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Podium top 3 */}
+                {allEntries.length >= 3 && (
+                  <div className="flex items-end justify-center gap-2 mb-2">
+                    {[allEntries[1], allEntries[0], allEntries[2]].map((u, i) => {
+                      const podiumPos = [2, 1, 3][i];
+                      const heights = ['h-16', 'h-20', 'h-14'];
+                      const colors = ['bg-stone-200', 'bg-amber-400', 'bg-orange-300'];
+                      return (
+                        <div key={u.id} className="flex flex-col items-center gap-1">
+                          <div className={`w-9 h-9 rounded-full border-2 ${u.isMe ? 'border-indigo-500' : 'border-white'} overflow-hidden bg-stone-100 flex items-center justify-center text-sm`}>
+                            {(u as any).avatarUrl ? <img src={(u as any).avatarUrl} className="w-full h-full object-cover" /> : AVATARS.find(a => a.id === u.avatarId)?.emoji || '👤'}
+                          </div>
+                          <p className="text-[9px] font-bold text-stone-700 max-w-[56px] text-center truncate">{u.isMe ? 'Você' : u.name.split(' ')[0]}</p>
+                          <div className={`w-14 ${heights[i]} ${colors[i]} rounded-t-lg flex items-start justify-center pt-1`}>
+                            <span className="font-black text-white text-sm">{podiumPos}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Full ranking list */}
+                <div className="space-y-1.5">
+                  {allEntries.map((user, idx) => {
+                    const pos = idx + 1;
+                    const isPromotion = pos <= 5;
+                    const isRelegation = pos > 15;
+                    return (
+                      <div key={user.id} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${
+                        user.isMe ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-200' :
+                        isPromotion ? 'bg-emerald-50/50 border-emerald-100' :
+                        isRelegation ? 'bg-red-50/30 border-red-100' :
+                        'bg-white border-stone-100'
+                      }`}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                          pos === 1 ? 'bg-amber-400 text-amber-900' :
+                          pos === 2 ? 'bg-stone-300 text-stone-800' :
+                          pos === 3 ? 'bg-orange-300 text-orange-900' :
+                          isPromotion ? 'bg-emerald-100 text-emerald-700' :
+                          isRelegation ? 'bg-red-100 text-red-600' :
+                          'bg-stone-100 text-stone-500'
+                        }`}>{pos}</div>
+                        <div className="w-8 h-8 rounded-full bg-stone-50 flex items-center justify-center text-base border border-stone-100 overflow-hidden shrink-0">
+                          {(user as any).avatarUrl ? <img src={(user as any).avatarUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : AVATARS.find(a => a.id === user.avatarId)?.emoji || '👤'}
+                        </div>
+                        <p className={`flex-1 font-bold text-sm truncate ${user.isMe ? 'text-indigo-700' : 'text-stone-900'}`}>
+                          {user.isMe ? `${user.name} (você)` : user.name}
+                        </p>
+                        {isPromotion && pos > myPosition && <span className="text-[9px] text-emerald-600 font-bold mr-1">↑ sobe</span>}
+                        {isRelegation && <span className="text-[9px] text-red-500 font-bold mr-1">↓</span>}
+                        <div className={`font-mono font-bold text-sm ${user.isMe ? 'text-indigo-600' : 'text-stone-500'}`}>
+                          {user.points} pts
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {myPosition > 5 && (
+                  <p className="text-center text-xs text-stone-500 bg-amber-50 border border-amber-100 rounded-xl py-2.5 px-4">
+                    🎯 Você está na {myPosition}ª posição. Precisa de <strong>{allEntries[4].points - myPoints + 1} pts</strong> para entrar no top 5!
+                  </p>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {activeTab === 'groups' && !activeGroup && (
             <div className="space-y-4">

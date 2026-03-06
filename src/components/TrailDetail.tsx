@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, BookOpen, Lightbulb, Heart, CheckCircle2, ChevronLeft, ChevronRight, Lock, Flame, Trophy, Star, Loader2, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchTrailDays, fetchUserProgress, completeTrailDay, getTrailCompletedDays, Trail, TrailDay, UserTrailProgress } from '../services/trails';
-import { supabase } from '../lib/supabase';
+import { useGamification } from '../services/gamification';
 import confetti from 'canvas-confetti';
 
 interface TrailDetailProps {
@@ -41,12 +41,12 @@ const FALLBACK_DAYS: Record<string, TrailDay[]> = {
 };
 
 export default function TrailDetail({ trail, onBack }: TrailDetailProps) {
+  const { userId } = useGamification();
   const [days, setDays] = useState<TrailDay[]>([]);
   const [progress, setProgress] = useState<UserTrailProgress[]>([]);
   const [currentDay, setCurrentDay] = useState(1);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showTrailCompleteModal, setShowTrailCompleteModal] = useState(false);
   const [activeSection, setActiveSection] = useState<'reading' | 'reflection' | 'verse' | 'practice'>('reading');
@@ -57,43 +57,28 @@ export default function TrailDetail({ trail, onBack }: TrailDetailProps) {
     async function load() {
       setLoading(true);
       try {
-        // Timeout de segurança para o load inteiro
-        const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('load timeout')), 10000)
-        );
-
-        const [fetchedDays, session] = await Promise.race([
-          Promise.all([fetchTrailDays(trail.id), supabase.auth.getSession()]),
-          timeout,
-        ]) as [TrailDay[], Awaited<ReturnType<typeof supabase.auth.getSession>>];
-
+        const fetchedDays = await fetchTrailDays(trail.id);
         const daysToUse = fetchedDays.length > 0
           ? fetchedDays
           : (FALLBACK_DAYS[trail.slug] || []);
-
         setDays(daysToUse);
 
-        if (session.data.session?.user) {
-          const uid = session.data.session.user.id;
-          setUserId(uid);
-          const prog = await fetchUserProgress(uid);
+        if (userId) {
+          const prog = await fetchUserProgress(userId);
           setProgress(prog);
-
-          // Find current day (first incomplete)
           const completedNums = getTrailCompletedDays(prog, trail.id);
           const nextDay = daysToUse.find(d => !completedNums.includes(d.day_number));
           if (nextDay) setCurrentDay(nextDay.day_number);
           else if (daysToUse.length > 0) setCurrentDay(daysToUse[daysToUse.length - 1].day_number);
         }
       } catch {
-        const fallback = FALLBACK_DAYS[trail.slug] || [];
-        setDays(fallback);
+        setDays(FALLBACK_DAYS[trail.slug] || []);
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, [trail]);
+  }, [trail, userId]);
 
   const completedDayNums = getTrailCompletedDays(progress, trail.id);
   const dayData = days.find(d => d.day_number === currentDay);

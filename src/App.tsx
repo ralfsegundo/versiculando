@@ -80,13 +80,14 @@ export default function App() {
           .filter(Boolean) as string[];
         setTimeout(() => prefetchBooks(beginnerBookNames), 1500);
       }
-    }).catch(() => {
+    }).catch((err) => {
+      console.warn('[App] Erro ao obter sessão:', err);
       setIsInitializing(false);
     });
 
-    // Timeout de segurança — garante que o loading nunca trava
-    // 6s para cobrir conexões mais lentas
-    const timeout = setTimeout(() => setIsInitializing(false), 6000);
+    // Timeout de segurança — 4s é suficiente para a maioria das conexões
+    // Garante que o loading nunca trava mesmo em erros silenciosos de rede
+    const timeout = setTimeout(() => setIsInitializing(false), 4000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);

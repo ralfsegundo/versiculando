@@ -249,9 +249,9 @@ export default function Community() {
       const rows = (!error && data && data.length > 0) ? data : [];
 
       // Garante que o usuário local sempre aparece no ranking
-      const profileAlreadyIn = rows.some((u: any) => u.id === profile.id);
+      const profileAlreadyIn = rows.some((u: any) => u.id === userId);
       const finalRows = profileAlreadyIn ? rows : [...rows, {
-        id: profile.id,
+        id: userId,
         name: profile.name,
         avatar_id: profile.avatarId || '',
         avatar_url: profile.avatarUrl,
@@ -269,7 +269,7 @@ export default function Community() {
     } catch (e) {
       // Mesmo em erro total, mostra o usuário local
       setMockRankingData([{
-        id: profile.id,
+        id: userId,
         name: profile.name,
         avatarId: profile.avatarId || '',
         avatarUrl: profile.avatarUrl,
@@ -384,7 +384,7 @@ export default function Community() {
       // Count new prayers since last visit
       const lastSeenTs = parseInt(localStorage.getItem(`${userId}_prayers_last_seen_ts`) || '0', 10);
       const newPrayers = prayers.filter((p: any) =>
-        new Date(p.created_at).getTime() > lastSeenTs && p.user_id !== (profile.id || '')
+        new Date(p.created_at).getTime() > lastSeenTs && p.user_id !== (userId || '')
       ).length;
       setUnreadPrayersCount(newPrayers);
     } catch (e) { console.warn('[Community] loadPrayers exception:', e); }
@@ -905,10 +905,10 @@ export default function Community() {
   // isCurrentUserAdmin — computed once, stable reference
 
   const handleCreatePrayer = async () => {
-    if (!newPrayerRequest.trim() || !profile.email) return;
+    if (!newPrayerRequest.trim() || !profile.email || !userId) return;
     const { data } = await supabase.from('community_prayers').insert({
       user_name: profile.name,
-      user_id: profile.id || '',
+      user_id: userId,
       user_email: profile.email,
       avatar_id: profile.avatarId || '',
       avatar_url: profile.avatarUrl || null,
@@ -940,7 +940,7 @@ export default function Community() {
     if (!prayer) return;
 
     // Não pode orar por si mesmo — oração é intercessão pelos outros
-    if (prayer.userId === profile.id) return;
+    if (prayer.userId === userId) return;
 
     const isUndoing = prayer.hasPrayed;
 
@@ -2169,7 +2169,7 @@ export default function Community() {
             const myEntry = { id: 'me', name: profile.name, avatarId: profile.avatarId || 'cruz', avatarUrl: profile.avatarUrl, points: myPoints, isMe: true };
 
             // Mistura reais do Supabase com fictícios para completar 20
-            const realOthers = mockRanking.filter(u => u.id !== (profile.id || '') && u.id !== 'me').slice(0, 8).map(u => ({ ...u, isMe: false }));
+            const realOthers = mockRanking.filter(u => u.id !== (userId || '') && u.id !== 'me').slice(0, 8).map(u => ({ ...u, isMe: false }));
             const fakeCount = Math.max(0, 19 - realOthers.length);
             const fakeRivals = Array.from({ length: fakeCount }, (_, i) => leagueRival(i));
             const allEntries = [...realOthers, ...fakeRivals, myEntry].sort((a, b) => b.points - a.points).slice(0, 20);
@@ -2631,7 +2631,7 @@ export default function Community() {
                           <Heart size={11} className="text-rose-400" />
                           {prayer.prayedCount} {prayer.prayedCount === 1 ? 'pessoa orou' : 'pessoas oraram'}
                         </span>
-                        {prayer.userId === profile.id ? (
+                        {prayer.userId === userId ? (
                           <span className="text-xs text-stone-400 italic px-3 py-2">seu pedido 🙏</span>
                         ) : (
                           <button

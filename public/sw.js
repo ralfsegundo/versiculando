@@ -96,17 +96,14 @@ self.addEventListener('message', (event) => {
 
       self.registration.showNotification(title, {
         body,
-        icon:   '/icons/icon.svg',
-        badge:  '/icons/icon.svg',
+        icon:   '/icons/icon-192.png',
+        badge:  '/icons/icon-192.png',
         tag:    'streak-reminder',       // substitui notificação anterior se houver
         renotify: false,
         requireInteraction: false,
         data: { streak, url: '/' },
-        actions: [
-          { action: 'open', title: '📖 Abrir agora' },
-          { action: 'dismiss', title: 'Mais tarde' },
-        ],
-        vibrate: [200, 100, 200],        // padrão Android
+        // actions não são suportados no iOS — omitidos intencionalmente
+        vibrate: [200, 100, 200],        // padrão Android (ignorado no iOS)
       });
     }, delayMs);
   }

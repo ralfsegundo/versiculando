@@ -66,26 +66,25 @@ export default function App() {
     return 'beginners';
   });
 
-  // ── Botão voltar no PWA (Android/iOS) ────────────────────────
-  // Empurra uma entrada no histórico sempre que o usuário navega
-  // para uma sub-tela, e intercepta o popstate para voltar
-  // dentro do app em vez de fechar/minimizar.
+  // ── Botão voltar no PWA (Android) ────────────────────────────
+  const [showExitToast, setShowExitToast] = useState(false);
+  const exitToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const selectedBookIdRef = useRef<string | null>(null);
+  const selectedTrailRef = useRef<Trail | null>(null);
+  const currentTabRef = useRef<'home' | 'journey' | 'trails' | 'profile' | 'community'>('home');
+  const showExitToastRef = useRef(false);
+
+  useEffect(() => { selectedBookIdRef.current = selectedBookId; }, [selectedBookId]);
+  useEffect(() => { selectedTrailRef.current = selectedTrail; }, [selectedTrail]);
+  useEffect(() => { currentTabRef.current = currentTab; }, [currentTab]);
+  useEffect(() => { showExitToastRef.current = showExitToast; }, [showExitToast]);
+
+  // Wrappers de navegação
   const pushNavState = useCallback((state: object) => {
     window.history.pushState(state, '');
   }, []);
 
-  // Refs para o handler do popstate ter acesso ao estado atual sem re-registrar
-  const selectedBookIdRef = useRef<string | null>(null);
-  const selectedTrailRef = useRef<Trail | null>(null);
-  const currentTabRef = useRef<'home' | 'journey' | 'trails' | 'profile' | 'community'>('home');
-
-  // Mantém os refs sincronizados com o state
-  useEffect(() => { selectedBookIdRef.current = selectedBookId; }, [selectedBookId]);
-  useEffect(() => { selectedTrailRef.current = selectedTrail; }, [selectedTrail]);
-  useEffect(() => { currentTabRef.current = currentTab; }, [currentTab]);
-
-  // Wrappers de navegação que registram no histórico do browser
   const navigateToBook = useCallback((bookId: string) => {
     setSelectedBookId(bookId);
     pushNavState({ type: 'book', bookId });
@@ -100,21 +99,16 @@ export default function App() {
     setSelectedBookId(null);
     setSelectedTrail(null);
     setCurrentTab(tab);
-    // Só empurra estado se não for a home (home é a raiz)
-    if (tab !== 'home') {
-      pushNavState({ type: 'tab', tab });
-    }
+    if (tab !== 'home') pushNavState({ type: 'tab', tab });
   }, [pushNavState]);
 
-  // Intercepta botão voltar do sistema — registrado UMA vez via refs
   useEffect(() => {
-    // Garante entrada base no histórico para o primeiro popstate ter algo para interceptar
-    window.history.replaceState({ type: 'root' }, '');
-    // Empurra uma segunda entrada — assim o primeiro "voltar" dispara popstate
-    // em vez de sair do app imediatamente
+    // Empurra barreira inicial para o popstate ter algo para interceptar
+    window.history.pushState({ type: 'guard' }, '');
     window.history.pushState({ type: 'guard' }, '');
 
     const handlePopState = () => {
+      // Navega para trás dentro do app
       if (selectedBookIdRef.current) {
         setSelectedBookId(null);
         window.history.pushState({ type: 'guard' }, '');
@@ -130,13 +124,32 @@ export default function App() {
         window.history.pushState({ type: 'guard' }, '');
         return;
       }
-      // Já está na home — re-empurra para nunca sair do app
+
+      // Está na home — lógica de "toque duas vezes para sair"
+      if (showExitToastRef.current) {
+        // Segunda vez — deixa o app fechar normalmente (não re-empurra)
+        return;
+      }
+
+      // Primeira vez — mostra toast e re-empurra barreira
+      setShowExitToast(true);
+      showExitToastRef.current = true;
       window.history.pushState({ type: 'guard' }, '');
+
+      // Esconde o toast após 2.5s
+      if (exitToastTimerRef.current) clearTimeout(exitToastTimerRef.current);
+      exitToastTimerRef.current = setTimeout(() => {
+        setShowExitToast(false);
+        showExitToastRef.current = false;
+      }, 2500);
     };
 
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []); // [] — registrado UMA vez, usa refs para ler estado atual
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (exitToastTimerRef.current) clearTimeout(exitToastTimerRef.current);
+    };
+  }, []);
   // ─────────────────────────────────────────────────────────────
   const [onboardingDone, setOnboardingDone] = useState(
     () => localStorage.getItem('onboarding_done') === 'true'
@@ -290,6 +303,30 @@ export default function App() {
       <OfflineBanner />
       {/* Banner de permissão de notificação de streak */}
       <StreakNotificationBanner />
+
+      {/* Toast "toque novamente para sair" — estilo Instagram */}
+      {showExitToast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '80px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(28,25,23,0.92)',
+            color: '#fff',
+            padding: '10px 22px',
+            borderRadius: '24px',
+            fontSize: '14px',
+            fontWeight: 600,
+            zIndex: 9999,
+            whiteSpace: 'nowrap',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+            animation: 'fadeInUp 0.2s ease',
+          }}
+        >
+          Toque novamente para sair
+        </div>
+      )}
 
       {selectedBookId ? (
         <BookDetail bookId={selectedBookId} onBack={() => setSelectedBookId(null)} />

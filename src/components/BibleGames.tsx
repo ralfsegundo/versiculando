@@ -628,6 +628,38 @@ const GAME_META: Record<Exclude<GameId, 'menu'>, {
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
+// Teto diário de XP por jogo (sem multiplicador de streak).
+// Equivale a ~3 sessões perfeitas — suficiente para engajamento real, sem farming.
+const DAILY_XP_CAP: Record<Exclude<GameId, 'menu'>, number> = {
+  'complete-verse': 900,
+  'book-quiz':      1200,
+  'word-scramble':  540,
+  'word-search':    1200,
+};
+
+const TODAY_KEY = () => new Date().toISOString().split('T')[0]; // "2026-03-06"
+
+// Retorna quantos XP o jogador já ganhou hoje neste jogo
+function getDailyXpEarned(gameId: Exclude<GameId, 'menu'>): number {
+  try {
+    const raw = localStorage.getItem(`games_daily_xp_${gameId}`);
+    if (!raw) return 0;
+    const { date, xp } = JSON.parse(raw);
+    return date === TODAY_KEY() ? xp : 0; // reseta a cada novo dia
+  } catch { return 0; }
+}
+
+// Registra XP ganho hoje neste jogo
+function addDailyXpEarned(gameId: Exclude<GameId, 'menu'>, amount: number): void {
+  try {
+    const current = getDailyXpEarned(gameId);
+    localStorage.setItem(`games_daily_xp_${gameId}`, JSON.stringify({
+      date: TODAY_KEY(),
+      xp: current + amount,
+    }));
+  } catch { /* ignora */ }
+}
+
 export default function BibleGames() {
   const { addPoints, showFloatingPoints, profile } = useGamification();
   const [activeGame, setActiveGame] = useState<GameId>('menu');
@@ -635,17 +667,35 @@ export default function BibleGames() {
   const [sessionCorrect, setSessionCorrect] = useState(0);
   const [sessionTotal, setSessionTotal] = useState(0);
   const [gameEnded, setGameEnded] = useState(false);
+  const [capReached, setCapReached] = useState(false);
 
   const handleResult = useCallback(({ correct, points }: GameResult) => {
     setSessionTotal(t => t + 1);
-    if (correct) {
+    if (correct && activeGame !== 'menu') {
+      const gameId = activeGame as Exclude<GameId, 'menu'>;
+      const cap     = DAILY_XP_CAP[gameId];
+      const earned  = getDailyXpEarned(gameId);
+      const remaining = cap - earned;
+
+      if (remaining <= 0) {
+        // Teto atingido — acerto conta para o score da sessão mas não gera XP
+        setSessionScore(s => s + points); // mostra o esforço visualmente
+        setCapReached(true);
+        return;
+      }
+
+      const rawXp    = Math.round(points * getStreakMultiplier(profile.streak));
+      const xp       = Math.min(rawXp, remaining); // respeita o teto
+      const hitsCap  = xp < rawXp;
+
       setSessionCorrect(c => c + 1);
-      const xp = Math.round(points * getStreakMultiplier(profile.streak));
       setSessionScore(s => s + xp);
+      addDailyXpEarned(gameId, xp);
       addPoints(xp, 'Jogo Bíblico', 'bonus');
       showFloatingPoints(xp, 'bonus_step');
+      if (hitsCap) setCapReached(true);
     }
-  }, [addPoints, showFloatingPoints, profile.streak]);
+  }, [activeGame, addPoints, showFloatingPoints, profile.streak]);
 
   const handleEnd = useCallback(() => {
     setGameEnded(true);
@@ -657,6 +707,13 @@ export default function BibleGames() {
     setSessionCorrect(0);
     setSessionTotal(0);
     setGameEnded(false);
+    setCapReached(false);
+    if (id !== 'menu') {
+      // Pré-carrega estado do teto para este jogo
+      const earned = getDailyXpEarned(id as Exclude<GameId, 'menu'>);
+      const cap    = DAILY_XP_CAP[id as Exclude<GameId, 'menu'>];
+      if (earned >= cap) setCapReached(true);
+    }
   };
 
   const backToMenu = () => {
@@ -695,25 +752,45 @@ export default function BibleGames() {
 
             {/* Game cards */}
             <div className="grid grid-cols-1 gap-3">
-              {(Object.entries(GAME_META) as [Exclude<GameId, 'menu'>, typeof GAME_META[keyof typeof GAME_META]][]).map(([id, g], i) => (
-                <motion.button key={id}
-                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => startGame(id)}
-                  className={`w-full text-left bg-gradient-to-r ${g.light} border-2 ${g.border} rounded-2xl p-4 flex items-center gap-4 shadow-sm hover:shadow-md transition-all`}>
-                  <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${g.gradient} flex items-center justify-center text-2xl shadow-md shrink-0`}>
-                    {g.emoji}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-stone-900 text-base">{g.title}</h3>
-                    <p className="text-stone-500 text-xs mt-0.5 leading-snug">{g.desc}</p>
-                    <div className={`mt-1.5 text-[10px] font-black uppercase tracking-wider bg-gradient-to-r ${g.gradient} bg-clip-text text-transparent`}>
-                      {g.pts}
+              {(Object.entries(GAME_META) as [Exclude<GameId, 'menu'>, typeof GAME_META[keyof typeof GAME_META]][]).map(([id, g], i) => {
+                const cap      = DAILY_XP_CAP[id];
+                const used     = getDailyXpEarned(id);
+                const pct      = Math.min(100, Math.round((used / cap) * 100));
+                const isCapped = pct >= 100;
+                return (
+                  <motion.button key={id}
+                    initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => startGame(id)}
+                    className={`w-full text-left bg-gradient-to-r ${g.light} border-2 ${g.border} rounded-2xl p-4 flex items-center gap-4 shadow-sm hover:shadow-md transition-all`}>
+                    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${g.gradient} flex items-center justify-center text-2xl shadow-md shrink-0`}>
+                      {g.emoji}
                     </div>
-                  </div>
-                  <ChevronRight size={18} className="text-stone-300 shrink-0" />
-                </motion.button>
-              ))}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-stone-900 text-base">{g.title}</h3>
+                      <p className="text-stone-500 text-xs mt-0.5 leading-snug">{g.desc}</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className={`text-[10px] font-black uppercase tracking-wider bg-gradient-to-r ${g.gradient} bg-clip-text text-transparent`}>
+                          {g.pts}
+                        </div>
+                        {/* Teto diário */}
+                        <div className="flex items-center gap-1 ml-auto">
+                          <div className="w-16 h-1.5 bg-white/60 rounded-full overflow-hidden border border-stone-200">
+                            <div
+                              className={`h-full rounded-full transition-all ${isCapped ? 'bg-rose-400' : 'bg-gradient-to-r ' + g.gradient}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className={`text-[9px] font-black ${isCapped ? 'text-rose-500' : 'text-stone-400'}`}>
+                            {isCapped ? 'MAX' : `${pct}%`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <ChevronRight size={18} className="text-stone-300 shrink-0" />
+                  </motion.button>
+                );
+              })}
             </div>
           </motion.div>
         )}
@@ -722,7 +799,7 @@ export default function BibleGames() {
         {activeGame !== 'menu' && meta && (
           <motion.div key={activeGame} initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}>
             {/* Game header */}
-            <div className={`relative rounded-3xl overflow-hidden bg-gradient-to-br ${meta.gradient} p-4 mb-5 shadow-lg`}>
+            <div className={`relative rounded-3xl overflow-hidden bg-gradient-to-br ${meta.gradient} p-4 mb-3 shadow-lg`}>
               <div className="absolute -top-4 -right-4 w-24 h-24 bg-white/10 rounded-full pointer-events-none" />
               <div className="relative z-10 flex items-center gap-3">
                 <button onClick={backToMenu} className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center border border-white/30 active:scale-95 transition-all shrink-0">
@@ -732,12 +809,49 @@ export default function BibleGames() {
                   <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest">{meta.emoji} Jogo</p>
                   <h2 className="font-bold text-white text-base leading-tight">{meta.title}</h2>
                 </div>
-                <div className="flex items-center gap-1 bg-white/20 rounded-xl px-3 py-1.5 border border-white/20">
-                  <Trophy size={13} className="text-yellow-200" />
-                  <span className="text-white font-black text-sm">{sessionScore}</span>
+                <div className="flex flex-col items-end gap-0.5">
+                  <div className="flex items-center gap-1 bg-white/20 rounded-xl px-3 py-1.5 border border-white/20">
+                    <Trophy size={13} className="text-yellow-200" />
+                    <span className="text-white font-black text-sm">{sessionScore}</span>
+                  </div>
+                  {/* Teto diário — barra de progresso compacta */}
+                  {activeGame !== 'menu' && (() => {
+                    const gid  = activeGame as Exclude<GameId, 'menu'>;
+                    const cap  = DAILY_XP_CAP[gid];
+                    const used = getDailyXpEarned(gid);
+                    const pct  = Math.min(100, Math.round((used / cap) * 100));
+                    return (
+                      <div className="flex items-center gap-1.5 bg-white/10 rounded-lg px-2 py-1 border border-white/10 min-w-[90px]">
+                        <div className="flex-1 h-1.5 bg-white/20 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-rose-300' : 'bg-yellow-200'}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="text-white/70 text-[9px] font-bold whitespace-nowrap">
+                          {pct >= 100 ? 'Limite ✓' : `${pct}%`}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
+
+            {/* Banner de teto atingido */}
+            {capReached && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-3 flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2.5"
+              >
+                <span className="text-lg">🏅</span>
+                <div className="flex-1">
+                  <p className="text-amber-800 font-black text-xs">Limite diário de XP atingido!</p>
+                  <p className="text-amber-600 text-[11px]">Continue jogando — seu progresso conta, mas o XP retoma amanhã.</p>
+                </div>
+              </motion.div>
+            )}
 
             {/* Game over screen */}
             <AnimatePresence mode="wait">
@@ -752,6 +866,9 @@ export default function BibleGames() {
                   <div className={`bg-gradient-to-br ${meta.light} border-2 ${meta.border} rounded-2xl p-4`}>
                     <p className="text-stone-500 text-xs font-bold uppercase tracking-widest mb-1">Pontos conquistados</p>
                     <p className={`font-black text-3xl bg-gradient-to-r ${meta.gradient} bg-clip-text text-transparent`}>+{sessionScore}</p>
+                    {capReached && (
+                      <p className="text-amber-600 text-[11px] font-bold mt-1">🏅 Limite diário atingido — volte amanhã para mais XP!</p>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-3 pt-2">
                     <button onClick={() => startGame(activeGame)}

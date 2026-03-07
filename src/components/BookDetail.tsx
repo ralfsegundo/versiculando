@@ -182,11 +182,11 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
 
       {/* ── HEADER estilo Duolingo ── */}
       <header className="sticky top-0 z-30 bg-white border-b-2 border-stone-100 shadow-sm">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+        <div className="max-w-2xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
           {/* Voltar */}
           <button
             onClick={onBack}
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-stone-500 hover:bg-stone-100 transition-colors shrink-0"
+            className="w-11 h-11 rounded-xl flex items-center justify-center text-stone-500 hover:bg-stone-100 active:bg-stone-200 transition-colors shrink-0"
           >
             <ArrowLeft size={22} />
           </button>
@@ -201,7 +201,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                 {readCount}/{totalChapters} cap.
               </span>
             </div>
-            <div className="w-full h-3 bg-stone-100 rounded-full overflow-hidden border border-stone-200">
+            <div className="w-full h-3.5 bg-stone-100 rounded-full overflow-hidden border border-stone-200">
               <motion.div
                 className={`h-full rounded-full relative ${
                   isCompleted ? 'bg-gradient-to-r from-amber-400 to-yellow-300' :
@@ -233,7 +233,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
         </div>
       </header>
 
-      <div className="max-w-2xl mx-auto w-full px-4">
+      <div className="max-w-2xl mx-auto w-full px-4 sm:px-6">
 
         {/* ── HERO do livro ── */}
         <motion.div
@@ -252,9 +252,9 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                 <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-white/40 ${textColor} mb-2`}>
                   {book.testament === 'VT' ? '📜 Antigo Testamento' : '✝️ Novo Testamento'}
                 </span>
-                <h1 className={`text-3xl font-serif font-black ${textColor} leading-tight`}>{book.name}</h1>
+                <h1 className={`text-[2rem] font-serif font-black ${textColor} leading-tight`}>{book.name}</h1>
                 {data && (
-                  <p className={`text-sm font-medium mt-1 ${textColor} opacity-75 italic`}>
+                  <p className={`text-[0.9rem] font-medium mt-1.5 ${textColor} opacity-75 italic leading-snug`}>
                     "{data.meaning}"
                   </p>
                 )}
@@ -284,7 +284,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                   { label: data.author },
                   { label: data.period },
                 ].map((chip, i) => (
-                  <span key={i} className={`text-[11px] font-bold px-2.5 py-1 rounded-full bg-white/40 ${textColor} border border-white/30`}>
+                  <span key={i} className={`text-xs font-bold px-3 py-1.5 rounded-full bg-white/40 ${textColor} border border-white/30`}>
                     {chip.label}
                   </span>
                 ))}
@@ -299,7 +299,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
 
           {/* XP reward strip */}
           <div className="bg-white px-6 py-3 flex items-center justify-between border-t-2 border-stone-100">
-            <span className="text-xs font-bold text-stone-500">Recompensas por concluir</span>
+            <span className="text-sm font-bold text-stone-500">Recompensas por concluir</span>
             <div className="flex items-center gap-2">
               <XpPill xp={isGpsBook ? 100 : 50} color={isGpsBook ? 'green' : 'amber'} />
               {isGpsBook && <XpPill xp="Trilha" color="green" />}
@@ -316,7 +316,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                 key={tab.id}
                 whileTap={{ scale: 0.94 }}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-sm font-bold whitespace-nowrap transition-all border-b-2 shrink-0
+                className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold whitespace-nowrap transition-all border-b-2 shrink-0 min-h-[44px]
                   ${isActive
                     ? `${baseColor} ${textColor} ${borderColor} border-b-4 shadow-sm`
                     : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'
@@ -389,8 +389,8 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                 {/* Mini progress */}
                 <div className="flex-1">
                   <div className="flex justify-between mb-1">
-                    <span className="text-xs font-bold text-stone-500">Progresso</span>
-                    <span className="text-xs font-black text-stone-700">{readCount}/{totalChapters} cap.</span>
+                    <span className="text-sm font-bold text-stone-500">Progresso</span>
+                    <span className="text-sm font-black text-stone-700">{readCount}/{totalChapters} cap.</span>
                   </div>
                   <div className="h-3 bg-stone-100 rounded-full overflow-hidden border border-stone-200">
                     <motion.div
@@ -400,7 +400,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                     />
                   </div>
                   {!allRead && (
-                    <p className="text-[10px] text-stone-400 mt-0.5">
+                    <p className="text-xs text-stone-400 mt-1">
                       Marque capítulos na aba{' '}
                       <button onClick={() => setActiveTab('chapters')} className="text-indigo-500 font-bold underline">Capítulos</button>
                     </p>
@@ -520,36 +520,36 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
   };
 
   return (
-    <div className="space-y-4 pb-4">
+    <div className="space-y-5 pb-4">
 
       {/* ── VERSÍCULO EM DESTAQUE ── */}
       <div className={`${baseColor} border-2 ${borderColor} rounded-3xl p-5 relative overflow-hidden`}>
         <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/20 rounded-full" />
         <p className={`text-[10px] font-black uppercase tracking-widest ${textColor} opacity-70 mb-2`}>✨ Versículo do Livro</p>
-        <p className={`text-lg font-serif italic font-semibold ${textColor} leading-snug mb-2`}>
+        <p className={`text-xl font-serif italic font-semibold ${textColor} leading-snug mb-3`}>
           "{data.quote}"
         </p>
-        <p className={`text-xs font-black uppercase tracking-widest ${textColor} opacity-60`}>— {data.quoteReference}</p>
+        <p className={`text-[0.8rem] font-black uppercase tracking-widest ${textColor} opacity-60`}>— {data.quoteReference}</p>
       </div>
 
       {/* ── CARDS DUOLINGO: Summary + Context ── */}
       <DuoCard icon="📖" title="Resumo" accent={baseColor} border={borderColor}>
-        <p className="text-stone-600 text-sm leading-relaxed">{data.summary}</p>
+        <p className="text-stone-600 text-[0.9375rem] leading-relaxed">{data.summary}</p>
       </DuoCard>
 
       <DuoCard icon="🏛️" title="Contexto Histórico" accent={baseColor} border={borderColor}>
-        <p className="text-stone-600 text-sm leading-relaxed">{data.historicalContext}</p>
+        <p className="text-stone-600 text-[0.9375rem] leading-relaxed">{data.historicalContext}</p>
       </DuoCard>
 
       <DuoCard icon="🙏" title="Aplicação Prática & Oração" accent={baseColor} border={borderColor}>
-        <p className="text-stone-600 text-sm leading-relaxed">{data.practicalApplication}</p>
+        <p className="text-stone-600 text-[0.9375rem] leading-relaxed">{data.practicalApplication}</p>
       </DuoCard>
 
       {/* ── TEMAS — grid de pills ── */}
       <DuoCard icon="💡" title="Principais Temas" accent={baseColor} border={borderColor}>
         <div className="flex flex-wrap gap-2">
           {(data.themes ?? []).map((t, i) => (
-            <span key={i} className={`text-xs font-bold px-3 py-1.5 rounded-full ${baseColor} ${textColor} border ${borderColor}`}>
+            <span key={i} className={`text-sm font-bold px-4 py-2 rounded-full ${baseColor} ${textColor} border ${borderColor}`}>
               {t}
             </span>
           ))}
@@ -560,7 +560,7 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
       <DuoCard icon="🔑" title="Palavras-Chave" accent={baseColor} border={borderColor}>
         <div className="flex flex-wrap gap-2">
           {(data.keywords ?? []).map((kw, i) => (
-            <span key={i} className="text-xs font-bold px-3 py-1.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
+            <span key={i} className="text-sm font-bold px-4 py-2 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
               #{kw}
             </span>
           ))}
@@ -576,8 +576,8 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
                 {person.name[0]}
               </div>
               <div>
-                <p className={`font-black text-sm ${textColor}`}>{person.name}</p>
-                <p className="text-xs text-stone-500 leading-relaxed">{person.description}</p>
+                <p className={`font-black text-base ${textColor}`}>{person.name}</p>
+                <p className="text-[0.875rem] text-stone-500 leading-relaxed mt-0.5">{person.description}</p>
               </div>
             </div>
           ))}
@@ -587,7 +587,7 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
       {/* ── CURIOSIDADE ── */}
       <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-5">
         <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2">💎 Curiosidade</p>
-        <p className="text-stone-700 text-sm leading-relaxed">{data.curiosity}</p>
+        <p className="text-stone-700 text-[0.9375rem] leading-relaxed">{data.curiosity}</p>
       </div>
 
       {/* ── FAB Notas ── */}
@@ -600,7 +600,7 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.93 }}
             onClick={() => setNoteDrawerOpen(true)}
-            className={`fixed bottom-[5.5rem] right-4 z-30 w-14 h-14 rounded-full shadow-xl border-2 border-b-4 flex items-center justify-center ${baseColor} ${borderColor}`}
+            className={`fixed bottom-[5.5rem] right-4 z-30 w-16 h-16 rounded-full shadow-xl border-2 border-b-4 flex items-center justify-center ${baseColor} ${borderColor}`}
           >
             <FileText size={22} className={textColor} />
             {notes.length > 0 && (
@@ -733,7 +733,7 @@ function DuoCard({ icon, title, children, accent, border }: {
     <div className="bg-white border-2 border-stone-100 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
       <div className={`flex items-center gap-2 px-5 py-3 border-b-2 border-stone-100 ${accent} bg-opacity-50`}>
         <span className="text-lg">{icon}</span>
-        <h3 className="font-black text-stone-800 text-sm uppercase tracking-wider">{title}</h3>
+        <h3 className="font-black text-stone-800 text-[0.8rem] uppercase tracking-wider">{title}</h3>
       </div>
       <div className="px-5 py-4">{children}</div>
     </div>
@@ -764,7 +764,7 @@ function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onM
       {/* Progress header */}
       <div className="bg-white border-2 border-stone-100 rounded-3xl p-5 shadow-sm">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-black uppercase tracking-wider text-stone-500">Capítulos Lidos</span>
+          <span className="text-sm font-black uppercase tracking-wider text-stone-500">Capítulos Lidos</span>
           <span className={`text-sm font-black ${progressPct===100?'text-emerald-600':'text-indigo-600'}`}>
             {readCount}/{total}
           </span>
@@ -854,7 +854,7 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
           {isRead ? <CheckCircle2 size={18} /> : chapterNum}
         </div>
         <div className="flex-1 min-w-0">
-          <h4 className={`font-black text-sm leading-tight truncate ${isRead ? 'text-emerald-800' : 'text-stone-900'}`}>
+          <h4 className={`font-black text-base leading-tight ${isRead ? 'text-emerald-800' : 'text-stone-900'}`}>
             {ch.title}
           </h4>
           {isRead && <p className="text-[11px] text-emerald-600 font-bold">✓ Capítulo lido</p>}
@@ -864,7 +864,7 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
 
       {/* Conteúdo */}
       <div className="px-5 py-4">
-        <p className="text-stone-600 text-sm leading-relaxed">{ch.summary}</p>
+        <p className="text-stone-600 text-[0.9375rem] leading-relaxed">{ch.summary}</p>
 
         {/* Notas deste capítulo */}
         {chapterNotes.length > 0 && (
@@ -882,7 +882,7 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
           <motion.button
             whileTap={{ scale: 0.93, y: 1 }}
             onClick={() => onMarkChapterRead(chapterNum)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black border-b-[3px] transition-all active:border-b-0 active:border-t-[2px]
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-black border-b-[3px] transition-all active:border-b-0 active:border-t-[2px] min-h-[44px]
               ${isRead
                 ? 'bg-emerald-100 border-emerald-300 text-emerald-700 hover:bg-emerald-200'
                 : 'bg-stone-100 border-stone-300 text-stone-600 hover:bg-stone-200'
@@ -895,7 +895,7 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
           <motion.button
             whileTap={{ scale: 0.93 }}
             onClick={() => setNoteOpen(v => !v)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black border-b-[3px] transition-all active:border-b-0
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-black border-b-[3px] transition-all active:border-b-0 min-h-[44px]
               ${noteOpen
                 ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
                 : 'bg-stone-100 border-stone-300 text-stone-600 hover:bg-stone-200'
@@ -990,11 +990,11 @@ function TimelineTab({ timeline, bookName, colorClass }: { timeline: BookData['t
             <div className={`w-8 h-8 rounded-xl ${baseColor} border-b-2 ${borderColor} flex items-center justify-center font-black text-sm ${textColor}`}>
               {idx + 1}
             </div>
-            <h4 className="font-black text-stone-800 text-sm uppercase tracking-wide">{event.title}</h4>
+            <h4 className="font-black text-stone-800 text-[0.9rem] uppercase tracking-wide">{event.title}</h4>
             <span className="text-2xl ml-auto">{event.emoji}</span>
           </div>
           <div className="px-5 py-4">
-            <p className="text-stone-600 text-sm leading-relaxed">{event.description}</p>
+            <p className="text-stone-600 text-[0.9375rem] leading-relaxed">{event.description}</p>
           </div>
         </motion.div>
       ))}

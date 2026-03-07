@@ -13,12 +13,6 @@ import NotificationPrompt from './components/NotificationBanner';
 import Admin from './components/Admin';
 import { GamificationProvider, useGamification } from './services/gamification';
 
-// Limpa chaves antigas de notificação para forçar re-exibição do banner novo
-// Roda uma vez no carregamento do módulo, antes de qualquer componente montar
-['notif_prompt_done', 'notif_prompt_done_v2', 'notif_banner_dismissed'].forEach(k =>
-  localStorage.removeItem(k)
-);
-
 // Wrapper interno — lê streak e trigger do contexto, passa ao prompt
 function StreakNotificationBanner() {
   const { profile, notificationTrigger, clearNotificationTrigger } = useGamification();
@@ -121,6 +115,10 @@ export default function App() {
           localStorage.removeItem('onboarding_welcome');
           localStorage.removeItem('user_profile');
           localStorage.removeItem('user_badges');
+          localStorage.removeItem('weekly_challenge');
+          // Reseta o prompt de notificação para o novo usuário ver
+          localStorage.removeItem('notif_prompt_done_v3');
+          localStorage.removeItem('last_active_day_notif');
           setOnboardingDone(false);
           setWelcomeMessage(null);
           setShowAdmin(false);

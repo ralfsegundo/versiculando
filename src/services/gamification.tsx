@@ -4,6 +4,7 @@ import confetti from 'canvas-confetti';
 import { motion, AnimatePresence } from 'motion/react';
 import { sharingService } from './sharingService';
 import { supabase } from '../lib/supabase';
+import { scheduleStreakNotification, cancelStreakNotification, markTodayActive } from './notifications';
 
 // --- Types ---
 
@@ -254,6 +255,21 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const isLoadingFromSupabase = useRef(false);
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasCheckedStreak = useRef(false); // garante checkStreak uma única vez por sessão
+
+  // ── Notificações de streak ──────────────────────────────────
+  // Ao abrir o app: cancela notificação pendente (usuário já está ativo)
+  useEffect(() => {
+    cancelStreakNotification();
+    markTodayActive();
+  }, []);
+
+  // Quando o streak muda (atividade feita): agenda notificação para 21h
+  // caso o usuário não volte mais hoje
+  useEffect(() => {
+    if (profile.streak > 0) {
+      scheduleStreakNotification(profile.streak);
+    }
+  }, [profile.streak]);
 
   const WEEKLY_CHALLENGES: Omit<WeeklyChallenge, 'id' | 'progress' | 'deadline' | 'completed'>[] = [
     { title: 'Conclua 3 livros esta semana', description: 'Complete a leitura de qualquer 3 livros.', target: 3, rewardPoints: 300 },

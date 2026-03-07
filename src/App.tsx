@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Home from './components/Home';
 import BookDetail from './components/BookDetail';
 import Profile from './components/Profile';
@@ -65,6 +65,73 @@ export default function App() {
     }
     return 'beginners';
   });
+
+  // ── Botão voltar no PWA (Android/iOS) ────────────────────────
+  // Empurra uma entrada no histórico sempre que o usuário navega
+  // para uma sub-tela, e intercepta o popstate para voltar
+  // dentro do app em vez de fechar/minimizar.
+
+  const pushNavState = useCallback((state: object) => {
+    window.history.pushState(state, '');
+  }, []);
+
+  // Wrappers de navegação que registram no histórico do browser
+  const navigateToBook = useCallback((bookId: string) => {
+    setSelectedBookId(bookId);
+    pushNavState({ type: 'book', bookId });
+  }, [pushNavState]);
+
+  const navigateToTrail = useCallback((trail: Trail) => {
+    setSelectedTrail(trail);
+    pushNavState({ type: 'trail', trailId: trail.id });
+  }, [pushNavState]);
+
+  const navigateToTab = useCallback((tab: 'home' | 'journey' | 'trails' | 'profile' | 'community') => {
+    setSelectedBookId(null);
+    setSelectedTrail(null);
+    setCurrentTab(tab);
+    // Só empurra estado se não for a home (home é a raiz)
+    if (tab !== 'home') {
+      pushNavState({ type: 'tab', tab });
+    }
+  }, [pushNavState]);
+
+  // Intercepta botão voltar do sistema
+  useEffect(() => {
+    // Estado inicial: garante que há sempre uma entrada base no histórico
+    window.history.replaceState({ type: 'root' }, '');
+
+    const handlePopState = (e: PopStateEvent) => {
+      const state = e.state;
+
+      if (selectedBookId) {
+        // Estava num livro → volta para a aba anterior
+        setSelectedBookId(null);
+        return;
+      }
+      if (selectedTrail) {
+        // Estava numa trilha → volta para trails
+        setSelectedTrail(null);
+        return;
+      }
+      if (currentTab !== 'home') {
+        // Estava numa aba secundária → volta para home
+        setCurrentTab('home');
+        // Garante que o histórico tem a entrada root para não sair no próximo voltar
+        window.history.replaceState({ type: 'root' }, '');
+        return;
+      }
+
+      // Já está na home — re-empurra estado para não sair do app
+      if (!state || state.type === 'root') {
+        window.history.pushState({ type: 'root' }, '');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [selectedBookId, selectedTrail, currentTab]);
+  // ─────────────────────────────────────────────────────────────
   const [onboardingDone, setOnboardingDone] = useState(
     () => localStorage.getItem('onboarding_done') === 'true'
   );
@@ -158,7 +225,7 @@ export default function App() {
     setWelcomeMessage(config.message);
     setHomeViewMode(config.recommendation);
     setOnboardingDone(true);
-    setSelectedBookId(config.startBookId);
+    navigateToBook(config.startBookId);
 
     // Salva no banco para persistir entre dispositivos
     if (session?.user?.id) {
@@ -226,7 +293,7 @@ export default function App() {
         <>
           {currentTab === 'home' && (
             <Home
-              onSelectBook={setSelectedBookId}
+              onSelectBook={navigateToBook}
               welcomeMessage={welcomeMessage}
               onDismissWelcome={() => {
                 setWelcomeMessage(null);
@@ -234,8 +301,8 @@ export default function App() {
               }}
             />
           )}
-          {currentTab === 'journey'    && <JourneyMap onSelectBook={setSelectedBookId} />}
-          {currentTab === 'trails'     && <Trails onSelectTrail={setSelectedTrail} onSelectBook={setSelectedBookId} />}
+          {currentTab === 'journey'    && <JourneyMap onSelectBook={navigateToBook} />}
+          {currentTab === 'trails'     && <Trails onSelectTrail={navigateToTrail} onSelectBook={navigateToBook} />}
           {currentTab === 'community'  && <Community />}
           {currentTab === 'profile'    && (
             <Profile
@@ -244,7 +311,7 @@ export default function App() {
             />
           )}
 
-          <Navigation currentTab={currentTab} onTabChange={setCurrentTab} />
+          <Navigation currentTab={currentTab} onTabChange={navigateToTab} />
         </>
       )}
     </GamificationProvider>

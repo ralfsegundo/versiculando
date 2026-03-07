@@ -19,7 +19,7 @@ export default function Navigation({ currentTab, onTabChange, unreadNotification
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white/98 backdrop-blur-xl border-t border-stone-100 pb-safe z-50"
       style={{ boxShadow: '0 -1px 0 rgba(0,0,0,0.06), 0 -8px 32px rgba(0,0,0,0.07)' }}>
-      <div className="max-w-lg mx-auto flex justify-around items-center h-[62px] px-1">
+      <div className="max-w-lg mx-auto flex justify-around items-center h-[64px] px-1">
         {TABS.map(({ id, label, icon: Icon, activeColor, activeBg }) => {
           const isActive = currentTab === id;
           const showBadge = id === 'community' && unreadNotifications > 0;
@@ -38,7 +38,7 @@ export default function Navigation({ currentTab, onTabChange, unreadNotification
                   transition={{ type: 'spring', stiffness: 500, damping: 20 }}
                 >
                   <Icon
-                    size={21}
+                    size={22}
                     strokeWidth={isActive ? 2.5 : 2}
                     className={`transition-all duration-150 ${isActive ? 'fill-current opacity-90' : 'opacity-55'}`}
                   />
@@ -54,7 +54,7 @@ export default function Navigation({ currentTab, onTabChange, unreadNotification
                   </motion.span>
                 )}
               </div>
-              <span className={`text-[10px] font-bold leading-none tracking-tight transition-all duration-150 ${isActive ? 'opacity-100' : 'opacity-45'}`}>
+              <span className={`text-[11px] font-bold leading-none tracking-tight transition-all duration-150 ${isActive ? 'opacity-100' : 'opacity-45'}`}>
                 {label}
               </span>
             </motion.button>

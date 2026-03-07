@@ -69,6 +69,9 @@ export interface UserProfile {
   discipleCompletedBooks: string[];
   visitedBooks?: string[];
   readChapters?: Record<string, number[]>;
+  // Capítulos que já geraram XP — separado de readChapters para evitar
+  // re-award ao desmarcar e remarcar. XP é one-way: dado uma vez, nunca mais.
+  xpChapters?: Record<string, number[]>;
   notesCount: number;
   favoritesCount: number;
   dailyVerseCount: number;
@@ -168,6 +171,7 @@ const getLocalProfile = (): UserProfile => {
     // Migration: add discipleCompletedBooks if not present
     if (!parsed.discipleCompletedBooks) parsed.discipleCompletedBooks = [];
     if (!parsed.readChapters) parsed.readChapters = {};
+    if (!parsed.xpChapters) parsed.xpChapters = {};
     if (parsed.streakFreezes === undefined) parsed.streakFreezes = 1; // começa com 1 graça
     if (parsed.dailyMissionStreak === undefined) parsed.dailyMissionStreak = 0;
     if (!parsed.ecoReactions) parsed.ecoReactions = {};
@@ -195,6 +199,7 @@ const getLocalProfile = (): UserProfile => {
     discipleCompletedBooks: [],
     visitedBooks: [],
     readChapters: {},
+    xpChapters: {},
     notesCount: 0,
     favoritesCount: 0,
     dailyVerseCount: 0,
@@ -353,6 +358,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             discipleCompletedBooks: profileData.disciple_completed_books || [],
             visitedBooks: profileData.visited_books || [],
             readChapters: profileData.read_chapters || {},
+            xpChapters: profileData.xp_chapters || prev.xpChapters || {},
             pointsBreakdown: profileData.points_breakdown || prev.pointsBreakdown,
             weeklyActivity: profileData.weekly_activity || [],
             avatarId: profileData.avatar_id || prev.avatarId,
@@ -448,6 +454,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           disciple_completed_books: profile.discipleCompletedBooks,
           visited_books: profile.visitedBooks,
           read_chapters: profile.readChapters,
+          xp_chapters: profile.xpChapters,
           notes_count: profile.notesCount,
           favorites_count: profile.favoritesCount,
           daily_verse_count: profile.dailyVerseCount,
@@ -838,49 +845,68 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const markChapterRead = (bookId: string, chapterNum: number, _totalChapters: number) => {
     setProfile(prev => {
-      const currentRead = prev.readChapters?.[bookId] || [];
+      const currentRead   = prev.readChapters?.[bookId]  || [];
+      const alreadyEarned = (prev.xpChapters?.[bookId]   || []).includes(chapterNum);
       const isAlreadyRead = currentRead.includes(chapterNum);
+
+      // Toggle visual do estado lido/não-lido
       const updatedRead = isAlreadyRead
         ? currentRead.filter(c => c !== chapterNum)
         : [...currentRead, chapterNum];
 
-      // Ganha XP ao marcar como lido (não ao desmarcar)
-      if (!isAlreadyRead) {
+      // XP só na PRIMEIRA vez que o capítulo é marcado — nunca ao remarcar
+      if (!isAlreadyRead && !alreadyEarned) {
         const xp = applyMultiplier(5, prev.streak);
-        // Usa setTimeout para não colidir com o setState atual
+        const updatedXpChapters = [...(prev.xpChapters?.[bookId] || []), chapterNum];
         setTimeout(() => {
           addPoints(xp, `Leu capítulo ${chapterNum} de ${bookId}`, 'freeExploration');
           showFloatingPoints(xp, 'free');
+        }, 0);
+        return {
+          ...prev,
+          readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead },
+          xpChapters:   { ...(prev.xpChapters   || {}), [bookId]: updatedXpChapters },
+        };
+      }
+
+      return {
+        ...prev,
+        readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead },
+      };
+    });
+  };
+
+  // Marca todos os capítulos de uma vez, gerando apenas 1 notificação de XP.
+  // CORREÇÃO BUG 4: usar N × applyMultiplier(5) para consistência com marcar individualmente.
+  // Usa xpChapters como guard — ignora capítulos que já geraram XP, mesmo que estejam desmarcados.
+  const markAllChaptersRead = (bookId: string, chapterNums: number[]) => {
+    setProfile(prev => {
+      const currentRead   = prev.readChapters?.[bookId] || [];
+      const alreadyEarned = prev.xpChapters?.[bookId]   || [];
+
+      // Capítulos não lidos visualmente
+      const newReadChapters = chapterNums.filter(n => !currentRead.includes(n));
+      // Capítulos que ainda não geraram XP (subconjunto — pode ser menor)
+      const newXpChapters   = chapterNums.filter(n => !alreadyEarned.includes(n));
+
+      if (newReadChapters.length === 0 && newXpChapters.length === 0) return prev;
+
+      const updatedRead       = [...currentRead, ...newReadChapters.filter(n => !currentRead.includes(n))];
+      const updatedXpChapters = [...alreadyEarned, ...newXpChapters];
+
+      if (newXpChapters.length > 0) {
+        const xpPerChapter = applyMultiplier(5, prev.streak);
+        const totalXp      = xpPerChapter * newXpChapters.length;
+        setTimeout(() => {
+          addPoints(totalXp, `Marcou ${newXpChapters.length} capítulos de ${bookId}`, 'freeExploration');
+          showFloatingPoints(totalXp, 'free');
         }, 0);
       }
 
       return {
         ...prev,
-        readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead }
-      };
-    });
-  };
-
-  // Marca todos os capítulos de uma vez, gerando apenas 1 notificação de XP
-  // CORREÇÃO BUG 4: usar newChapters.length * applyMultiplier(5, streak) para garantir
-  // que o resultado seja idêntico a marcar cada capítulo individualmente.
-  // applyMultiplier(5*N, streak) ≠ N * applyMultiplier(5, streak) quando há arredondamento.
-  const markAllChaptersRead = (bookId: string, chapterNums: number[]) => {
-    setProfile(prev => {
-      const currentRead = prev.readChapters?.[bookId] || [];
-      const newChapters = chapterNums.filter(n => !currentRead.includes(n));
-      if (newChapters.length === 0) return prev;
-      const updatedRead = [...currentRead, ...newChapters];
-      // XP por capítulo individual × quantidade — consistente com markChapterRead
-      const xpPerChapter = applyMultiplier(5, prev.streak);
-      const totalXp = xpPerChapter * newChapters.length;
-      setTimeout(() => {
-        addPoints(totalXp, `Marcou ${newChapters.length} capítulos de ${bookId}`, 'freeExploration');
-        showFloatingPoints(totalXp, 'free');
-      }, 0);
-      return {
-        ...prev,
-        readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead }
+        readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead },
+        xpChapters:   { ...(prev.xpChapters   || {}), [bookId]: updatedXpChapters },
       };
     });
   };

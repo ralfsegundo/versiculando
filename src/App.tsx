@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Home from './components/Home';
 import BookDetail from './components/BookDetail';
 import Profile from './components/Profile';
@@ -75,6 +75,16 @@ export default function App() {
     window.history.pushState(state, '');
   }, []);
 
+  // Refs para o handler do popstate ter acesso ao estado atual sem re-registrar
+  const selectedBookIdRef = useRef<string | null>(null);
+  const selectedTrailRef = useRef<Trail | null>(null);
+  const currentTabRef = useRef<'home' | 'journey' | 'trails' | 'profile' | 'community'>('home');
+
+  // Mantém os refs sincronizados com o state
+  useEffect(() => { selectedBookIdRef.current = selectedBookId; }, [selectedBookId]);
+  useEffect(() => { selectedTrailRef.current = selectedTrail; }, [selectedTrail]);
+  useEffect(() => { currentTabRef.current = currentTab; }, [currentTab]);
+
   // Wrappers de navegação que registram no histórico do browser
   const navigateToBook = useCallback((bookId: string) => {
     setSelectedBookId(bookId);
@@ -96,41 +106,37 @@ export default function App() {
     }
   }, [pushNavState]);
 
-  // Intercepta botão voltar do sistema
+  // Intercepta botão voltar do sistema — registrado UMA vez via refs
   useEffect(() => {
-    // Estado inicial: garante que há sempre uma entrada base no histórico
+    // Garante entrada base no histórico para o primeiro popstate ter algo para interceptar
     window.history.replaceState({ type: 'root' }, '');
+    // Empurra uma segunda entrada — assim o primeiro "voltar" dispara popstate
+    // em vez de sair do app imediatamente
+    window.history.pushState({ type: 'guard' }, '');
 
-    const handlePopState = (e: PopStateEvent) => {
-      const state = e.state;
-
-      if (selectedBookId) {
-        // Estava num livro → volta para a aba anterior
+    const handlePopState = () => {
+      if (selectedBookIdRef.current) {
         setSelectedBookId(null);
+        window.history.pushState({ type: 'guard' }, '');
         return;
       }
-      if (selectedTrail) {
-        // Estava numa trilha → volta para trails
+      if (selectedTrailRef.current) {
         setSelectedTrail(null);
+        window.history.pushState({ type: 'guard' }, '');
         return;
       }
-      if (currentTab !== 'home') {
-        // Estava numa aba secundária → volta para home
+      if (currentTabRef.current !== 'home') {
         setCurrentTab('home');
-        // Garante que o histórico tem a entrada root para não sair no próximo voltar
-        window.history.replaceState({ type: 'root' }, '');
+        window.history.pushState({ type: 'guard' }, '');
         return;
       }
-
-      // Já está na home — re-empurra estado para não sair do app
-      if (!state || state.type === 'root') {
-        window.history.pushState({ type: 'root' }, '');
-      }
+      // Já está na home — re-empurra para nunca sair do app
+      window.history.pushState({ type: 'guard' }, '');
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [selectedBookId, selectedTrail, currentTab]);
+  }, []); // [] — registrado UMA vez, usa refs para ler estado atual
   // ─────────────────────────────────────────────────────────────
   const [onboardingDone, setOnboardingDone] = useState(
     () => localStorage.getItem('onboarding_done') === 'true'

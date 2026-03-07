@@ -253,6 +253,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   // Controla se o perfil foi carregado do Supabase — evita salvar de volta logo após carregar
   const isLoadingFromSupabase = useRef(false);
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasCheckedStreak = useRef(false); // garante checkStreak uma única vez por sessão
 
   const WEEKLY_CHALLENGES: Omit<WeeklyChallenge, 'id' | 'progress' | 'deadline' | 'completed'>[] = [
     { title: 'Conclua 3 livros esta semana', description: 'Complete a leitura de qualquer 3 livros.', target: 3, rewardPoints: 300 },
@@ -385,16 +386,25 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
             const mergedPoints = Math.max(prev.points, profileData.points ?? 0);
 
+            // ATENÇÃO: NÃO usar ...profileData aqui — ele injeta campos snake_case
+            // do banco (last_active_date, completed_books, etc.) diretamente no
+            // profile, corrompendo os campos camelCase já mapeados abaixo.
+            // Cada campo deve ser mapeado explicitamente.
+            //
+            // lastActiveDate: SEMPRE mantém o local (prev) — nunca puxar do Supabase.
+            // O Supabase pode estar atrasado (debounce), e se checkStreak() rodar
+            // logo depois com uma data de ontem, o streak incrementa a cada reload.
             return {
               ...prev,
-              ...profileData,
               // Metadados de identidade — Supabase é canônico
-              email:         profileData.email        || authEmail,
-              avatarId:      profileData.avatar_id    || prev.avatarId,
-              avatarUrl:     profileData.avatar_url   || prev.avatarUrl,
-              lastActiveDate: profileData.last_active_date || prev.lastActiveDate,
-              joinDate:      profileData.join_date    || prev.joinDate,
+              name:          profileData.name          || prev.name,
+              email:         profileData.email         || authEmail,
+              avatarId:      profileData.avatar_id     || prev.avatarId,
+              avatarUrl:     profileData.avatar_url    || prev.avatarUrl,
+              joinDate:      profileData.join_date     || prev.joinDate,
               weeklyActivity: profileData.weekly_activity || prev.weeklyActivity || [],
+              // lastActiveDate: local sempre vence — evita checkStreak() falso no reload
+              lastActiveDate: prev.lastActiveDate,
               // Campos monotônicos — local vence se maior (nunca perder progresso)
               points:          mergedPoints,
               title:           getTitleByPoints(mergedPoints),
@@ -405,6 +415,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               streak:          Math.max(prev.streak,          profileData.streak            ?? 0),
               longestStreak:   Math.max(prev.longestStreak || 0, profileData.longest_streak ?? 0),
               streakFreezes:   profileData.streak_freezes ?? prev.streakFreezes ?? 1,
+              lastFreezeEarnedWeek: profileData.last_freeze_earned_week || prev.lastFreezeEarnedWeek,
+              lastDailyMissionDate: profileData.last_daily_mission_date || prev.lastDailyMissionDate,
               // Arrays de progresso — união (local pode ter itens ainda não sincronizados)
               completedBooks:         mergeArrays(prev.completedBooks,          profileData.completed_books          || []),
               discipleCompletedBooks: mergeArrays(prev.discipleCompletedBooks,  profileData.disciple_completed_books || []),
@@ -1008,8 +1020,10 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  // Check streak on mount
+  // Check streak on mount — executado apenas uma vez por sessão
   useEffect(() => {
+    if (hasCheckedStreak.current) return;
+    hasCheckedStreak.current = true;
     checkStreak();
   }, []);
 

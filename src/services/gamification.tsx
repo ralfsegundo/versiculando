@@ -87,6 +87,9 @@ export interface UserProfile {
   leagueId?: string;
   // Eco reactions
   ecoReactions?: Record<string, string>; // verseRef -> emoji usado
+  // Favoritos de versículos — sincronizados com Supabase
+  bibleFavorites?: Record<string, boolean>;     // verseRef -> true (favoritos ativos)
+  bibleFavoritesEver?: Record<string, boolean>; // verseRef -> true (já foi favoritado alguma vez — one-way para badge)
 }
 
 export interface WeeklyChallenge {
@@ -176,6 +179,8 @@ const getLocalProfile = (): UserProfile => {
     if (parsed.streakFreezes === undefined) parsed.streakFreezes = 1; // começa com 1 graça
     if (parsed.dailyMissionStreak === undefined) parsed.dailyMissionStreak = 0;
     if (!parsed.ecoReactions) parsed.ecoReactions = {};
+    if (!parsed.bibleFavorites) parsed.bibleFavorites = {};
+    if (!parsed.bibleFavoritesEver) parsed.bibleFavoritesEver = {};
     if (parsed.longestStreak === undefined) parsed.longestStreak = parsed.streak || 0;
     return parsed;
   }
@@ -208,6 +213,8 @@ const getLocalProfile = (): UserProfile => {
     streakFreezes: 1,
     dailyMissionStreak: 0,
     ecoReactions: {},
+    bibleFavorites: {},
+    bibleFavoritesEver: {},
   };
 };
 
@@ -231,6 +238,7 @@ interface GamificationContextType {
   markAllChaptersRead: (bookId: string, chapterNums: number[]) => void;
   addNote: () => void;
   addFavorite: () => void;
+  updateFavorites: (favorites: Record<string, boolean>, favoritesEver: Record<string, boolean>) => void;
   accessDailyVerse: () => void;
   completePlan: () => void;
   checkStreak: () => void;
@@ -491,6 +499,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               },
               // Eco reactions — merge: local sobrescreve Supabase (mais recente)
               ecoReactions: { ...(profileData.eco_reactions || {}), ...(prev.ecoReactions || {}) },
+              // Favoritos — merge: união (nunca perder favoritos de nenhum dispositivo)
+              bibleFavorites:     { ...(profileData.bible_favorites     || {}), ...(prev.bibleFavorites     || {}) },
+              bibleFavoritesEver: { ...(profileData.bible_favorites_ever || {}), ...(prev.bibleFavoritesEver || {}) },
             };
           });
         } else {
@@ -580,6 +591,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           daily_verse_count: profile.dailyVerseCount,
           completed_plans: profile.completedPlans,
           eco_reactions: profile.ecoReactions || {},
+          bible_favorites: profile.bibleFavorites || {},
+          bible_favorites_ever: profile.bibleFavoritesEver || {},
           last_daily_mission_date: profile.lastDailyMissionDate || null,
           last_freeze_earned_week: profile.lastFreezeEarnedWeek || null,
           daily_mission_streak: profile.dailyMissionStreak || 0,
@@ -591,6 +604,11 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         setIsSyncing(false);
       }
     }, 2000);
+
+    // Limpa o debounce ao desmontar o componente
+    return () => {
+      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    };
   }, [profile, userId]);
 
   const triggerConfetti = () => {
@@ -1057,6 +1075,18 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     // Favoritar não gera XP — alimenta contador para badges (Coração Aberto)
   };
 
+  // Atualiza favoritos no perfil (sincroniza com Supabase via debounce normal)
+  const updateFavorites = (
+    favorites: Record<string, boolean>,
+    favoritesEver: Record<string, boolean>
+  ) => {
+    setProfile(prev => ({
+      ...prev,
+      bibleFavorites: favorites,
+      bibleFavoritesEver: favoritesEver,
+    }));
+  };
+
   const accessDailyVerse = () => {
     setProfile(prev => {
       const newProfile = { ...prev, dailyVerseCount: prev.dailyVerseCount + 1 };
@@ -1097,6 +1127,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       markAllChaptersRead,
       addNote,
       addFavorite,
+      updateFavorites,
       accessDailyVerse,
       completePlan,
       checkStreak,

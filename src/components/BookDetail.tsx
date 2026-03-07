@@ -1036,8 +1036,24 @@ function VersesTab({ verses, bookName, colorClass }: { verses: BookData['mainVer
 
   const handleFavorite = (ref: string) => {
     const updated = { ...favorites };
-    if (updated[ref]) delete updated[ref];
-    else { updated[ref] = true; addFavorite(); }
+    if (updated[ref]) {
+      // Desfavoritar — remove mas NÃO decrementa contador (one-way, como XP)
+      delete updated[ref];
+    } else {
+      // Favoritar pela primeira vez nesta sessão
+      // addFavorite() incrementa favoritesCount para o badge "Coração Aberto"
+      // Mas se já estava salvo no localStorage antes (favorito de outra sessão),
+      // não chama de novo — evita inflar favoritesCount ao refavoritar
+      const wasEverFavorited = JSON.parse(
+        localStorage.getItem(`${userId}_bible_favorites_ever`) || '{}'
+      );
+      if (!wasEverFavorited[ref]) {
+        addFavorite();
+        const updatedEver = { ...wasEverFavorited, [ref]: true };
+        localStorage.setItem(`${userId}_bible_favorites_ever`, JSON.stringify(updatedEver));
+      }
+      updated[ref] = true;
+    }
     setFavorites(updated);
     localStorage.setItem(`${userId}_bible_favorites`, JSON.stringify(updated));
   };

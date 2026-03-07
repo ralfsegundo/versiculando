@@ -169,23 +169,23 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const flashChallenge = FLASH_CHALLENGES[WEEK_OF_YEAR % FLASH_CHALLENGES.length];
   const flashDayOfWeek = DAY_OF_YEAR % 7;
   const showFlashChallenge = flashDayOfWeek < 2;
-  const flashDismissed = localStorage.getItem(`flash_dismissed_${WEEK_OF_YEAR}`) === 'true';
+  const flashDismissed = localStorage.getItem(`${userId}_flash_dismissed_${WEEK_OF_YEAR}`) === 'true';
   // Bug 2 fix: flashCompleted como state para re-render correto
-  const [flashCompleted, setFlashCompleted] = useState(() => localStorage.getItem(`flash_done_${WEEK_OF_YEAR}`) === 'true');
+  const [flashCompleted, setFlashCompleted] = useState(() => localStorage.getItem(`${userId}_flash_done_${WEEK_OF_YEAR}`) === 'true');
   const [flashVisible, setFlashVisible] = useState(showFlashChallenge && !flashDismissed && !flashCompleted);
 
   // Santo do dia — expandido ou não
   const [saintExpanded, setSaintExpanded] = useState(false);
   // Bug 3 fix: saintSeen como state para re-render correto após clique
-  const [saintSeen, setSaintSeen] = useState(() => localStorage.getItem(`saint_seen_${TODAY_STR}`) === 'true');
+  const [saintSeen, setSaintSeen] = useState(() => localStorage.getItem(`${userId}_saint_seen_${TODAY_STR}`) === 'true');
   // Bug 4 fix: lectioDone como state para evitar XP infinito e re-render correto
-  const [lectioDone, setLectioDone] = useState(() => localStorage.getItem(`lectio_done_${TODAY_STR}`) === 'true');
+  const [lectioDone, setLectioDone] = useState(() => localStorage.getItem(`${userId}_lectio_done_${TODAY_STR}`) === 'true');
 
   // Streak freeze state
   const [showFreezeUsed, setShowFreezeUsed] = useState(false);
   const [dailyVerseRead, setDailyVerseRead] = useState<boolean>(() => {
     // Only "read" if it was already read TODAY
-    const lastRead = localStorage.getItem('daily_verse_last_read');
+    const lastRead = localStorage.getItem(`${userId}_daily_verse_last_read`);
     if (!lastRead) return false;
     const today = new Date().toDateString();
     return new Date(lastRead).toDateString() === today;
@@ -198,7 +198,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const handleReadDailyVerse = () => {
     if (!dailyVerseRead) {
       accessDailyVerse(); // internamente chama addPoints com multiplicador de streak
-      localStorage.setItem('daily_verse_last_read', new Date().toISOString());
+      localStorage.setItem(`${userId}_daily_verse_last_read`, new Date().toISOString());
       setDailyVerseRead(true);
     }
   };
@@ -578,7 +578,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               className="max-w-xl mx-auto mb-4">
               <div className="bg-gradient-to-r from-violet-600 to-purple-700 rounded-2xl p-4 shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-                      <button onClick={() => { localStorage.setItem(`flash_dismissed_${WEEK_OF_YEAR}`, 'true'); setFlashVisible(false); }}
+                      <button onClick={() => { localStorage.setItem(`${userId}_flash_dismissed_${WEEK_OF_YEAR}`, 'true'); setFlashVisible(false); }}
                         className="absolute top-3 right-3 text-white/50 hover:text-white transition-colors z-10">
                   <X size={16} />
                 </button>
@@ -597,7 +597,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         </button>
                       )}
                       <button onClick={() => {
-                        localStorage.setItem(`flash_done_${WEEK_OF_YEAR}`, 'true');
+                        localStorage.setItem(`${userId}_flash_done_${WEEK_OF_YEAR}`, 'true');
                         setFlashCompleted(true);
                         completeFlashChallenge();
                         setFlashVisible(false);
@@ -741,7 +741,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                           </button>
                           <button onClick={() => {
                             if (lectioDone) return; // guard duplo
-                            localStorage.setItem(`lectio_done_${TODAY_STR}`, 'true');
+                            localStorage.setItem(`${userId}_lectio_done_${TODAY_STR}`, 'true');
                             setLectioDone(true);
                             addPoints(lectioXP, 'Lectio Divina concluída', 'freeExploration');
                             showFloatingPoints(lectioXP, 'bonus_step');
@@ -766,7 +766,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               <button onClick={() => {
                 setSaintExpanded(v => !v);
                 if (!saintSeen) {
-                  localStorage.setItem(`saint_seen_${TODAY_STR}`, 'true');
+                  localStorage.setItem(`${userId}_saint_seen_${TODAY_STR}`, 'true');
                   setSaintSeen(true);
                   recordSaintEncounter(todaySaint.key);
                 }

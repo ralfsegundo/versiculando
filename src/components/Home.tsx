@@ -276,7 +276,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
         onTouchEnd={handleTooltipClose}
       >
         <div className="flex items-center gap-2">
-          <h3 className="text-lg font-bold text-stone-800 uppercase tracking-wider">{groupName}</h3>
+          <h3 className="text-base font-bold text-stone-800 uppercase tracking-wider">{groupName}</h3>
           <Info size={14} className="text-stone-400 cursor-help" />
         </div>
         
@@ -387,7 +387,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                     <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider mb-1 ${state === 'not_visited' ? 'text-stone-400' : 'opacity-70'} hidden sm:block`}>
                       {book.group}
                     </span>
-                    <span className={`font-serif text-sm font-bold leading-tight ${state === 'not_visited' ? 'text-stone-600' : ''}`}>
+                    <span className={`font-serif text-[0.8125rem] font-bold leading-tight ${state === 'not_visited' ? 'text-stone-600' : ''}`}>
                       {book.name}
                     </span>
                     <span className={`text-[10px] mt-1.5 font-medium ${state === 'not_visited' ? 'text-stone-400' : 'opacity-75'}`}>
@@ -413,7 +413,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               <Library size={16} />
             </div>
             <div>
-              <h1 className="text-base md:text-2xl font-serif font-bold tracking-tight text-stone-900 leading-none">
+              <h1 className="text-lg md:text-2xl font-serif font-bold tracking-tight text-stone-900 leading-none">
                 {profile.name ? `Olá, ${profile.name.split(' ')[0]}!` : 'Versiculando'}
               </h1>
               {profile.title && (
@@ -518,7 +518,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                   🔥
                 </motion.div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-black text-base leading-tight">
+                  <p className="text-white font-black text-lg leading-tight">
                     {profile.streak} {profile.streak === 1 ? 'dia' : 'dias'} seguidos!
                   </p>
                   {/* Mini progress para próximo marco */}
@@ -592,7 +592,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                     <div className="flex items-center gap-2">
                       {flashChallenge.bookId && (
                         <button onClick={() => onSelectBook(flashChallenge.bookId!)}
-                          className="bg-white text-purple-700 font-bold text-xs px-4 py-1.5 rounded-full active:scale-95 transition-all">
+                          className="bg-white text-purple-700 font-bold text-sm px-5 py-2.5 rounded-full active:scale-95 transition-all min-h-[44px]">
                           Ir para o livro →
                         </button>
                       )}
@@ -601,7 +601,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         setFlashCompleted(true);
                         completeFlashChallenge();
                         setFlashVisible(false);
-                      }} className="bg-yellow-400 text-stone-900 font-bold text-xs px-4 py-1.5 rounded-full active:scale-95 transition-all">
+                      }} className="bg-yellow-400 text-stone-900 font-bold text-sm px-5 py-2.5 rounded-full active:scale-95 transition-all min-h-[44px]">
                         Concluí! +{applyMultiplier(300, profile.streak)} XP
                       </button>
                     </div>
@@ -649,7 +649,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         </span>
                       )}
                     </div>
-                    <p className={`text-sm font-semibold leading-snug ${
+                    <p className={`text-[0.9375rem] font-semibold leading-snug ${
                       missionDone ? 'text-emerald-700 line-through opacity-60' : 'text-stone-800'
                     }`}>
                       {todayMission.text}
@@ -659,14 +659,14 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         {todayMission.bookId && (
                           <button
                             onClick={() => onSelectBook(todayMission.bookId!)}
-                            className="text-xs text-amber-700 font-bold bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-full active:scale-95 transition-all flex items-center gap-1"
+                            className="text-sm text-amber-700 font-bold bg-amber-50 border border-amber-200 px-4 py-2.5 rounded-full active:scale-95 transition-all flex items-center gap-1 min-h-[44px]"
                           >
                             Abrir livro <ArrowRight size={11} />
                           </button>
                         )}
                         <button
                           onClick={() => completeDailyMission(TODAY_STR)}
-                          className="text-xs text-white font-bold bg-stone-800 hover:bg-stone-700 px-3 py-1.5 rounded-full active:scale-95 transition-all"
+                          className="text-sm text-white font-bold bg-stone-800 hover:bg-stone-700 px-4 py-2.5 rounded-full active:scale-95 transition-all min-h-[44px]"
                         >
                           Concluí ✓
                         </button>
@@ -724,19 +724,19 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         </span>
                       )}
                     </div>
-                    <h4 className={`font-serif font-bold text-base leading-tight mb-1 ${lectioDone ? 'text-indigo-800 line-through opacity-60' : 'text-stone-900'}`}>
+                    <h4 className={`font-serif font-bold text-lg leading-tight mb-1 ${lectioDone ? 'text-indigo-800 line-through opacity-60' : 'text-stone-900'}`}>
                       {lectio.title}
                     </h4>
                     {!lectioDone && (
                       <>
-                        <p className="text-stone-500 text-xs italic leading-relaxed mb-2">"{lectio.text}"</p>
+                        <p className="text-stone-500 text-sm italic leading-relaxed mb-2">"{lectio.text}"</p>
                         <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 mb-3">
                           <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider mb-0.5">Meditação</p>
-                          <p className="text-xs text-stone-700 leading-snug">{lectio.reflection}</p>
+                          <p className="text-sm text-stone-700 leading-snug">{lectio.reflection}</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <button onClick={() => onSelectBook(lectio.bookId)}
-                            className="flex-1 bg-stone-900 text-white font-bold text-xs py-2 rounded-xl active:scale-95 transition-all">
+                            className="flex-1 bg-stone-900 text-white font-bold text-sm py-3 rounded-xl active:scale-95 transition-all min-h-[44px]">
                             Ler o trecho →
                           </button>
                           <button onClick={() => {
@@ -746,7 +746,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                             addPoints(lectioXP, 'freeExploration');
                             showFloatingPoints(lectioXP, 'challenge');
                           }}
-                            className="bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs py-2 px-3 rounded-xl active:scale-95 transition-all">
+                            className="bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-sm py-3 px-4 rounded-xl active:scale-95 transition-all min-h-[44px]">
                             Meditei +{lectioXP} XP
                           </button>
                         </div>
@@ -779,7 +779,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Santo do Dia</p>
-                  <p className="font-serif font-bold text-stone-900 text-sm leading-tight">{todaySaint.name}</p>
+                  <p className="font-serif font-bold text-stone-900 text-base leading-tight">{todaySaint.name}</p>
                   <p className="text-[10px] text-stone-400 font-medium">Festa: {todaySaint.date}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -801,7 +801,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden">
                     <div className="bg-rose-50 border-2 border-t-0 border-rose-200 rounded-b-2xl px-4 pb-4 pt-3">
-                      <blockquote className="border-l-4 border-rose-400 pl-3 italic text-stone-700 text-sm leading-relaxed mb-2">
+                      <blockquote className="border-l-4 border-rose-400 pl-3 italic text-stone-700 text-[0.9375rem] leading-relaxed mb-2">
                         "{todaySaint.phrase}"
                       </blockquote>
                       {!saintSeen ? (
@@ -832,7 +832,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               <p className="text-stone-500 text-sm mb-4">Recomendamos começar pela primeira carta de São João — curta, profunda e perfeita para iniciantes.</p>
               <button
                 onClick={() => onSelectBook('1jn')}
-                className="bg-amber-500 hover:bg-amber-400 text-white font-bold px-6 py-3 rounded-xl shadow-sm active:scale-95 transition-all flex items-center gap-2 mx-auto"
+                className="bg-amber-500 hover:bg-amber-400 text-white font-bold px-6 py-4 rounded-xl shadow-sm active:scale-95 transition-all flex items-center gap-2 mx-auto text-base min-h-[52px]"
               >
                 Começar por 1 João <ArrowRight size={16} />
               </button>
@@ -880,7 +880,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                 </div>
                 <div className="flex-1 min-w-0 relative z-10">
                   <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-0.5">{continueLabel}</p>
-                  <h4 className="font-serif font-bold text-stone-900 text-lg leading-tight group-hover:text-amber-700 transition-colors truncate">{inProgressBook.name}</h4>
+                  <h4 className="font-serif font-bold text-stone-900 text-xl leading-tight group-hover:text-amber-700 transition-colors">{inProgressBook.name}</h4>
                   <p className="text-xs text-stone-400 mt-0.5">{inProgressBook.chapters} capítulos</p>
                 </div>
                 <div className="relative z-10 shrink-0">
@@ -912,7 +912,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-amber-400 text-[9px] font-black uppercase tracking-widest mb-1">Versículo do Dia</p>
-                    <p className="text-stone-100 text-sm font-serif italic leading-snug">
+                    <p className="text-stone-100 text-[0.9375rem] font-serif italic leading-snug">
                       "{todayVerse.text}"
                     </p>
                     <p className="text-amber-400 text-[11px] font-bold mt-1">{todayVerse.ref}</p>
@@ -970,7 +970,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                 </div>
                 <input
                   type="text"
-                  className="block w-full pl-10 pr-4 py-3 border border-stone-200 rounded-xl leading-5 bg-white/90 backdrop-blur-md placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:border-stone-400 text-sm transition-all"
+                  className="block w-full pl-10 pr-4 py-3.5 border border-stone-200 rounded-xl leading-5 bg-white/90 backdrop-blur-md placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:border-stone-400 text-base transition-all"
                   placeholder="Buscar livro ou categoria..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}

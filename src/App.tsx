@@ -119,6 +119,10 @@ export default function App() {
           // Reseta o prompt de notificação para o novo usuário ver
           localStorage.removeItem('notif_prompt_done_v3');
           localStorage.removeItem('last_active_day_notif');
+          // Limpa chaves antigas de Community sem userId (versões anteriores)
+          localStorage.removeItem('feed_last_seen_id');
+          localStorage.removeItem('groups_last_seen_ts');
+          localStorage.removeItem('prayers_last_seen_ts');
           setOnboardingDone(false);
           setWelcomeMessage(null);
           setShowAdmin(false);

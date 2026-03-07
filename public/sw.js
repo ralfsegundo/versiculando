@@ -6,7 +6,10 @@
 //  2. Agendamento e disparo de notificações de streak
 // ============================================================
 
-const CACHE_NAME = 'versiculando-v2';
+// ⚠️ Incrementar este número força TODOS os dispositivos a
+// descartarem o cache antigo e instalarem este SW imediatamente
+const CACHE_VERSION = 4;
+const CACHE_NAME = `versiculando-v${CACHE_VERSION}`;
 const ASSETS_TO_CACHE = ['/', '/index.html', '/manifest.json'];
 
 // ── Instalação: pré-cacheia assets essenciais ─────────────────
@@ -14,25 +17,54 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS_TO_CACHE))
   );
+  // Força este SW a assumir controle imediatamente
+  // sem esperar o usuário fechar e reabrir o app
   self.skipWaiting();
 });
 
-// ── Ativação: remove caches antigos ──────────────────────────
+// ── Ativação: remove TODOS os caches antigos e assume controle ──
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => {
+        console.log('[SW] Removendo cache antigo:', k);
+        return caches.delete(k);
+      }))
+    ).then(() => {
+      self.clients.claim();
+      // Força reload em todas as abas abertas para carregar o JS novo
+      self.clients.matchAll({ type: 'window' }).then(clients => {
+        clients.forEach(client => client.navigate(client.url));
+      });
+    })
   );
-  self.clients.claim();
 });
 
-// ── Fetch: serve do cache quando offline ─────────────────────
+// ── Fetch: network-first para JS/CSS (sempre código novo), cache-first para imagens ──
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
-  );
+
+  const url = new URL(event.request.url);
+  const isAsset = /\.(js|jsx|ts|tsx|css)(\?.*)?$/.test(url.pathname);
+
+  if (isAsset) {
+    // Network-first: sempre tenta buscar versão nova na rede
+    // Cache só usado se offline
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+  } else {
+    // Cache-first para imagens, fontes e outros assets estáticos
+    event.respondWith(
+      caches.match(event.request).then(cached => cached || fetch(event.request))
+    );
+  }
 });
 
 // ── Notificações de streak ────────────────────────────────────

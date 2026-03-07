@@ -661,7 +661,7 @@ function addDailyXpEarned(gameId: Exclude<GameId, 'menu'>, amount: number): void
 }
 
 export default function BibleGames() {
-  const { addPoints, showFloatingPoints, profile } = useGamification();
+  const { addPoints, showFloatingPoints, profile, triggerNotificationPrompt } = useGamification();
   const [activeGame, setActiveGame] = useState<GameId>('menu');
   const [sessionScore, setSessionScore] = useState(0);
   const [sessionCorrect, setSessionCorrect] = useState(0);
@@ -694,6 +694,8 @@ export default function BibleGames() {
       addPoints(xp, 'Jogo Bíblico', 'bonus');
       showFloatingPoints(xp, 'bonus_step');
       if (hitsCap) setCapReached(true);
+      // Primeiro acerto na sessão — momento de satisfação, ideal para o prompt
+      triggerNotificationPrompt();
     }
   }, [activeGame, addPoints, showFloatingPoints, profile.streak]);
 

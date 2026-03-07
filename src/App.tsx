@@ -103,12 +103,13 @@ export default function App() {
   }, [pushNavState]);
 
   useEffect(() => {
-    // Empurra barreira inicial para o popstate ter algo para interceptar
-    window.history.pushState({ type: 'guard' }, '');
-    window.history.pushState({ type: 'guard' }, '');
+    // Remove o listener básico do index.html — React assume o controle agora
+    if (typeof (window as any).__removeBackGuard === 'function') {
+      (window as any).__removeBackGuard();
+    }
+    // O index.html já empurrou 2 entradas guard — não precisa empurrar de novo
 
     const handlePopState = () => {
-      // Navega para trás dentro do app
       if (selectedBookIdRef.current) {
         setSelectedBookId(null);
         window.history.pushState({ type: 'guard' }, '');

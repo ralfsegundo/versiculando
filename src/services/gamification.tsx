@@ -267,7 +267,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const fireNotificationTrigger = useCallback(() => {
     if (notifAlreadyTriggered.current) return;
-    if (localStorage.getItem('notif_prompt_done_v2')) return;
+    if (localStorage.getItem('notif_prompt_done_v3')) return;
     notifAlreadyTriggered.current = true;
     setNotificationTrigger(true);
   }, []);

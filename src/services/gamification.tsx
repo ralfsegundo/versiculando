@@ -263,6 +263,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const [badges, setBadges] = useState<Badge[]>(getLocalBadges());
   const [floatingPoints, setFloatingPoints] = useState<FloatingPoint[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [supabaseReady, setSupabaseReady] = useState(false); // true após merge do Supabase (ou timeout)
   const [userId, setUserId] = useState<string | null>(null);
   // Controla se o perfil foi carregado do Supabase — evita salvar de volta logo após carregar
   const isLoadingFromSupabase = useRef(false);
@@ -378,7 +379,10 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>;
 
         const session = sessionResult?.data?.session;
-        if (!session?.user) return;
+        if (!session?.user) {
+          setSupabaseReady(true); // sem sessão — libera checkStreak com dados locais
+          return;
+        }
 
         setUserId(session.user.id);
         const authEmail = session.user.email || '';
@@ -527,10 +531,14 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         }
 
         // Aguarda o React processar os setState antes de liberar o save
-        setTimeout(() => { isLoadingFromSupabase.current = false; }, 500);
+        setTimeout(() => {
+          isLoadingFromSupabase.current = false;
+          setSupabaseReady(true);
+        }, 500);
       } catch (e) {
         console.warn('[gamification] loadSupabaseData error:', e);
         isLoadingFromSupabase.current = false;
+        setSupabaseReady(true); // mesmo em erro, libera o checkStreak com dados locais
       }
     };
     
@@ -1107,12 +1115,17 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  // Check streak on mount — executado apenas uma vez por sessão
+  // Check streak on mount — aguarda o Supabase carregar para ter lastActiveDate correto
   useEffect(() => {
-    if (hasCheckedStreak.current) return;
-    hasCheckedStreak.current = true;
-    checkStreak();
-  }, []);
+    const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    // Sem Supabase: roda imediatamente com dados locais
+    // Com Supabase: aguarda supabaseReady para ter lastActiveDate do banco
+    if (!hasSupabase || supabaseReady) {
+      if (hasCheckedStreak.current) return;
+      hasCheckedStreak.current = true;
+      checkStreak();
+    }
+  }, [supabaseReady]);
 
   return (
     <GamificationContext.Provider value={{

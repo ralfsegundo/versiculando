@@ -640,9 +640,10 @@ const DAILY_XP_CAP: Record<Exclude<GameId, 'menu'>, number> = {
 const TODAY_KEY = () => new Date().toISOString().split('T')[0]; // "2026-03-06"
 
 // Retorna quantos XP o jogador já ganhou hoje neste jogo
-function getDailyXpEarned(gameId: Exclude<GameId, 'menu'>): number {
+function getDailyXpEarned(gameId: Exclude<GameId, 'menu'>, userId: string | null): number {
   try {
-    const raw = localStorage.getItem(`games_daily_xp_${gameId}`);
+    const key = userId ? `${userId}_games_daily_xp_${gameId}` : `games_daily_xp_${gameId}`;
+    const raw = localStorage.getItem(key);
     if (!raw) return 0;
     const { date, xp } = JSON.parse(raw);
     return date === TODAY_KEY() ? xp : 0; // reseta a cada novo dia
@@ -650,10 +651,11 @@ function getDailyXpEarned(gameId: Exclude<GameId, 'menu'>): number {
 }
 
 // Registra XP ganho hoje neste jogo
-function addDailyXpEarned(gameId: Exclude<GameId, 'menu'>, amount: number): void {
+function addDailyXpEarned(gameId: Exclude<GameId, 'menu'>, amount: number, userId: string | null): void {
   try {
-    const current = getDailyXpEarned(gameId);
-    localStorage.setItem(`games_daily_xp_${gameId}`, JSON.stringify({
+    const key = userId ? `${userId}_games_daily_xp_${gameId}` : `games_daily_xp_${gameId}`;
+    const current = getDailyXpEarned(gameId, userId);
+    localStorage.setItem(key, JSON.stringify({
       date: TODAY_KEY(),
       xp: current + amount,
     }));
@@ -661,7 +663,7 @@ function addDailyXpEarned(gameId: Exclude<GameId, 'menu'>, amount: number): void
 }
 
 export default function BibleGames() {
-  const { addPoints, showFloatingPoints, profile, triggerNotificationPrompt } = useGamification();
+  const { addPoints, showFloatingPoints, profile, userId, triggerNotificationPrompt } = useGamification();
   const [activeGame, setActiveGame] = useState<GameId>('menu');
   const [sessionScore, setSessionScore] = useState(0);
   const [sessionCorrect, setSessionCorrect] = useState(0);
@@ -674,7 +676,7 @@ export default function BibleGames() {
     if (correct && activeGame !== 'menu') {
       const gameId = activeGame as Exclude<GameId, 'menu'>;
       const cap     = DAILY_XP_CAP[gameId];
-      const earned  = getDailyXpEarned(gameId);
+      const earned  = getDailyXpEarned(gameId, userId);
       const remaining = cap - earned;
 
       if (remaining <= 0) {
@@ -690,7 +692,7 @@ export default function BibleGames() {
 
       setSessionCorrect(c => c + 1);
       setSessionScore(s => s + xp);
-      addDailyXpEarned(gameId, xp);
+      addDailyXpEarned(gameId, xp, userId);
       addPoints(xp, 'Jogo Bíblico', 'bonus');
       showFloatingPoints(xp, 'bonus_step');
       if (hitsCap) setCapReached(true);
@@ -712,7 +714,7 @@ export default function BibleGames() {
     setCapReached(false);
     if (id !== 'menu') {
       // Pré-carrega estado do teto para este jogo
-      const earned = getDailyXpEarned(id as Exclude<GameId, 'menu'>);
+      const earned = getDailyXpEarned(id as Exclude<GameId, 'menu'>, userId);
       const cap    = DAILY_XP_CAP[id as Exclude<GameId, 'menu'>];
       if (earned >= cap) setCapReached(true);
     }
@@ -756,7 +758,7 @@ export default function BibleGames() {
             <div className="grid grid-cols-1 gap-3">
               {(Object.entries(GAME_META) as [Exclude<GameId, 'menu'>, typeof GAME_META[keyof typeof GAME_META]][]).map(([id, g], i) => {
                 const cap      = DAILY_XP_CAP[id];
-                const used     = getDailyXpEarned(id);
+                const used     = getDailyXpEarned(id, userId);
                 const pct      = Math.min(100, Math.round((used / cap) * 100));
                 const isCapped = pct >= 100;
                 return (
@@ -820,7 +822,7 @@ export default function BibleGames() {
                   {activeGame !== 'menu' && (() => {
                     const gid  = activeGame as Exclude<GameId, 'menu'>;
                     const cap  = DAILY_XP_CAP[gid];
-                    const used = getDailyXpEarned(gid);
+                    const used = getDailyXpEarned(gid, userId);
                     const pct  = Math.min(100, Math.round((used / cap) * 100));
                     return (
                       <div className="flex items-center gap-1.5 bg-white/10 rounded-lg px-2 py-1 border border-white/10 min-w-[90px]">

@@ -1,88 +1,109 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bell, X } from 'lucide-react';
-import { requestPermission, getPermissionStatus, notificationsSupported } from '../services/notifications';
+import { X } from 'lucide-react';
+import { requestPermission, getPermissionStatus, notificationsSupported, scheduleStreakNotification } from '../services/notifications';
 
-// Banner sutil que aparece após a primeira atividade do usuário
-// pedindo permissão para notificações de streak.
-// Só aparece uma vez — se negado ou aceito, não volta mais.
+const DISMISSED_KEY = 'notif_prompt_done';
 
-const ASKED_KEY = 'notif_banner_dismissed';
+interface NotificationPromptProps {
+  streak: number;
+  trigger: boolean;
+  onDone: () => void;
+}
 
-export default function NotificationBanner({ streak }: { streak: number }) {
-  const [visible, setVisible] = useState(false);
+export default function NotificationPrompt({ streak, trigger, onDone }: NotificationPromptProps) {
+  const [visible, setVisible]   = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
   useEffect(() => {
+    if (!trigger) return;
     if (!notificationsSupported()) return;
-    if (localStorage.getItem(ASKED_KEY)) return;
+    if (localStorage.getItem(DISMISSED_KEY)) return;
     if (getPermissionStatus() !== 'default') return;
+    const t = setTimeout(() => setVisible(true), 1_200);
+    return () => clearTimeout(t);
+  }, [trigger]);
 
-    // Só aparece se o usuário já tem pelo menos 1 dia de streak
-    // e após 30s de uso — não na primeira abertura
-    if (streak < 1) return;
-
-    const timer = setTimeout(() => setVisible(true), 30_000);
-    return () => clearTimeout(timer);
-  }, [streak]);
-
-  const handleAccept = async () => {
+  const handleAccept = useCallback(async () => {
     const permission = await requestPermission();
-    localStorage.setItem(ASKED_KEY, 'true');
-    setVisible(false);
+    localStorage.setItem(DISMISSED_KEY, 'true');
     if (permission === 'granted') {
-      // Feedback sutil de confirmação
-      console.log('[notif] Permissão concedida');
+      setAccepted(true);
+      scheduleStreakNotification(streak);
+      setTimeout(() => { setVisible(false); onDone(); }, 2000);
+    } else {
+      setVisible(false);
+      onDone();
     }
-  };
+  }, [streak, onDone]);
 
-  const handleDismiss = () => {
-    localStorage.setItem(ASKED_KEY, 'true');
+  const handleDismiss = useCallback(() => {
+    localStorage.setItem(DISMISSED_KEY, 'true');
     setVisible(false);
-  };
+    onDone();
+  }, [onDone]);
 
   return (
     <AnimatePresence>
       {visible && (
         <motion.div
-          initial={{ opacity: 0, y: 80 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 80 }}
-          transition={{ type: 'spring', damping: 20 }}
-          className="fixed bottom-24 left-4 right-4 z-50"
+          initial={{ opacity: 0, y: -20, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0,   scale: 1    }}
+          exit={{    opacity: 0, y: -16,  scale: 0.97 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+          className="fixed top-4 left-4 right-4 z-[90]"
         >
-          <div className="bg-stone-900 text-white rounded-2xl p-4 shadow-2xl flex items-start gap-3">
-            <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
-              <Bell size={18} className="text-white" />
+          {accepted ? (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-4 shadow-lg flex items-center gap-3">
+              <span className="text-2xl">✅</span>
+              <div>
+                <p className="font-bold text-emerald-800 text-sm">Tudo certo!</p>
+                <p className="text-emerald-600 text-xs mt-0.5">Vou te avisar antes da sua chama apagar.</p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-bold text-sm leading-snug">
-                Não deixe sua chama apagar 🔥
-              </p>
-              <p className="text-stone-400 text-xs mt-0.5 leading-snug">
-                Avise quando sua sequência de {streak} dia{streak > 1 ? 's' : ''} estiver em risco?
-              </p>
-              <div className="flex gap-2 mt-3">
-                <button
-                  onClick={handleAccept}
-                  className="flex-1 bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm py-2 rounded-xl transition-colors active:scale-95"
+          ) : (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl shadow-lg overflow-hidden">
+              <div className="h-1 bg-gradient-to-r from-amber-400 via-orange-400 to-red-400" />
+              <div className="px-4 py-4 flex items-start gap-3">
+                <motion.div
+                  animate={{ scale: [1, 1.15, 1] }}
+                  transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                  className="text-2xl mt-0.5 shrink-0"
                 >
-                  Sim, me avisa!
-                </button>
-                <button
-                  onClick={handleDismiss}
-                  className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-400 text-sm rounded-xl transition-colors active:scale-95"
-                >
-                  Não
+                  🔥
+                </motion.div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-stone-800 text-sm leading-snug">
+                    {streak >= 7
+                      ? `${streak} dias seguidos — não perca agora`
+                      : 'Quer proteger seu progresso?'}
+                  </p>
+                  <p className="text-stone-500 text-xs mt-1 leading-snug">
+                    {streak >= 7
+                      ? 'Posso te avisar às 21h quando sua sequência estiver em risco.'
+                      : 'Te aviso se o dia estiver passando sem você abrir o app.'}
+                  </p>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={handleAccept}
+                      className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-sm py-2.5 rounded-xl shadow-sm active:scale-95 transition-all"
+                    >
+                      Sim, me avisa 🔔
+                    </button>
+                    <button
+                      onClick={handleDismiss}
+                      className="px-4 py-2.5 bg-stone-100 text-stone-500 text-sm font-medium rounded-xl active:scale-95 transition-all"
+                    >
+                      Agora não
+                    </button>
+                  </div>
+                </div>
+                <button onClick={handleDismiss} className="text-stone-300 hover:text-stone-500 transition-colors shrink-0 mt-0.5">
+                  <X size={15} />
                 </button>
               </div>
             </div>
-            <button
-              onClick={handleDismiss}
-              className="text-stone-500 hover:text-stone-300 transition-colors mt-0.5"
-            >
-              <X size={16} />
-            </button>
-          </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

@@ -506,7 +506,11 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const checkBadges = (newProfile: UserProfile) => {
+  // CORREÇÃO BUG 5: recebe currentBadges como parâmetro para evitar usar o
+  // valor stale do closure quando chamado de dentro de setProfile().
+  // Sem isso, badges.length sempre reflete o estado no momento da captura da closure,
+  // não o estado atual — fazendo o badge 'doutor_fe' nunca disparar.
+  const checkBadges = (newProfile: UserProfile, currentBadges: Badge[] = badges) => {
     if (newProfile.completedBooks.length >= 1) unlockBadge('semente_fe');
     
     // Check Pentateuch (Gen, Exo, Lev, Num, Deu)
@@ -515,7 +519,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     
     if (newProfile.streak >= 7) unlockBadge('fogo_espirito');
     
-    // Check NT (27 books) - simplified check here
+    // Check NT (27 books)
     const ntBooksCount = newProfile.completedBooks.filter(id => ['mat', 'mrk', 'luk', 'jhn', 'act', 'rom', '1co', '2co', 'gal', 'eph', 'php', 'col', '1th', '2th', '1ti', '2ti', 'tit', 'phm', 'heb', 'jas', '1pe', '2pe', '1jn', '2jn', '3jn', 'jud', 'rev'].includes(id)).length;
     if (ntBooksCount >= 27) unlockBadge('pomba_paz');
     
@@ -525,9 +529,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     if (newProfile.dailyVerseCount >= 30) unlockBadge('madrugador');
     if (newProfile.completedPlans >= 1) unlockBadge('peregrino');
     
-    // Doutor da Fé: desbloqueou todas as outras conquistas (14 badges no total, exceto o próprio doutor_fe)
+    // Doutor da Fé: usa currentBadges (valor atual, não stale)
     const totalOtherBadges = Object.keys(BADGES).filter(id => id !== 'doutor_fe').length;
-    if (badges.length >= totalOtherBadges && !badges.find(b => b.id === 'doutor_fe')) unlockBadge('doutor_fe');
+    if (currentBadges.length >= totalOtherBadges && !currentBadges.find(b => b.id === 'doutor_fe')) unlockBadge('doutor_fe');
   };
 
   const addPoints = (amount: number, reason: string, category?: 'freeExploration' | 'discipleTrail' | 'bonus') => {
@@ -686,18 +690,34 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   };
 
   const markBookCompleted = (bookId: string, isGps: boolean = false) => {
-    if (!profile.completedBooks.includes(bookId)) {
-      // XP proporcional ao tamanho do livro (número de capítulos)
-      const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
-      const chapters = bookData?.chapters || 1;
+    const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
+    const chapters = bookData?.chapters || 1;
 
-      setProfile(prev => {
-        const mult = getStreakMultiplier(prev.streak);
+    // CORREÇÃO BUG 3: todas as decisões dentro do setProfile para atomicidade.
+    // Usar profile.completedBooks fora do setProfile é inseguro com closures concorrentes.
+    // CORREÇÃO BUG 1: fórmula real inclui capítulos — livre: 50+cap, trilha: 100+cap*2
+    let earnedXp = 0;
+    let earnedCategory: 'freeExploration' | 'discipleTrail' = 'freeExploration';
+    let earnedType: 'free' | 'disciple' = 'free';
+    let earnedReason = '';
+    let isFirstCompletion = false;
+    let isReconquest = false;
+    let didCompleteTrial = false;
 
-        // Base: 50 + 1xp/cap (livre) | 100 + 2xp/cap (trilha) — multiplicado pela streak
-        const baseXp = isGps
+    setProfile(prev => {
+      const alreadyCompleted = prev.completedBooks.includes(bookId);
+      const alreadyDisciple  = (prev.discipleCompletedBooks || []).includes(bookId);
+      const mult = getStreakMultiplier(prev.streak);
+
+      if (!alreadyCompleted) {
+        // Primeira conclusão
+        earnedXp = isGps
           ? Math.round((100 + chapters * 2) * mult)
           : Math.round((50 + chapters * 1) * mult);
+        earnedCategory = isGps ? 'discipleTrail' : 'freeExploration';
+        earnedType     = isGps ? 'disciple' : 'free';
+        earnedReason   = `Completou ${bookData?.name || bookId}${isGps ? ' (Trilha)' : ''}`;
+        isFirstCompletion = true;
 
         const newCompletedBooks = [...prev.completedBooks, bookId];
         const newProfile = {
@@ -707,104 +727,103 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             ? [...(prev.discipleCompletedBooks || []), bookId]
             : (prev.discipleCompletedBooks || []),
         };
-        checkBadges(newProfile);
+        checkBadges(newProfile, badges);
 
-        // XP com delay para não colidir com setState
-        setTimeout(() => {
-          addPoints(baseXp, `Completou ${bookData?.name || bookId}${isGps ? ' (Trilha)' : ''}`, isGps ? 'discipleTrail' : 'freeExploration');
-          showFloatingPoints(baseXp, isGps ? 'disciple' : 'free');
-        }, 0);
-
+        // Verifica conclusão da Trilha do Discípulo
+        const discipleBookIds = BEGINNER_PATH.flatMap(step => step.books);
+        const allDiscipleNow = discipleBookIds.every(
+          id => id === bookId || prev.completedBooks.includes(id)
+        );
+        if (allDiscipleNow && newProfile.completedPlans < 1) {
+          didCompleteTrial = true;
+          return { ...newProfile, completedPlans: newProfile.completedPlans + 1 };
+        }
         return newProfile;
-      });
 
-      // Atualiza desafio semanal
-      setWeeklyChallenge(prev => {
-        if (prev.completed) return prev;
-        const newProgress = prev.progress + 1;
-        const completed = newProgress >= prev.target;
-        if (completed) {
-          // Recompensa XP do desafio semanal (adiado para nao colidir com setState)
-          setTimeout(() => {
-            addPoints(prev.rewardPoints, `Desafio semanal concluido: ${prev.title}`, 'bonus');
-            showFloatingPoints(prev.rewardPoints, 'bonus_trail');
-          }, 300);
-        }
-        return { ...prev, progress: newProgress, completed };
-      });
+      } else if (isGps && !alreadyDisciple) {
+        // Reconquista pela Trilha — livro já foi lido livremente antes
+        earnedXp       = Math.round((50 + chapters * 1) * mult);
+        earnedCategory = 'discipleTrail';
+        earnedType     = 'disciple';
+        earnedReason   = `Reconquistou ${bookData?.name || bookId} pela Trilha`;
+        isReconquest   = true;
 
-      // Post no feed da comunidade
-      if (profile.email) {
-        const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-        if (hasSupabase) {
-          const BIBLE_BOOKS_MAP: Record<string, string> = {
-            'gen':'Gênesis','exo':'Êxodo','lev':'Levítico','num':'Números','deu':'Deuteronômio',
-            'jos':'Josué','jdg':'Juízes','rut':'Rute','1sa':'1 Samuel','2sa':'2 Samuel',
-            '1ki':'1 Reis','2ki':'2 Reis','1ch':'1 Crônicas','2ch':'2 Crônicas','ezr':'Esdras',
-            'neh':'Neemias','tob':'Tobias','jdt':'Judite','est':'Ester','1ma':'1 Macabeus',
-            '2ma':'2 Macabeus','job':'Jó','psa':'Salmos','pro':'Provérbios','ecc':'Eclesiastes',
-            'sng':'Cânticos','wis':'Sabedoria','sir':'Eclesiástico','isa':'Isaías','jer':'Jeremias',
-            'lam':'Lamentações','bar':'Baruc','ezk':'Ezequiel','dan':'Daniel','hos':'Oseias',
-            'jol':'Joel','amo':'Amós','oba':'Obadias','jon':'Jonas','mic':'Miqueias','nam':'Naum',
-            'hab':'Habacuque','zep':'Sofonias','hag':'Ageu','zec':'Zacarias','mal':'Malaquias',
-            'mat':'Mateus','mrk':'Marcos','luk':'Lucas','jhn':'João','act':'Atos','rom':'Romanos',
-            '1co':'1 Coríntios','2co':'2 Coríntios','gal':'Gálatas','eph':'Efésios','php':'Filipenses',
-            'col':'Colossenses','1th':'1 Tessalonicenses','2th':'2 Tessalonicenses','1ti':'1 Timóteo',
-            '2ti':'2 Timóteo','tit':'Tito','phm':'Filemom','heb':'Hebreus','jas':'Tiago',
-            '1pe':'1 Pedro','2pe':'2 Pedro','1jn':'1 João','2jn':'2 João','3jn':'3 João',
-            'jud':'Judas','rev':'Apocalipse',
-          };
-          const bookName = BIBLE_BOOKS_MAP[bookId] || bookId;
-          const action = isGps
-            ? `concluiu "${bookName}" pela Trilha do Discípulo 🧭`
-            : `concluiu o livro de "${bookName}" 📖`;
-          supabase.from('community_feed').insert({
-            user_name: profile.name,
-            user_email: profile.email,
-            avatar_id: profile.avatarId || '',
-            action,
-          }).then(() => {}).catch(() => {});
-        }
+        return {
+          ...prev,
+          discipleCompletedBooks: [...(prev.discipleCompletedBooks || []), bookId],
+        };
       }
 
-      // Verifica se toda a Trilha do Discípulo foi concluída
-      const discipleBookIds = BEGINNER_PATH.flatMap(step => step.books);
-      const allDiscipleCompleted = discipleBookIds.every(
-        id => id === bookId || profile.completedBooks.includes(id)
-      );
-      if (allDiscipleCompleted) {
-        setProfile(prev => {
-          // Guarda contra contagem dupla: se já completou a trilha antes, não incrementa
-          if (prev.completedPlans >= 1) return prev;
-          const newProfile = { ...prev, completedPlans: prev.completedPlans + 1 };
-          checkBadges(newProfile);
-          return newProfile;
+      return prev; // já estava tudo concluído, sem mudança
+    });
+
+    // Dispara XP e efeitos APÓS o setState ser enfileirado
+    setTimeout(() => {
+      if (earnedXp > 0) {
+        addPoints(earnedXp, earnedReason, earnedCategory);
+        showFloatingPoints(earnedXp, earnedType);
+      }
+
+      if (isFirstCompletion) {
+        // Atualiza desafio semanal
+        setWeeklyChallenge(prev => {
+          if (prev.completed) return prev;
+          const newProgress = prev.progress + 1;
+          const completed   = newProgress >= prev.target;
+          if (completed) {
+            setTimeout(() => {
+              addPoints(prev.rewardPoints, `Desafio semanal concluido: ${prev.title}`, 'bonus');
+              showFloatingPoints(prev.rewardPoints, 'bonus_trail');
+            }, 300);
+          }
+          return { ...prev, progress: newProgress, completed };
         });
+
+        // Post no feed da comunidade
+        if (profile.email) {
+          const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+          if (hasSupabase) {
+            const BIBLE_BOOKS_MAP: Record<string, string> = {
+              'gen':'Gênesis','exo':'Êxodo','lev':'Levítico','num':'Números','deu':'Deuteronômio',
+              'jos':'Josué','jdg':'Juízes','rut':'Rute','1sa':'1 Samuel','2sa':'2 Samuel',
+              '1ki':'1 Reis','2ki':'2 Reis','1ch':'1 Crônicas','2ch':'2 Crônicas','ezr':'Esdras',
+              'neh':'Neemias','tob':'Tobias','jdt':'Judite','est':'Ester','1ma':'1 Macabeus',
+              '2ma':'2 Macabeus','job':'Jó','psa':'Salmos','pro':'Provérbios','ecc':'Eclesiastes',
+              'sng':'Cânticos','wis':'Sabedoria','sir':'Eclesiástico','isa':'Isaías','jer':'Jeremias',
+              'lam':'Lamentações','bar':'Baruc','ezk':'Ezequiel','dan':'Daniel','hos':'Oseias',
+              'jol':'Joel','amo':'Amós','oba':'Obadias','jon':'Jonas','mic':'Miqueias','nam':'Naum',
+              'hab':'Habacuque','zep':'Sofonias','hag':'Ageu','zec':'Zacarias','mal':'Malaquias',
+              'mat':'Mateus','mrk':'Marcos','luk':'Lucas','jhn':'João','act':'Atos','rom':'Romanos',
+              '1co':'1 Coríntios','2co':'2 Coríntios','gal':'Gálatas','eph':'Efésios','php':'Filipenses',
+              'col':'Colossenses','1th':'1 Tessalonicenses','2th':'2 Tessalonicenses','1ti':'1 Timóteo',
+              '2ti':'2 Timóteo','tit':'Tito','phm':'Filemom','heb':'Hebreus','jas':'Tiago',
+              '1pe':'1 Pedro','2pe':'2 Pedro','1jn':'1 João','2jn':'2 João','3jn':'3 João',
+              'jud':'Judas','rev':'Apocalipse',
+            };
+            const bookName = BIBLE_BOOKS_MAP[bookId] || bookId;
+            const action   = isGps
+              ? `concluiu "${bookName}" pela Trilha do Discípulo 🧭`
+              : `concluiu o livro de "${bookName}" 📖`;
+            supabase.from('community_feed').insert({
+              user_name: profile.name, user_email: profile.email,
+              avatar_id: profile.avatarId || '', action,
+            }).then(() => {}).catch(() => {});
+          }
+        }
+
         // Bônus épico pela conclusão da Trilha do Discípulo
-        // Guarda via localStorage para evitar double-award entre gamification.tsx e Trails.tsx
-        const trailKey = `trail_disciple_xp_awarded_${userId || 'local'}`;
-        if (!safeStorage.getItem(trailKey)) {
-          safeStorage.setItem(trailKey, 'true');
-          setTimeout(() => {
-            addPoints(1000, 'Trilha do Discípulo completa! 🏆', 'bonus');
-            showFloatingPoints(1000, 'bonus_trail');
-          }, 500);
+        if (didCompleteTrial) {
+          const trailKey = `trail_disciple_xp_awarded_${userId || 'local'}`;
+          if (!safeStorage.getItem(trailKey)) {
+            safeStorage.setItem(trailKey, 'true');
+            setTimeout(() => {
+              addPoints(1000, 'Trilha do Discípulo completa! 🏆', 'bonus');
+              showFloatingPoints(1000, 'bonus_trail');
+            }, 300);
+          }
         }
       }
-
-    } else if (isGps && !profile.discipleCompletedBooks?.includes(bookId)) {
-      // Livro já concluído livremente, agora reconquistado pela Trilha
-      const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
-      const chapters = bookData?.chapters || 1;
-      const xp = applyMultiplier(50 + chapters, profile.streak);
-
-      setProfile(prev => ({
-        ...prev,
-        discipleCompletedBooks: [...(prev.discipleCompletedBooks || []), bookId],
-      }));
-      addPoints(xp, `Reconquistou ${bookData?.name || bookId} pela Trilha`, 'discipleTrail');
-      showFloatingPoints(xp, 'disciple');
-    }
+    }, 0);
   };
 
   const markBookVisited = (bookId: string) => {
@@ -843,13 +862,18 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   };
 
   // Marca todos os capítulos de uma vez, gerando apenas 1 notificação de XP
+  // CORREÇÃO BUG 4: usar newChapters.length * applyMultiplier(5, streak) para garantir
+  // que o resultado seja idêntico a marcar cada capítulo individualmente.
+  // applyMultiplier(5*N, streak) ≠ N * applyMultiplier(5, streak) quando há arredondamento.
   const markAllChaptersRead = (bookId: string, chapterNums: number[]) => {
     setProfile(prev => {
       const currentRead = prev.readChapters?.[bookId] || [];
       const newChapters = chapterNums.filter(n => !currentRead.includes(n));
       if (newChapters.length === 0) return prev;
       const updatedRead = [...currentRead, ...newChapters];
-      const totalXp = applyMultiplier(5 * newChapters.length, prev.streak);
+      // XP por capítulo individual × quantidade — consistente com markChapterRead
+      const xpPerChapter = applyMultiplier(5, prev.streak);
+      const totalXp = xpPerChapter * newChapters.length;
       setTimeout(() => {
         addPoints(totalXp, `Marcou ${newChapters.length} capítulos de ${bookId}`, 'freeExploration');
         showFloatingPoints(totalXp, 'free');

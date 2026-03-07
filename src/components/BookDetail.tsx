@@ -8,7 +8,7 @@ import {
   Share2, Flame, Star, Lock, Zap, Trophy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useGamification, AVATARS } from '../services/gamification';
+import { useGamification, AVATARS, applyMultiplier } from '../services/gamification';
 import { useNotes, NoteContext } from '../services/notes';
 import { sharingService } from '../services/sharingService';
 
@@ -151,8 +151,13 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
         if (isMounted) {
           setData(result);
           setLoading(false);
-          if (!hasVisited.current) {
-            addPoints(10, `Visitou ${book.name}`, 'freeExploration');
+          // CORREÇÃO BUG 7: guard via localStorage — evita re-award em remontagem do componente
+          // CORREÇÃO BUG 6: aplica multiplicador de streak (consistente com todas as outras ações)
+          const visitKey = `${userId || 'local'}_visited_xp_${book.id}`;
+          if (!hasVisited.current && !localStorage.getItem(visitKey)) {
+            const xp = applyMultiplier(10, profile.streak);
+            addPoints(xp, `Visitou ${book.name}`, 'freeExploration');
+            localStorage.setItem(visitKey, '1');
             hasVisited.current = true;
           }
         }
@@ -301,7 +306,11 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
           <div className="bg-white px-6 py-3 flex items-center justify-between border-t-2 border-stone-100">
             <span className="text-sm font-bold text-stone-500">Recompensas por concluir</span>
             <div className="flex items-center gap-2">
-              <XpPill xp={isGpsBook ? 100 : 50} color={isGpsBook ? 'green' : 'amber'} />
+              {/* BUG 8 FIX: XP real = base + chapters*fator, exibido com multiplicador atual de streak */}
+              <XpPill
+                xp={applyMultiplier(isGpsBook ? 100 + book.chapters * 2 : 50 + book.chapters * 1, profile.streak)}
+                color={isGpsBook ? 'green' : 'amber'}
+              />
               {isGpsBook && <XpPill xp="Trilha" color="green" />}
             </div>
           </div>
@@ -380,7 +389,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                 </div>
                 {isGpsBook && !profile.discipleCompletedBooks?.includes(book.id) && (
                   <DuoButton color="green" size="sm" onClick={() => { markBookCompleted(book.id, true); onBack(); }}>
-                    <Navigation size={14} /> Reconquistar (+50 XP)
+                    <Navigation size={14} /> Reconquistar (+{applyMultiplier(50 + book.chapters, profile.streak)} XP)
                   </DuoButton>
                 )}
               </div>
@@ -415,7 +424,7 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                     onClick={() => { if (allRead) { markBookCompleted(book.id, isGpsBook); onBack(); } }}
                   >
                     {allRead ? (
-                      <><CheckCircle2 size={16} /> Concluir {isGpsBook ? '(+100 XP)' : '(+50 XP)'}</>
+                      <><CheckCircle2 size={16} /> Concluir (+{applyMultiplier(isGpsBook ? 100 + book.chapters * 2 : 50 + book.chapters * 1, profile.streak)} XP)</>
                     ) : (
                       <><Lock size={14} /> {progressPct}%</>
                     )}
@@ -473,7 +482,8 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
   const textColor  = colorClass.split(' ').find(c => c.startsWith('text-')) || 'text-stone-900';
   const borderColor = colorClass.split(' ').find(c => c.startsWith('border-')) || 'border-stone-200';
 
-  const { addNote: addGamificationNote } = useGamification();
+  const { addNote: addGamificationNote, profile: gProfile } = useGamification();
+  const noteXp = applyMultiplier(25, gProfile.streak);
   const { notes, addNote: saveNote } = useNotes(book.id, userId);
   const [noteDrawerOpen, setNoteDrawerOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
@@ -658,7 +668,7 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
                       </div>
                     </div>
                     <DuoButton size="sm" color="stone" onClick={handleSaveNote} disabled={!noteText.trim()}>
-                      {noteSaved ? <><Check size={13}/> Salvo!</> : <><Sparkles size={13}/> +25 XP</>}
+                      {noteSaved ? <><Check size={13}/> Salvo!</> : <><Sparkles size={13}/> +{noteXp} XP</>}
                     </DuoButton>
                   </div>
                 </div>
@@ -758,6 +768,9 @@ function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onM
   const readCount  = readChapters.length;
   const total      = chapters.length;
   const progressPct = total > 0 ? Math.round((readCount / total) * 100) : 0;
+  // BUG 8 FIX: calcular XP real por capítulo com streak atual
+  const { profile } = useGamification();
+  const xpPerChapter = applyMultiplier(5, profile.streak);
 
   return (
     <div className="space-y-4 pb-4">
@@ -798,23 +811,24 @@ function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onM
         return (
           <ChapterCard key={idx} ch={ch} idx={idx} baseColor={baseColor} textColor={textColor}
             borderColor={borderColor} isRead={isRead} onMarkChapterRead={onMarkChapterRead}
-            bookId={bookId} chapterNum={chapterNum} />
+            bookId={bookId} chapterNum={chapterNum} xpPerChapter={xpPerChapter} />
         );
       })}
     </div>
   );
 }
 
-function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMarkChapterRead, bookId, chapterNum }: {
+function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMarkChapterRead, bookId, chapterNum, xpPerChapter }: {
   ch: BookData['chapters'][0]; idx: number; baseColor: string; textColor: string; borderColor: string;
-  isRead: boolean; onMarkChapterRead: (n: number) => void; bookId: string; chapterNum: number;
+  isRead: boolean; onMarkChapterRead: (n: number) => void; bookId: string; chapterNum: number; xpPerChapter: number;
 }) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [selectedColor, setSelectedColor] = useState(NOTE_COLORS[0].id);
   const [saved, setSaved] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { addNote: addGamificationNote, userId } = useGamification();
+  const { addNote: addGamificationNote, userId, profile: cProfile } = useGamification();
+  const chapterNoteXp = applyMultiplier(25, cProfile.streak);
   const { notes, addNote: saveNote } = useNotes(bookId, userId);
   const chapterNotes = notes.filter(n => n.context?.chapter === chapterNum || n.context?.chapter === ch.chapter.toString());
 
@@ -859,7 +873,7 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
           </h4>
           {isRead && <p className="text-[11px] text-emerald-600 font-bold">✓ Capítulo lido</p>}
         </div>
-        <XpPill xp={5} color={isRead ? 'green' : 'stone'} />
+        <XpPill xp={xpPerChapter} color={isRead ? 'green' : 'stone'} />
       </div>
 
       {/* Conteúdo */}
@@ -939,7 +953,7 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-stone-400">⌘↵ salvar</span>
                   <DuoButton size="sm" color={saved ? 'green' : 'stone'} onClick={handleSave} disabled={!noteText.trim()}>
-                    {saved ? <><Check size={13}/> Salvo!</> : <><Sparkles size={13}/> +25 XP</>}
+                    {saved ? <><Check size={13}/> Salvo!</> : <><Sparkles size={13}/> +{chapterNoteXp} XP</>}
                   </DuoButton>
                 </div>
               </div>
@@ -1189,7 +1203,7 @@ function NotesSection({ bookId, bookName, colorClass, initialContext, onClearCon
             ))}
           </div>
           <DuoButton size="sm" color="stone" onClick={handleSave} disabled={!newNote.trim()}>
-            <Sparkles size={13}/> Salvar (+25 XP)
+            <Sparkles size={13}/> Salvar (+{applyMultiplier(25, profile.streak)} XP)
           </DuoButton>
         </div>
       </div>

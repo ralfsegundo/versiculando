@@ -52,9 +52,28 @@ export interface BookData {
 
 // ── Cache versioning ──────────────────────────────────────────
 // Altere este número para forçar invalidação do cache em todos os dispositivos
-const CACHE_VERSION = 'v1';
+// v2: normalização de estrutura mindmap → flat adicionada; invalida caches v1
+const CACHE_VERSION = 'v2';
 const CACHE_PREFIX = `book_cache_${CACHE_VERSION}_`;
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
+
+// ── Normalização centralizada ─────────────────────────────────
+// O banco salva { mindmap: { summary, ... }, chapters: [], timeline: [], mainVerses: [] }
+// mas o código espera os campos do mindmap na raiz do BookData.
+// Esta função é aplicada em TODOS os caminhos de leitura (Supabase E cache local),
+// garantindo que nunca retornemos dados com estrutura inconsistente.
+function normalizeBookData(raw: any): BookData {
+  if (raw?.mindmap) {
+    return {
+      ...raw.mindmap,
+      chapters:   raw.chapters   ?? [],
+      timeline:   raw.timeline   ?? [],
+      mainVerses: raw.mainVerses ?? [],
+    } as BookData;
+  }
+  // Já está normalizado (salvo por versão >= v2) ou estrutura flat direta
+  return raw as BookData;
+}
 
 // ── Camada 1: Memória (dura a sessão inteira) ─────────────────
 const memoryCache: Record<string, BookData> = {};
@@ -70,7 +89,9 @@ function getLocalCache(bookName: string): BookData | null {
       localStorage.removeItem(CACHE_PREFIX + bookName);
       return null;
     }
-    return data as BookData;
+    // Normaliza ao ler — garante consistência mesmo se o cache foi salvo
+    // por uma versão anterior que não normalizava antes de persistir
+    return normalizeBookData(data);
   } catch {
     return null;
   }
@@ -150,19 +171,8 @@ export async function generateBookSummary(
 
   const raw = data.data as any;
 
-  // Normaliza estrutura: o banco salva { mindmap: {...}, chapters: [...], ... }
-  // mas o código espera os campos de mindmap na raiz do BookData.
-  let result: BookData;
-  if (raw?.mindmap) {
-    result = {
-      ...raw.mindmap,
-      chapters:   raw.chapters   ?? [],
-      timeline:   raw.timeline   ?? [],
-      mainVerses: raw.mainVerses ?? [],
-    } as BookData;
-  } else {
-    result = raw as BookData;
-  }
+  // Normaliza via função centralizada — mesma lógica usada ao ler do cache
+  const result = normalizeBookData(raw);
 
   memoryCache[bookName] = result;
   setLocalCache(bookName, result);
@@ -185,13 +195,7 @@ export async function prefetchBooks(bookNames: string[]): Promise<void> {
     if (error || !data) return;
 
     data.forEach(row => {
-      const rawBook = row.data as any;
-      const bookData: BookData = rawBook?.mindmap ? {
-        ...rawBook.mindmap,
-        chapters:   rawBook.chapters   ?? [],
-        timeline:   rawBook.timeline   ?? [],
-        mainVerses: rawBook.mainVerses ?? [],
-      } as BookData : rawBook as BookData;
+      const bookData = normalizeBookData(row.data);
       memoryCache[row.book_name] = bookData;
       setLocalCache(row.book_name, bookData);
     });

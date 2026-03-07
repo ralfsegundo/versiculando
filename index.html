@@ -30,6 +30,30 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Guard de back button PWA — executado ANTES do React carregar -->
+    <!-- Cria barreira no histórico imediatamente para o Android não fechar o app -->
+    <script>
+      (function() {
+        // Empurra entradas no histórico imediatamente
+        // para que o primeiro "voltar" dispare popstate em vez de fechar o app
+        history.pushState({ pwa: true }, '');
+        history.pushState({ pwa: true }, '');
+
+        // Listener mínimo que re-empurra sempre — o React vai sobrescrever
+        // com a lógica completa depois de carregar
+        function guardBack() {
+          history.pushState({ pwa: true }, '');
+        }
+        window.addEventListener('popstate', guardBack);
+
+        // Remove este listener básico quando o React assumir o controle
+        window.__removeBackGuard = function() {
+          window.removeEventListener('popstate', guardBack);
+        };
+      })();
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

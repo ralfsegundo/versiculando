@@ -394,6 +394,19 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             // lastActiveDate: SEMPRE mantém o local (prev) — nunca puxar do Supabase.
             // O Supabase pode estar atrasado (debounce), e se checkStreak() rodar
             // logo depois com uma data de ontem, o streak incrementa a cada reload.
+
+            // Streak: se Supabase tem lastActiveDate mais recente (outro dispositivo),
+            // confiar no valor dele — pode ter sido resetado corretamente lá.
+            // Se local é mais recente (mesmo dispositivo, debounce pendente), local vence.
+            const remoteLastActive = profileData.last_active_date
+              ? new Date(profileData.last_active_date).getTime() : 0;
+            const localLastActive = prev.lastActiveDate
+              ? new Date(prev.lastActiveDate).getTime() : 0;
+            const remoteIsNewer = remoteLastActive > localLastActive;
+            const mergedStreak = remoteIsNewer
+              ? (profileData.streak ?? prev.streak)
+              : Math.max(prev.streak, profileData.streak ?? 0);
+
             return {
               ...prev,
               // Metadados de identidade — Supabase é canônico
@@ -412,11 +425,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               favoritesCount:  Math.max(prev.favoritesCount,  profileData.favorites_count   ?? 0),
               dailyVerseCount: Math.max(prev.dailyVerseCount, profileData.daily_verse_count ?? 0),
               completedPlans:  Math.max(prev.completedPlans,  profileData.completed_plans   ?? 0),
-              streak:          Math.max(prev.streak,          profileData.streak            ?? 0),
+              streak:          mergedStreak,
               longestStreak:   Math.max(prev.longestStreak || 0, profileData.longest_streak ?? 0),
               streakFreezes:   profileData.streak_freezes ?? prev.streakFreezes ?? 1,
               lastFreezeEarnedWeek: profileData.last_freeze_earned_week || prev.lastFreezeEarnedWeek,
               lastDailyMissionDate: profileData.last_daily_mission_date || prev.lastDailyMissionDate,
+              dailyMissionStreak:   Math.max(prev.dailyMissionStreak || 0, profileData.daily_mission_streak ?? 0),
               // Arrays de progresso — união (local pode ter itens ainda não sincronizados)
               completedBooks:         mergeArrays(prev.completedBooks,          profileData.completed_books          || []),
               discipleCompletedBooks: mergeArrays(prev.discipleCompletedBooks,  profileData.disciple_completed_books || []),
@@ -530,6 +544,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           daily_verse_count: profile.dailyVerseCount,
           completed_plans: profile.completedPlans,
           eco_reactions: profile.ecoReactions || {},
+          last_daily_mission_date: profile.lastDailyMissionDate || null,
+          last_freeze_earned_week: profile.lastFreezeEarnedWeek || null,
+          daily_mission_streak: profile.dailyMissionStreak || 0,
           updated_at: new Date().toISOString()
         });
       } catch (err) {

@@ -241,6 +241,11 @@ interface GamificationContextType {
   addEcoReaction: (verseRef: string, emoji: string) => void;
   recordSaintEncounter: (saintKey: string) => void;
   completeFlashChallenge: () => void;
+  // Sinal para mostrar o prompt de notificação após uma conquista real
+  notificationTrigger: boolean;
+  clearNotificationTrigger: () => void;
+  // Chamado por componentes externos (ex: jogos) para disparar o prompt
+  triggerNotificationPrompt: () => void;
 }
 
 export const GamificationContext = createContext<GamificationContextType | null>(null);
@@ -254,7 +259,22 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   // Controla se o perfil foi carregado do Supabase — evita salvar de volta logo após carregar
   const isLoadingFromSupabase = useRef(false);
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasCheckedStreak = useRef(false); // garante checkStreak uma única vez por sessão
+  const hasCheckedStreak = useRef(false);
+
+  // Sinal para o prompt de notificação — disparado após primeira conquista real
+  const [notificationTrigger, setNotificationTrigger] = useState(false);
+  const notifAlreadyTriggered = useRef(false);
+
+  const fireNotificationTrigger = useCallback(() => {
+    if (notifAlreadyTriggered.current) return;
+    if (localStorage.getItem('notif_prompt_done')) return;
+    notifAlreadyTriggered.current = true;
+    setNotificationTrigger(true);
+  }, []);
+
+  const clearNotificationTrigger = useCallback(() => {
+    setNotificationTrigger(false);
+  }, []);
 
   // ── Notificações de streak ──────────────────────────────────
   // Ao abrir o app: cancela notificação pendente (usuário já está ativo)
@@ -752,6 +772,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     const xp = applyMultiplier(50, profile.streak);
     addPoints(xp, 'Missão diária concluída', 'bonus');
     showFloatingPoints(xp, 'bonus_step');
+    fireNotificationTrigger();
   };
 
   // Eco reaction em versículo
@@ -872,6 +893,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       if (earnedXp > 0) {
         addPoints(earnedXp, earnedReason, earnedCategory);
         showFloatingPoints(earnedXp, earnedType);
+        fireNotificationTrigger();
       }
 
       if (isFirstCompletion) {
@@ -964,6 +986,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         setTimeout(() => {
           addPoints(xp, `Leu capítulo ${chapterNum} de ${bookId}`, 'freeExploration');
           showFloatingPoints(xp, 'free');
+          fireNotificationTrigger();
         }, 0);
         return {
           ...prev,
@@ -1043,6 +1066,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     const xp = applyMultiplier(15, profile.streak);
     addPoints(xp, 'Acessou versículo do dia', 'freeExploration');
     showFloatingPoints(xp, 'free');
+    fireNotificationTrigger();
   };
 
   const completePlan = () => {
@@ -1083,6 +1107,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       addEcoReaction,
       recordSaintEncounter,
       completeFlashChallenge,
+      notificationTrigger,
+      clearNotificationTrigger,
+      triggerNotificationPrompt: fireNotificationTrigger,
     }}>
       {children}
       

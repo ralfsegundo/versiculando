@@ -1023,8 +1023,13 @@ function VersesTab({ verses, bookName, colorClass }: { verses: BookData['mainVer
   const baseColor  = colorClass.split(' ')[0];
   const textColor  = colorClass.split(' ').find(c => c.startsWith('text-')) || 'text-stone-900';
   const borderColor = colorClass.split(' ').find(c => c.startsWith('border-')) || 'border-stone-200';
-  const { addFavorite, userId, addEcoReaction, profile } = useGamification();
+  const { addFavorite, updateFavorites, userId, addEcoReaction, profile } = useGamification();
   const [favorites, setFavorites] = useState<Record<string, boolean>>(() => {
+    // Usa perfil como fonte de verdade (sincronizado com Supabase)
+    // Fallback para localStorage para compatibilidade com dados antigos
+    if (profile.bibleFavorites && Object.keys(profile.bibleFavorites).length > 0) {
+      return profile.bibleFavorites;
+    }
     try { return JSON.parse(localStorage.getItem(`${userId}_bible_favorites`) || '{}'); }
     catch { return {}; }
   });
@@ -1040,22 +1045,21 @@ function VersesTab({ verses, bookName, colorClass }: { verses: BookData['mainVer
       // Desfavoritar — remove mas NÃO decrementa contador (one-way, como XP)
       delete updated[ref];
     } else {
-      // Favoritar pela primeira vez nesta sessão
-      // addFavorite() incrementa favoritesCount para o badge "Coração Aberto"
-      // Mas se já estava salvo no localStorage antes (favorito de outra sessão),
-      // não chama de novo — evita inflar favoritesCount ao refavoritar
-      const wasEverFavorited = JSON.parse(
-        localStorage.getItem(`${userId}_bible_favorites_ever`) || '{}'
-      );
+      // Favoritar — verifica se é primeira vez para badge
+      const wasEverFavorited = profile.bibleFavoritesEver || {};
       if (!wasEverFavorited[ref]) {
         addFavorite();
-        const updatedEver = { ...wasEverFavorited, [ref]: true };
-        localStorage.setItem(`${userId}_bible_favorites_ever`, JSON.stringify(updatedEver));
       }
       updated[ref] = true;
     }
+    // Atualiza bibleFavoritesEver incluindo o novo
+    const updatedEver = { ...(profile.bibleFavoritesEver || {}), ...Object.fromEntries(Object.keys(updated).map(k => [k, true])) };
     setFavorites(updated);
+    // Sincroniza com Supabase via contexto (debounce 2s)
+    updateFavorites(updated, updatedEver);
+    // Mantém localStorage como cache local para leitura rápida
     localStorage.setItem(`${userId}_bible_favorites`, JSON.stringify(updated));
+    localStorage.setItem(`${userId}_bible_favorites_ever`, JSON.stringify(updatedEver));
   };
 
   if (!verses?.length) return (

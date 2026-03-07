@@ -743,8 +743,8 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                             if (lectioDone) return; // guard duplo
                             localStorage.setItem(`lectio_done_${TODAY_STR}`, 'true');
                             setLectioDone(true);
-                            addPoints(lectioXP, 'freeExploration');
-                            showFloatingPoints(lectioXP, 'challenge');
+                            addPoints(lectioXP, 'Lectio Divina concluída', 'freeExploration');
+                            showFloatingPoints(lectioXP, 'bonus_step');
                           }}
                             className="bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-sm py-3 px-4 rounded-xl active:scale-95 transition-all min-h-[44px]">
                             Meditei +{lectioXP} XP

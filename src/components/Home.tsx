@@ -524,7 +524,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                   {/* Mini progress para próximo marco */}
                   {(() => {
                     const next = profile.streak < 3 ? 3 : profile.streak < 7 ? 7 : profile.streak < 14 ? 14 : profile.streak < 30 ? 30 : 60;
-                    const prev = profile.streak < 3 ? 1 : profile.streak < 7 ? 3 : profile.streak < 14 ? 7 : profile.streak < 30 ? 14 : 30;
+                    const prev = profile.streak < 3 ? 0 : profile.streak < 7 ? 3 : profile.streak < 14 ? 7 : profile.streak < 30 ? 14 : 30;
                     const pct = Math.min(100, ((profile.streak - prev) / (next - prev)) * 100);
                     return (
                       <div className="flex items-center gap-2 mt-1">

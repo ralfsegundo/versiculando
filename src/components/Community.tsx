@@ -75,7 +75,7 @@ interface Group {
 }
 
 export default function Community() {
-  const { profile, addPoints, showFloatingPoints } = useGamification();
+  const { profile, addPoints, showFloatingPoints, userId } = useGamification();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -229,7 +229,7 @@ export default function Community() {
           time: formatRelativeTime(r.created_at),
         })));
         // Compute unread count — ignora ações do próprio usuário
-        const lastSeenId = parseInt(localStorage.getItem('feed_last_seen_id') || '0', 10);
+        const lastSeenId = parseInt(localStorage.getItem(`${userId}_feed_last_seen_id`) || '0', 10);
         const newCount = data.filter((r: any) =>
           r.id > lastSeenId && r.user_email !== profile.email
         ).length;
@@ -319,7 +319,7 @@ export default function Community() {
         setMockGroups(mapped);
 
         // Count new messages across all groups since last visit
-        const lastSeenTs = parseInt(localStorage.getItem('groups_last_seen_ts') || '0', 10);
+        const lastSeenTs = parseInt(localStorage.getItem(`${userId}_groups_last_seen_ts`) || '0', 10);
         const newMsgs = mapped.reduce((acc, g) => {
           return acc + g.messages.filter((m: any) => {
             const ts = new Date(m.timestamp).getTime();
@@ -382,7 +382,7 @@ export default function Community() {
       })));
 
       // Count new prayers since last visit
-      const lastSeenTs = parseInt(localStorage.getItem('prayers_last_seen_ts') || '0', 10);
+      const lastSeenTs = parseInt(localStorage.getItem(`${userId}_prayers_last_seen_ts`) || '0', 10);
       const newPrayers = prayers.filter((p: any) =>
         new Date(p.created_at).getTime() > lastSeenTs && p.user_id !== (profile.id || '')
       ).length;
@@ -1214,16 +1214,16 @@ export default function Community() {
                       if (tab.id === 'feed') {
                         if (mockFeed.length > 0) {
                           const maxId = Math.max(...mockFeed.map(f => f.id));
-                          localStorage.setItem('feed_last_seen_id', String(maxId));
+                          localStorage.setItem(`${userId}_feed_last_seen_id`, String(maxId));
                         }
                         setUnreadFeedCount(0);
                       }
                       if (tab.id === 'groups') {
-                        localStorage.setItem('groups_last_seen_ts', String(Date.now()));
+                        localStorage.setItem(`${userId}_groups_last_seen_ts`, String(Date.now()));
                         setUnreadGroupsCount(0);
                       }
                       if (tab.id === 'prayers') {
-                        localStorage.setItem('prayers_last_seen_ts', String(Date.now()));
+                        localStorage.setItem(`${userId}_prayers_last_seen_ts`, String(Date.now()));
                         setUnreadPrayersCount(0);
                       }
                     }}

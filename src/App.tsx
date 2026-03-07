@@ -9,8 +9,15 @@ import Onboarding, { OnboardingProfile, getWelcomeConfig } from './components/On
 import Trails from './components/Trails';
 import TrailDetail from './components/TrailDetail';
 import OfflineBanner from './components/OfflineBanner';
+import NotificationBanner from './components/NotificationBanner';
 import Admin from './components/Admin';
-import { GamificationProvider } from './services/gamification';
+import { GamificationProvider, useGamification } from './services/gamification';
+
+// Wrapper interno para acessar o streak do contexto e passar ao banner
+function StreakNotificationBanner() {
+  const { profile } = useGamification();
+  return <NotificationBanner streak={profile.streak} />;
+}
 import { supabase } from './lib/supabase';
 import { prefetchBooks } from './services/bookData';
 import Auth from './components/Auth';
@@ -194,6 +201,8 @@ export default function App() {
     <GamificationProvider>
       {/* Banner de offline — aparece em todas as telas */}
       <OfflineBanner />
+      {/* Banner de permissão de notificação de streak */}
+      <StreakNotificationBanner />
 
       {selectedBookId ? (
         <BookDetail bookId={selectedBookId} onBack={() => setSelectedBookId(null)} />

@@ -59,15 +59,15 @@ export default function NotificationPrompt({ streak, trigger, onDone }: Notifica
           className="fixed top-4 left-4 right-4 z-[90]"
         >
           {accepted ? (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-4 shadow-lg flex items-center gap-3">
+            <div className="bg-stone-900 border border-stone-700 rounded-2xl px-5 py-4 shadow-2xl flex items-center gap-3">
               <span className="text-2xl">✅</span>
               <div>
-                <p className="font-bold text-emerald-800 text-sm">Tudo certo!</p>
-                <p className="text-emerald-600 text-xs mt-0.5">Vou te avisar antes da sua chama apagar.</p>
+                <p className="font-bold text-white text-sm">Tudo certo!</p>
+                <p className="text-stone-400 text-xs mt-0.5">Vou te avisar antes da sua chama apagar.</p>
               </div>
             </div>
           ) : (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl shadow-lg overflow-hidden">
+            <div className="bg-stone-900 rounded-2xl shadow-2xl overflow-hidden border border-stone-700">
               <div className="h-1 bg-gradient-to-r from-amber-400 via-orange-400 to-red-400" />
               <div className="px-4 py-4 flex items-start gap-3">
                 <motion.div
@@ -78,12 +78,12 @@ export default function NotificationPrompt({ streak, trigger, onDone }: Notifica
                   🔥
                 </motion.div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-stone-800 text-sm leading-snug">
+                  <p className="font-bold text-white text-sm leading-snug">
                     {streak >= 7
                       ? `${streak} dias seguidos — não perca agora`
                       : 'Quer proteger seu progresso?'}
                   </p>
-                  <p className="text-stone-500 text-xs mt-1 leading-snug">
+                  <p className="text-stone-400 text-xs mt-1 leading-snug">
                     {streak >= 7
                       ? 'Posso te avisar às 21h quando sua sequência estiver em risco.'
                       : 'Te aviso se o dia estiver passando sem você abrir o app.'}
@@ -97,13 +97,13 @@ export default function NotificationPrompt({ streak, trigger, onDone }: Notifica
                     </button>
                     <button
                       onClick={handleDismiss}
-                      className="px-4 py-2.5 bg-stone-100 text-stone-500 text-sm font-medium rounded-xl active:scale-95 transition-all"
+                      className="px-4 py-2.5 bg-stone-800 text-stone-400 text-sm font-medium rounded-xl active:scale-95 transition-all"
                     >
                       Agora não
                     </button>
                   </div>
                 </div>
-                <button onClick={handleDismiss} className="text-stone-300 hover:text-stone-500 transition-colors shrink-0 mt-0.5">
+                <button onClick={handleDismiss} className="text-stone-600 hover:text-stone-400 transition-colors shrink-0 mt-0.5">
                   <X size={15} />
                 </button>
               </div>

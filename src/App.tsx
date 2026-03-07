@@ -1,128 +1,244 @@
-// ============================================================
-//  sw.js — Service Worker do Versiculando
-//
-//  Responsabilidades:
-//  1. Cache offline de assets estáticos
-//  2. Agendamento e disparo de notificações de streak
-// ============================================================
+import { useState, useEffect } from 'react';
+import Home from './components/Home';
+import BookDetail from './components/BookDetail';
+import Profile from './components/Profile';
+import JourneyMap from './components/JourneyMap';
+import Navigation from './components/Navigation';
+import Community from './components/Community';
+import Onboarding, { OnboardingProfile, getWelcomeConfig } from './components/Onboarding';
+import Trails from './components/Trails';
+import TrailDetail from './components/TrailDetail';
+import OfflineBanner from './components/OfflineBanner';
+import NotificationPrompt from './components/NotificationBanner';
+import Admin from './components/Admin';
+import { GamificationProvider, useGamification } from './services/gamification';
 
-const CACHE_NAME = 'versiculando-v3';
-const ASSETS_TO_CACHE = ['/', '/index.html', '/manifest.json'];
-
-// ── Instalação: pré-cacheia assets essenciais ─────────────────
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS_TO_CACHE))
+// Wrapper interno — lê streak e trigger do contexto, passa ao prompt
+function StreakNotificationBanner() {
+  const { profile, notificationTrigger, clearNotificationTrigger } = useGamification();
+  return (
+    <NotificationPrompt
+      streak={profile.streak}
+      trigger={notificationTrigger}
+      onDone={clearNotificationTrigger}
+    />
   );
-  self.skipWaiting();
-});
+}
+import { supabase } from './lib/supabase';
+import { prefetchBooks } from './services/bookData';
+import Auth from './components/Auth';
+import { Session } from '@supabase/supabase-js';
+import { Trail } from './services/trails';
+import { BEGINNER_PATH, BIBLE_BOOKS } from './constants';
 
-// ── Ativação: remove caches antigos ──────────────────────────
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+// Email do administrador — só este usuário vê o acesso ao painel admin
+const ADMIN_EMAIL = 'ralfsegundo@gmail.com';
+
+// Registra o Service Worker para modo offline (apenas em produção real)
+const isAIStudio = window.location.hostname.includes('run.app') || window.location.hostname.includes('aistudio');
+if ('serviceWorker' in navigator && !isAIStudio) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then(reg => console.log('[SW] Registrado:', reg.scope))
+      .catch(err => console.error('[SW] Erro:', err));
+  });
+}
+
+export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [showAdmin, setShowAdmin] = useState(false);
+
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  const [selectedTrail, setSelectedTrail] = useState<Trail | null>(null);
+  const [currentTab, setCurrentTab] = useState<'home' | 'journey' | 'trails' | 'profile' | 'community'>('home');
+  const [homeViewMode, setHomeViewMode] = useState<'canonical' | 'beginners'>(() => {
+    const savedProfile = localStorage.getItem('onboarding_profile');
+    if (savedProfile) {
+      try {
+        const profile = JSON.parse(savedProfile);
+        return profile.experience === 'regular' && profile.goal === 'complete'
+          ? 'canonical'
+          : 'beginners';
+      } catch { return 'beginners'; }
+    }
+    return 'beginners';
+  });
+  const [onboardingDone, setOnboardingDone] = useState(
+    () => localStorage.getItem('onboarding_done') === 'true'
   );
-  self.clients.claim();
-});
+  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(
+    () => localStorage.getItem('onboarding_welcome') || null
+  );
 
-// ── Fetch: network-first para JS/CSS (sempre código novo), cache-first para imagens ──
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
+  const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  const url = new URL(event.request.url);
-  const isAsset = /\.(js|jsx|ts|tsx|css)(\?.*)?$/.test(url.pathname);
-
-  if (isAsset) {
-    // Network-first: sempre tenta buscar versão nova na rede
-    // Cache só usado se offline
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-          return response;
-        })
-        .catch(() => caches.match(event.request))
-    );
-  } else {
-    // Cache-first para imagens, fontes e outros assets estáticos
-    event.respondWith(
-      caches.match(event.request).then(cached => cached || fetch(event.request))
-    );
-  }
-});
-
-// ── Notificações de streak ────────────────────────────────────
-
-let streakNotifTimer = null;
-
-self.addEventListener('message', (event) => {
-  const { type, delayMs, title, body, streak, scheduledFor } = event.data || {};
-
-  if (type === 'SCHEDULE_STREAK_NOTIFICATION') {
-    // Cancela qualquer timer anterior antes de criar um novo
-    if (streakNotifTimer) {
-      clearTimeout(streakNotifTimer);
-      streakNotifTimer = null;
+  useEffect(() => {
+    if (!hasSupabase) {
+      setIsInitializing(false);
+      return;
     }
 
-    console.log(`[SW] Notificação de streak agendada para ${scheduledFor} (em ${Math.round(delayMs / 60000)} min)`);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setIsInitializing(false);
 
-    streakNotifTimer = setTimeout(async () => {
-      // Verifica se alguma janela do app está aberta e em foco
-      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      const appIsOpen = clients.some(c => c.visibilityState === 'visible');
-
-      // Não notifica se o usuário já está no app
-      if (appIsOpen) {
-        console.log('[SW] App aberto — notificação de streak cancelada');
-        return;
+      // Pré-carrega os livros da Trilha do Discípulo em background
+      // Roda depois que a UI já está visível, sem bloquear nada
+      if (session?.user) {
+        const beginnerBookIds = BEGINNER_PATH.flatMap(step => step.books);
+        const beginnerBookNames = beginnerBookIds
+          .map(id => BIBLE_BOOKS.find(b => b.id === id)?.name)
+          .filter(Boolean) as string[];
+        setTimeout(() => prefetchBooks(beginnerBookNames), 1500);
       }
+    }).catch((err) => {
+      console.warn('[App] Erro ao obter sessão:', err);
+      setIsInitializing(false);
+    });
 
-      self.registration.showNotification(title, {
-        body,
-        icon:   '/icons/icon.svg',
-        badge:  '/icons/icon.svg',
-        tag:    'streak-reminder',       // substitui notificação anterior se houver
-        renotify: false,
-        requireInteraction: false,
-        data: { streak, url: '/' },
-        actions: [
-          { action: 'open', title: '📖 Abrir agora' },
-          { action: 'dismiss', title: 'Mais tarde' },
-        ],
-        vibrate: [200, 100, 200],        // padrão Android
-      });
-    }, delayMs);
-  }
+    // Timeout de segurança — 4s é suficiente para a maioria das conexões
+    // Garante que o loading nunca trava mesmo em erros silenciosos de rede
+    const timeout = setTimeout(() => setIsInitializing(false), 4000);
 
-  if (type === 'CANCEL_STREAK_NOTIFICATION') {
-    if (streakNotifTimer) {
-      clearTimeout(streakNotifTimer);
-      streakNotifTimer = null;
-      console.log('[SW] Notificação de streak cancelada — usuário ativo');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setSession(session);
+      if (event === 'SIGNED_IN' && session?.user) {
+        const savedUserId = localStorage.getItem('current_user_id');
+        localStorage.setItem('current_user_id', session.user.id);
+
+        if (savedUserId !== session.user.id) {
+          // Usuário diferente neste dispositivo — limpa estado local e faz query ao banco
+          localStorage.removeItem('onboarding_done');
+          localStorage.removeItem('onboarding_profile');
+          localStorage.removeItem('onboarding_welcome');
+          localStorage.removeItem('user_profile');
+          localStorage.removeItem('user_badges');
+          setOnboardingDone(false);
+          setWelcomeMessage(null);
+          setShowAdmin(false);
+
+          // Verifica se já fez onboarding em outro dispositivo (só quando é usuário novo aqui)
+          try {
+            const { data: profileData } = await supabase
+              .from('profiles')
+              .select('onboarding_done')
+              .eq('id', session.user.id)
+              .single();
+            if (profileData?.onboarding_done) {
+              localStorage.setItem('onboarding_done', 'true');
+              setOnboardingDone(true);
+            }
+          } catch { /* ignora — onboarding local prevalece */ }
+        }
+        // Se savedUserId === session.user.id, usa o estado local (não faz query)
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
+  }, [hasSupabase]);
+
+  const handleOnboardingComplete = async (profile: OnboardingProfile) => {
+    const config = getWelcomeConfig(profile);
+    localStorage.setItem('onboarding_done', 'true');
+    localStorage.setItem('onboarding_profile', JSON.stringify(profile));
+    localStorage.setItem('onboarding_welcome', config.message);
+    setWelcomeMessage(config.message);
+    setHomeViewMode(config.recommendation);
+    setOnboardingDone(true);
+    setSelectedBookId(config.startBookId);
+
+    // Salva no banco para persistir entre dispositivos
+    if (session?.user?.id) {
+      await supabase
+        .from('profiles')
+        .update({ onboarding_done: true })
+        .eq('id', session.user.id);
     }
+  };
+
+  const isAdmin = session?.user?.email === ADMIN_EMAIL;
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#fdfbf7] gap-4">
+        <div className="relative">
+          <div className="w-16 h-16 bg-stone-900 rounded-2xl flex items-center justify-center shadow-xl">
+            <span className="text-amber-400 text-2xl">📖</span>
+          </div>
+          {/* Anel pulsante */}
+          <div className="absolute inset-0 rounded-2xl border-2 border-amber-400/50 animate-ping" />
+        </div>
+        <div className="text-center">
+          <p className="font-serif font-bold text-stone-900 text-lg">Versiculando</p>
+          <p className="text-stone-400 text-sm mt-0.5">Preparando sua jornada...</p>
+        </div>
+        <div className="flex gap-1.5 mt-2">
+          {[0, 1, 2].map(i => (
+            <div
+              key={i}
+              className="w-2 h-2 rounded-full bg-amber-400 animate-bounce"
+              style={{ animationDelay: `${i * 0.15}s` }}
+            />
+          ))}
+        </div>
+      </div>
+    );
   }
-});
 
-// ── Clique na notificação ─────────────────────────────────────
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
+  if (hasSupabase && !session) {
+    return <Auth onAuthSuccess={() => {}} />;
+  }
 
-  if (event.action === 'dismiss') return;
+  if (!onboardingDone) {
+    return <Onboarding onComplete={handleOnboardingComplete} />;
+  }
 
-  // Foca janela existente ou abre nova
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-      const existing = clients.find(c => c.url.includes(self.location.origin));
-      if (existing) {
-        existing.focus();
-        existing.postMessage({ type: 'NOTIF_OPENED', streak: event.notification.data?.streak });
-      } else {
-        self.clients.openWindow('/');
-      }
-    })
+  // Painel admin — só acessível para o email admin
+  if (isAdmin && showAdmin) {
+    return <Admin onExit={() => setShowAdmin(false)} />;
+  }
+
+  return (
+    <GamificationProvider>
+      {/* Banner de offline — aparece em todas as telas */}
+      <OfflineBanner />
+      {/* Banner de permissão de notificação de streak */}
+      <StreakNotificationBanner />
+
+      {selectedBookId ? (
+        <BookDetail bookId={selectedBookId} onBack={() => setSelectedBookId(null)} />
+      ) : selectedTrail ? (
+        <TrailDetail trail={selectedTrail} onBack={() => setSelectedTrail(null)} />
+      ) : (
+        <>
+          {currentTab === 'home' && (
+            <Home
+              onSelectBook={setSelectedBookId}
+              welcomeMessage={welcomeMessage}
+              onDismissWelcome={() => {
+                setWelcomeMessage(null);
+                localStorage.removeItem('onboarding_welcome');
+              }}
+            />
+          )}
+          {currentTab === 'journey'    && <JourneyMap onSelectBook={setSelectedBookId} />}
+          {currentTab === 'trails'     && <Trails onSelectTrail={setSelectedTrail} onSelectBook={setSelectedBookId} />}
+          {currentTab === 'community'  && <Community />}
+          {currentTab === 'profile'    && (
+            <Profile
+              isAdmin={isAdmin}
+              onOpenAdmin={() => setShowAdmin(true)}
+            />
+          )}
+
+          <Navigation currentTab={currentTab} onTabChange={setCurrentTab} />
+        </>
+      )}
+    </GamificationProvider>
   );
-});
+}

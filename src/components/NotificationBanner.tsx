@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 import { requestPermission, getPermissionStatus, notificationsSupported, scheduleStreakNotification } from '../services/notifications';
 
-const DISMISSED_KEY = 'notif_prompt_done_v2';
+const DISMISSED_KEY = 'notif_prompt_done_v3';
 
 interface NotificationPromptProps {
   streak: number;
@@ -15,9 +15,11 @@ export default function NotificationPrompt({ streak, trigger, onDone }: Notifica
   const [visible, setVisible]   = useState(false);
   const [accepted, setAccepted] = useState(false);
 
-  // Limpa chave antiga (versão anterior usava 'notif_prompt_done' sem sufixo)
+  // Limpa chaves antigas de versões anteriores
   useEffect(() => {
     localStorage.removeItem('notif_prompt_done');
+    localStorage.removeItem('notif_prompt_done_v2');
+    localStorage.removeItem('notif_banner_dismissed');
   }, []);
 
   useEffect(() => {

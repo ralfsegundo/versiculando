@@ -15,13 +15,6 @@ export default function NotificationPrompt({ streak, trigger, onDone }: Notifica
   const [visible, setVisible]   = useState(false);
   const [accepted, setAccepted] = useState(false);
 
-  // Limpa chaves antigas de versões anteriores
-  useEffect(() => {
-    localStorage.removeItem('notif_prompt_done');
-    localStorage.removeItem('notif_prompt_done_v2');
-    localStorage.removeItem('notif_banner_dismissed');
-  }, []);
-
   useEffect(() => {
     if (!trigger) return;
     if (!notificationsSupported()) return;

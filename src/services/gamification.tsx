@@ -350,29 +350,87 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         ]) as any;
 
         if (profileData) {
-          setProfile(prev => ({
-            ...prev,
-            ...profileData,
-            email: profileData.email || authEmail,
-            completedBooks: profileData.completed_books || [],
-            discipleCompletedBooks: profileData.disciple_completed_books || [],
-            visitedBooks: profileData.visited_books || [],
-            readChapters: profileData.read_chapters || {},
-            xpChapters: profileData.xp_chapters || prev.xpChapters || {},
-            pointsBreakdown: profileData.points_breakdown || prev.pointsBreakdown,
-            weeklyActivity: profileData.weekly_activity || [],
-            avatarId: profileData.avatar_id || prev.avatarId,
-            avatarUrl: profileData.avatar_url || prev.avatarUrl,
-            lastActiveDate: profileData.last_active_date || prev.lastActiveDate,
-            joinDate: profileData.join_date || prev.joinDate,
-            notesCount: profileData.notes_count || 0,
-            favoritesCount: profileData.favorites_count || 0,
-            dailyVerseCount: profileData.daily_verse_count || 0,
-            completedPlans: profileData.completed_plans || 0,
-            streakFreezes: profileData.streak_freezes ?? prev.streakFreezes ?? 1,
-            longestStreak: profileData.longest_streak ?? prev.longestStreak ?? 0,
-            ecoReactions: profileData.eco_reactions || prev.ecoReactions || {},
-          }));
+          setProfile(prev => {
+            // ─────────────────────────────────────────────────────────────
+            // CORREÇÃO: race condition entre localStorage e Supabase.
+            //
+            // Fluxo do bug:
+            //   1. Usuário ganha XP → localStorage atualizado imediatamente
+            //   2. Supabase ainda não foi salvo (debounce 2s em andamento)
+            //   3. Reload → localStorage carrega o valor correto em `prev`
+            //   4. loadSupabaseData retorna dados desatualizados do Supabase
+            //   5. `...profileData` sobrescreve `prev` → XP e progresso perdidos
+            //
+            // Estratégia: para campos monotônicos (só crescem), local vence
+            // se for maior. Para arrays de progresso, fazemos união.
+            // Para metadados de identidade, Supabase é canônico.
+            // ─────────────────────────────────────────────────────────────
+
+            // União de arrays — preserva itens locais não ainda sincronizados
+            const mergeArrays = (local: string[], remote: string[]) =>
+              Array.from(new Set([...remote, ...local]));
+
+            // União de Record<bookId, number[]> (readChapters, xpChapters)
+            const mergeChapterMaps = (
+              local: Record<string, number[]> = {},
+              remote: Record<string, number[]> = {}
+            ): Record<string, number[]> => {
+              const keys = Array.from(new Set([...Object.keys(local), ...Object.keys(remote)]));
+              const result: Record<string, number[]> = {};
+              for (const k of keys) {
+                result[k] = Array.from(new Set([...(remote[k] || []), ...(local[k] || [])]));
+              }
+              return result;
+            };
+
+            const mergedPoints = Math.max(prev.points, profileData.points ?? 0);
+
+            return {
+              ...prev,
+              ...profileData,
+              // Metadados de identidade — Supabase é canônico
+              email:         profileData.email        || authEmail,
+              avatarId:      profileData.avatar_id    || prev.avatarId,
+              avatarUrl:     profileData.avatar_url   || prev.avatarUrl,
+              lastActiveDate: profileData.last_active_date || prev.lastActiveDate,
+              joinDate:      profileData.join_date    || prev.joinDate,
+              weeklyActivity: profileData.weekly_activity || prev.weeklyActivity || [],
+              // Campos monotônicos — local vence se maior (nunca perder progresso)
+              points:          mergedPoints,
+              title:           getTitleByPoints(mergedPoints),
+              notesCount:      Math.max(prev.notesCount,      profileData.notes_count       ?? 0),
+              favoritesCount:  Math.max(prev.favoritesCount,  profileData.favorites_count   ?? 0),
+              dailyVerseCount: Math.max(prev.dailyVerseCount, profileData.daily_verse_count ?? 0),
+              completedPlans:  Math.max(prev.completedPlans,  profileData.completed_plans   ?? 0),
+              streak:          Math.max(prev.streak,          profileData.streak            ?? 0),
+              longestStreak:   Math.max(prev.longestStreak || 0, profileData.longest_streak ?? 0),
+              streakFreezes:   profileData.streak_freezes ?? prev.streakFreezes ?? 1,
+              // Arrays de progresso — união (local pode ter itens ainda não sincronizados)
+              completedBooks:         mergeArrays(prev.completedBooks,          profileData.completed_books          || []),
+              discipleCompletedBooks: mergeArrays(prev.discipleCompletedBooks,  profileData.disciple_completed_books || []),
+              visitedBooks:           mergeArrays(prev.visitedBooks || [],      profileData.visited_books            || []),
+              // Maps de capítulos lidos/XP — união por livro
+              readChapters: mergeChapterMaps(prev.readChapters, profileData.read_chapters),
+              xpChapters:   mergeChapterMaps(prev.xpChapters,   profileData.xp_chapters),
+              // Breakdown de pontos — local vence campo a campo
+              pointsBreakdown: {
+                freeExploration: Math.max(
+                  prev.pointsBreakdown?.freeExploration ?? 0,
+                  profileData.points_breakdown?.freeExploration ?? 0
+                ),
+                discipleTrail: Math.max(
+                  prev.pointsBreakdown?.discipleTrail ?? 0,
+                  profileData.points_breakdown?.discipleTrail ?? 0
+                ),
+                bonus: Math.max(
+                  prev.pointsBreakdown?.bonus ?? 0,
+                  profileData.points_breakdown?.bonus ?? 0
+                ),
+              },
+              // Eco reactions — merge: local sobrescreve Supabase (mais recente)
+              ecoReactions: { ...(profileData.eco_reactions || {}), ...(prev.ecoReactions || {}) },
+            };
+          });
         } else {
           setProfile(prev => ({ ...prev, email: authEmail }));
         }

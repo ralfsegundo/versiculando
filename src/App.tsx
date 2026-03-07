@@ -13,6 +13,12 @@ import NotificationPrompt from './components/NotificationBanner';
 import Admin from './components/Admin';
 import { GamificationProvider, useGamification } from './services/gamification';
 
+// Limpa chaves antigas de notificação para forçar re-exibição do banner novo
+// Roda uma vez no carregamento do módulo, antes de qualquer componente montar
+['notif_prompt_done', 'notif_prompt_done_v2', 'notif_banner_dismissed'].forEach(k =>
+  localStorage.removeItem(k)
+);
+
 // Wrapper interno — lê streak e trigger do contexto, passa ao prompt
 function StreakNotificationBanner() {
   const { profile, notificationTrigger, clearNotificationTrigger } = useGamification();

@@ -14,9 +14,10 @@ interface HomeProps {
 const _now = new Date();
 const _startOfYear = new Date(_now.getFullYear(), 0, 1);
 export const DAY_OF_YEAR = Math.floor((_now.getTime() - _startOfYear.getTime()) / 86400000);
-export const TODAY_STR = _now.toISOString().split('T')[0];
-const isoWeek = Math.ceil((DAY_OF_YEAR + _startOfYear.getDay() + 1) / 7);
-const CURRENT_WEEK_KEY = `${_now.getFullYear()}-W${isoWeek}`;
+// Correção para Fuso Horário Local (evita que vire o dia às 21h do Brasil)
+export const TODAY_STR = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`;
+const WEEK_OF_YEAR = Math.floor(DAY_OF_YEAR / 7);
+const CURRENT_WEEK_KEY = `${_now.getFullYear()}-W${WEEK_OF_YEAR}`;
 
 // PWA Install Hook
 function usePWAInstall() {
@@ -62,13 +63,16 @@ function usePWAInstall() {
 export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }: HomeProps) {
   const [searchTerm, setSearchTerm] = useState('');
   
-  // AQUI: Trouxemos completeLectio para o contexto
-  const { profile, accessDailyVerse, userId, useStreakFreeze, completeDailyMission, recordSaintEncounter, completeFlashChallenge, completeLectio } = useGamification();
+  // Incluído completeLectio e lendo dados direto da fonte da verdade: o profile
+  const { 
+    profile, accessDailyVerse, userId, useStreakFreeze, 
+    completeDailyMission, recordSaintEncounter, completeFlashChallenge, completeLectio 
+  } = useGamification();
 
-  // AQUI A MÁGICA: Estados baseados DIRETAMENTE no profile sincronizado, e não em useState solto
-  const flashCompleted = profile.flashChallengeDone === CURRENT_WEEK_KEY;
+  // 🔴 O SEGREDO DO PWA: O estado agora é derivado do profile oficial, que sincroniza com o banco!
   const lectioDone = profile.lastLectioDate === TODAY_STR;
   const dailyVerseRead = profile.lastDailyVerseDate === TODAY_STR;
+  const flashCompleted = profile.flashChallengeDone === CURRENT_WEEK_KEY;
 
   // 1. Versículo do dia rotativo
   const DAILY_VERSES = [
@@ -172,7 +176,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     { id: 'efesios', text: 'Leia Efésios inteiro antes de amanhã', bookId: 'eph', hours: 36 },
     { id: 'discurso_montanha', text: 'Leia o Sermão da Montanha (Mt 5-7)', bookId: 'mat', hours: 24 },
   ];
-  const flashChallenge = FLASH_CHALLENGES[Math.floor(DAY_OF_YEAR / 7) % FLASH_CHALLENGES.length];
+  const flashChallenge = FLASH_CHALLENGES[WEEK_OF_YEAR % FLASH_CHALLENGES.length];
   const showFlashChallenge = (DAY_OF_YEAR % 7) < 2;
   const flashDismissed = localStorage.getItem(`${userId}_flash_dismissed_${CURRENT_WEEK_KEY}`) === 'true';
   const [flashVisible, setFlashVisible] = useState(showFlashChallenge && !flashDismissed && !flashCompleted);
@@ -183,6 +187,11 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { isInstallable, install, dismiss, dismissed } = usePWAInstall();
+
+  // Quando o flashCompletd muda via banco (outro device), some aqui também
+  useEffect(() => {
+    if (flashCompleted) setFlashVisible(false);
+  }, [flashCompleted]);
 
   const handleReadDailyVerse = () => {
     if (!dailyVerseRead) {
@@ -419,7 +428,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           </div>
         </header>
 
-        {/* Banner de boas-vindas personalizado (pós-onboarding) */}
+        {/* Banner de boas-vindas */}
         <AnimatePresence>
           {welcomeMessage && (
             <motion.div

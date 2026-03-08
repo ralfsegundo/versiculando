@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useGamification, AVATARS } from '../services/gamification';
 import { Users, Search, UserPlus, Check, X, UserMinus, Clock, Activity, Trophy, BookOpen, Heart, ThumbsUp, ChevronLeft, Send, LogOut, Crown, Trash2, BarChart2, Plus, Pin, Edit2, Target, MessageSquare, Smile, Paperclip, Link as LinkIcon, ExternalLink, FileSpreadsheet, FileText, Youtube, HelpCircle } from 'lucide-react';
 import { sharingService, Connection } from '../services/sharingService';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { BIBLE_BOOKS, BEGINNER_PATH } from '../constants';
 import { supabase } from '../lib/supabase';
 
@@ -217,7 +217,6 @@ export default function Community() {
   // ── Core Engine de Atualização de Grupos ──────────────────
   const updateGroupInDB = async (groupId: string, updater: (dbGroup: Group) => Partial<Group>) => {
     try {
-      // 1. Busca os dados mais recentes do Supabase (transação leve)
       const { data, error } = await supabase.from('community_groups').select('*').eq('id', groupId).single();
       if (error || !data) return false;
 
@@ -231,15 +230,12 @@ export default function Community() {
         materials: data.materials || [],
       };
 
-      // 2. Calcula apenas a modificação desejada
       const changes = updater(currentGroup);
       if (Object.keys(changes).length === 0) return true;
       
-      // 3. Aplica no banco
       const { error: updateError } = await supabase.from('community_groups').update(changes).eq('id', groupId);
       
       if (!updateError) {
-        // Atualiza a tela fundindo o estado remoto + a nossa modificação local
         const finalGroup = { ...currentGroup, ...changes };
         setActiveGroup(prev => prev && prev.id === groupId ? finalGroup : prev);
         setMockGroups(prev => prev.map(g => g.id === groupId ? finalGroup : g));
@@ -282,7 +278,7 @@ export default function Community() {
         .select('id, user_name, user_email, avatar_id, action, created_at')
         .order('created_at', { ascending: false })
         .limit(15);
-      if (error) { console.warn('[Community] loadFeed error:', error.message); return; }
+      if (error) return;
       if (data) {
         setMockFeed(data.map((r: any) => ({
           id: r.id,
@@ -297,7 +293,7 @@ export default function Community() {
         ).length;
         setUnreadFeedCount(newCount);
       }
-    } catch (e) { console.warn('[Community] loadFeed exception:', e); }
+    } catch (e) { }
   };
 
   const loadRanking = async () => {
@@ -369,7 +365,7 @@ export default function Community() {
         }, 0);
         setUnreadGroupsCount(newMsgs);
       }
-    } catch (e) { console.warn('[Community] loadGroups exception:', e); }
+    } catch (e) { }
   };
 
   const loadGroupInvites = async () => {
@@ -380,7 +376,7 @@ export default function Community() {
         .select('id, group_id, group_name, target_name, from_name, from_avatar_id')
         .eq('to_email', profile.email)
         .eq('status', 'pending');
-      if (error) { console.warn('[Community] loadGroupInvites error:', error.message); return; }
+      if (error) return;
       if (data) {
         setMockGroupInvites(data.map((i: any) => ({
           id: i.id,
@@ -391,7 +387,7 @@ export default function Community() {
           fromAvatarId: i.from_avatar_id,
         })));
       }
-    } catch (e) { console.warn('[Community] loadGroupInvites exception:', e); }
+    } catch (e) { }
   };
 
   const loadPrayers = async () => {
@@ -401,7 +397,7 @@ export default function Community() {
         .select('id, user_name, user_id, avatar_id, avatar_url, request, prayed_count')
         .order('created_at', { ascending: false })
         .limit(50);
-      if (prayersError) { console.warn('[Community] loadPrayers error:', prayersError.message); return; }
+      if (prayersError) return;
       if (!prayers) return;
 
       const { data: myPrayers } = await supabase
@@ -427,7 +423,7 @@ export default function Community() {
         new Date(p.created_at).getTime() > lastSeenTs && p.user_id !== (userId || '')
       ).length;
       setUnreadPrayersCount(newPrayers);
-    } catch (e) { console.warn('[Community] loadPrayers exception:', e); }
+    } catch (e) { }
   };
 
   const formatRelativeTime = (isoString: string) => {
@@ -581,7 +577,6 @@ export default function Community() {
       type: postType,
     };
 
-    // Atualização otimista
     if (editingMessageId) {
       setActiveGroup(prev => prev ? { ...prev, messages: prev.messages.map(m => m.id === editingMessageId ? { ...m, text: newMessage, type: postType } : m) } : prev);
     } else {
@@ -1377,7 +1372,7 @@ export default function Community() {
                                 {member.avatarUrl ? (
                                   <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                 ) : (
-                                  AVATARS.find(a => a.id === member.avatarId)?.emoji || '👤'
+                                  <span>{AVATARS.find(a => a.id === member.avatarId)?.emoji || '👤'}</span>
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
@@ -1539,7 +1534,7 @@ export default function Community() {
                             {msg.avatarUrl ? (
                               <img src={msg.avatarUrl} alt={msg.user} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
-                              AVATARS.find(a => a.id === msg.avatarId)?.emoji || '👤'
+                              <span>{AVATARS.find(a => a.id === msg.avatarId)?.emoji || '👤'}</span>
                             )}
                           </div>
 
@@ -2482,27 +2477,34 @@ export default function Community() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="flex -space-x-1.5">
+                    <div className="flex items-center justify-between gap-3 mt-4 pt-4 border-t border-stone-100/60">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex -space-x-2 shrink-0">
                           {group.members.slice(0, 3).map((m, i) => (
-                            <div key={i} className="w-7 h-7 rounded-full bg-white border-2 border-white flex items-center justify-center text-xs overflow-hidden shadow-sm">
+                            <div key={i} className="w-8 h-8 rounded-full bg-stone-100 border-2 border-white flex items-center justify-center text-sm overflow-hidden shadow-sm relative" style={{ zIndex: 10 - i }}>
                               {m.avatarUrl ? (
                                 <img src={m.avatarUrl} alt={m.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                               ) : (
-                                AVATARS.find(a => a.id === m.avatarId)?.emoji || '👤'
+                                <span>{AVATARS.find(a => a.id === m.avatarId)?.emoji || '👤'}</span>
                               )}
                             </div>
                           ))}
                           {group.members.length > 3 && (
-                            <div className="w-7 h-7 rounded-full bg-stone-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-stone-500 shadow-sm">
+                            <div className="w-8 h-8 rounded-full bg-stone-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-stone-500 shadow-sm relative z-0">
                               +{group.members.length - 3}
                             </div>
                           )}
                         </div>
-                        <span className="text-xs text-stone-400 font-medium">{group.members.length} membros</span>
+                        <div className="min-w-0">
+                          <p className="text-xs text-stone-600 font-bold truncate">
+                            {group.members.map(m => m.email === profile.email ? 'Você' : (m.name?.split(' ')[0] || 'Usuário')).join(', ')}
+                          </p>
+                          <p className="text-[10px] text-stone-400 mt-0.5">
+                            {group.members.length} {group.members.length === 1 ? 'membro' : 'membros'}
+                          </p>
+                        </div>
                       </div>
-                      <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${hasUnread ? 'text-indigo-600 bg-indigo-100' : 'text-indigo-500 bg-indigo-50'}`}>
+                      <span className={`text-[10px] font-bold px-3 py-1.5 rounded-xl shrink-0 transition-colors ${hasUnread ? 'text-indigo-700 bg-indigo-100' : 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100'}`}>
                         {hasUnread ? 'Novas mensagens' : 'Entrar →'}
                       </span>
                     </div>
@@ -2671,7 +2673,7 @@ export default function Community() {
                             {user.avatarUrl ? (
                               <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
-                              AVATARS.find(a => a.id === user.avatarId)?.emoji || '👤'
+                              <span>{AVATARS.find(a => a.id === user.avatarId)?.emoji || '👤'}</span>
                             )}
                           </div>
                           <div>
@@ -2716,7 +2718,7 @@ export default function Community() {
                           {conn.user.avatarUrl ? (
                             <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
-                            AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
+                            <span>{AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'}</span>
                           )}
                         </div>
                         <div>
@@ -2758,7 +2760,7 @@ export default function Community() {
                           {conn.user.avatarUrl ? (
                             <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
-                            AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
+                            <span>{AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'}</span>
                           )}
                         </div>
                         <div>
@@ -2804,7 +2806,7 @@ export default function Community() {
                             {conn.user.avatarUrl ? (
                               <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
-                              AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
+                              <span>{AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'}</span>
                             )}
                           </div>
                           <div>

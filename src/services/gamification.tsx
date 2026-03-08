@@ -269,6 +269,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   // Controla se o perfil foi carregado do Supabase — evita salvar de volta logo após carregar
   const isLoadingFromSupabase = useRef(false);
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ID único desta aba/instância — distingue "meu save" de "save de outro dispositivo" no Realtime
+  const deviceId = useRef(`${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const hasCheckedStreak = useRef(false);
 
   // Sinal para o prompt de notificação — disparado após primeira conquista real
@@ -573,11 +575,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             const remote = payload.new;
             if (!remote) return;
 
-            // Ignora se foi este dispositivo que disparou o save (updated_at muito recente)
-            // Margem de 3s para cobrir o debounce + latência de rede
-            const remoteUpdatedAt = remote.updated_at ? new Date(remote.updated_at).getTime() : 0;
-            const ageMs = Date.now() - remoteUpdatedAt;
-            if (ageMs < 3000) return; // provavelmente foi este próprio device
+            // Ignora se foi ESTE dispositivo que disparou o save
+            // (device_id é gerado por aba/instância — único por sessão)
+            if (remote.device_id && remote.device_id === deviceId.current) return;
 
             // Bloqueia o save enquanto aplica o merge remoto
             isLoadingFromSupabase.current = true;
@@ -747,6 +747,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           last_freeze_earned_week: profile.lastFreezeEarnedWeek || remote?.last_freeze_earned_week || null,
           daily_mission_streak:    Math.max(profile.dailyMissionStreak || 0, remote?.daily_mission_streak ?? 0),
           updated_at: new Date().toISOString(),
+          device_id: deviceId.current,
         });
 
         // Se o remote tinha pontos maiores, atualiza o estado local também

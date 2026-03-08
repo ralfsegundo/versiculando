@@ -163,7 +163,7 @@ const getLocalProfile = (): UserProfile => {
     if (!parsed.discipleCompletedBooks) parsed.discipleCompletedBooks = [];
     if (!parsed.readChapters) parsed.readChapters = {};
     if (!parsed.xpChapters) parsed.xpChapters = {};
-    if (parsed.streakFreezes === undefined) parsed.streakFreezes = 1;
+    if (parsed.streakFreezes === undefined) parsed.streakFreezes = 1; 
     if (parsed.dailyMissionStreak === undefined) parsed.dailyMissionStreak = 0;
     if (!parsed.ecoReactions) parsed.ecoReactions = {};
     if (!parsed.bibleFavorites) parsed.bibleFavorites = {};
@@ -177,12 +177,11 @@ const getLocalProfile = (): UserProfile => {
     email: '',
     avatarId: 'cruz',
     joinDate: new Date().toISOString(),
-    weeklyActivity: [],
+    weeklyActivity: [new Date().toISOString()],
     points: 0,
     pointsBreakdown: { freeExploration: 0, discipleTrail: 0, bonus: 0 },
     streak: 0,
     longestStreak: 0,
-    // FIX ABA ANÔNIMA: Data muito antiga para o banco de dados sempre vencer o merge.
     lastActiveDate: '2000-01-01T00:00:00.000Z',
     title: 'Iniciante',
     completedBooks: [],
@@ -353,7 +352,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
         const session = sessionResult?.data?.session;
         if (!session?.user) {
-          setSupabaseReady(true);
+          setSupabaseReady(true); 
           return;
         }
 
@@ -392,7 +391,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               ? new Date(profileData.last_active_date).getTime() : 0;
             const localLastActive = prev.lastActiveDate
               ? new Date(prev.lastActiveDate).getTime() : 0;
-            
             const remoteIsNewer = remoteLastActive > localLastActive;
             
             const mergedLastActiveDate = remoteIsNewer 
@@ -412,6 +410,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               joinDate:      profileData.join_date     || prev.joinDate,
               weeklyActivity: profileData.weekly_activity || prev.weeklyActivity || [],
               
+              // CORREÇÃO APLICADA AQUI: Protege o streak de regressão no reload da aba anônima
               lastActiveDate:  mergedLastActiveDate,
               streak:          mergedStreak,
               
@@ -474,8 +473,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         setTimeout(() => {
           isLoadingFromSupabase.current = false;
           setSupabaseReady(true);
-          // Força o trigger do useEffect de salvamento se o local e o remoto forem diferentes
-          setProfile(p => ({ ...p }));
         }, 500);
       } catch (e) {
         console.warn('[gamification] loadSupabaseData error:', e);

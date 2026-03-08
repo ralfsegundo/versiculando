@@ -435,6 +435,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         setProfile(getInitialProfile());
         setBadges([]);
         setUserId(null);
+        // FIX CRÍTICO: Previne que o estado "zerado" do visitante envenene o login futuro
+        pendingSavesCount.current = 0; 
+        hasCheckedStreak.current = false;
         setSupabaseReady(true);
         setLoadError(false);
         return;
@@ -442,6 +445,10 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
       if (userId !== sessionUser.id) {
          setSupabaseReady(false);
+         // FIX CRÍTICO: Se o usuário trocou (fez login), limpa a fila de salvamento
+         // garantindo que os dados que vierem do banco não sejam bloqueados
+         pendingSavesCount.current = 0; 
+         hasCheckedStreak.current = false;
       }
 
       setUserId(sessionUser.id);
@@ -452,8 +459,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         setSupabaseReady(true);
         setLoadError(false);
       } catch (err) {
-        // Falha crítica (offline e sem cache local).
-        // Evitamos setar supabaseReady para true, protegendo os dados da nuvem contra sobrescrita.
         console.error("Carregamento do Supabase abortado para prevenir perda de dados:", err);
         setLoadError(true);
       } finally {
@@ -920,12 +925,14 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     updateStateFromUserAction(prev => ({ ...prev, ...updates }));
   };
 
+  // FIX CRÍTICO: Previne que checkStreak seja rodado para visitantes deslogados
+  // que envenenariam a flag de salvamento
   useEffect(() => {
-    if (supabaseReady && !hasCheckedStreak.current) {
+    if (supabaseReady && userId && !hasCheckedStreak.current) {
       hasCheckedStreak.current = true;
       checkStreak();
     }
-  }, [supabaseReady]);
+  }, [supabaseReady, userId]);
 
   return (
     <GamificationContext.Provider value={{

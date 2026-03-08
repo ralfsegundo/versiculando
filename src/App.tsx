@@ -31,7 +31,7 @@ function StreakNotificationBanner() {
 }
 
 function AppContent() {
-  const { profile, updateProfile, isReady } = useGamification();
+  const { profile, updateProfile, isReady, loadError } = useGamification();
   const [session, setSession] = useState<Session | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
@@ -68,6 +68,25 @@ function AppContent() {
       setTimeout(() => setSelectedBookId(config.startBookId), 100);
     }
   };
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#fdfbf7] flex flex-col items-center justify-center p-8 text-center">
+        <div className="text-5xl mb-4">📶</div>
+        <h1 className="text-2xl font-serif font-bold text-stone-900 mb-2">Conexão Necessária</h1>
+        <p className="text-stone-500 mb-8 max-w-sm">
+          Parece que você está offline e este é o seu primeiro acesso neste dispositivo. 
+          Por favor, conecte-se à internet para carregarmos seu perfil e proteger o seu progresso.
+        </p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-3.5 px-8 rounded-2xl shadow-md transition-colors active:scale-95"
+        >
+          Tentar Novamente
+        </button>
+      </div>
+    );
+  }
 
   if (isInitializing || !isReady) return null;
 

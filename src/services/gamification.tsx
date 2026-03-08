@@ -150,7 +150,6 @@ export const getStreakMultiplier = (streak: number): number => {
 export const applyMultiplier = (base: number, streak: number): number =>
   Math.round(base * getStreakMultiplier(streak));
 
-// Helper: Aplica pontos atomicamente garantindo o status atualizado do título
 const applyPointsToProfile = (prev: UserProfile, amount: number, category?: 'freeExploration' | 'discipleTrail' | 'bonus'): UserProfile => {
   const newPoints = prev.points + amount;
   const newBreakdown = { ...(prev.pointsBreakdown || { freeExploration: 0, discipleTrail: 0, bonus: 0 }) };
@@ -204,6 +203,7 @@ interface GamificationContextType {
   badges: Badge[];
   weeklyChallenge: WeeklyChallenge;
   isReady: boolean;
+  loadError: boolean;
   addPoints: (amount: number, reason: string, category?: 'freeExploration' | 'discipleTrail' | 'bonus') => void;
   markBookCompleted: (bookId: string, isGps?: boolean) => void;
   markBookVisited: (bookId: string) => void;
@@ -235,11 +235,11 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const [badges, setBadges] = useState<Badge[]>([]);
   const [floatingPoints, setFloatingPoints] = useState<FloatingPoint[]>([]);
   const [supabaseReady, setSupabaseReady] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   
-  // FLAGS de controle de sincronização
   const isLoadingFromSupabase = useRef(false);
-  const pendingSavesCount = useRef(0); // Flag Numérica: garante que polls não sobrescrevam ações pendentes
+  const pendingSavesCount = useRef(0);
   
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncChannel = useRef<RealtimeChannel | null>(null);
@@ -249,7 +249,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const [notificationTrigger, setNotificationTrigger] = useState(false);
   const notifAlreadyTriggered = useRef(false);
 
-  // Wrappers de ação para marcar que a mudança foi orgânica
   const updateStateFromUserAction = useCallback((updater: (prev: UserProfile) => UserProfile) => {
     pendingSavesCount.current += 1;
     setProfile(updater);
@@ -303,88 +302,123 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const [weeklyChallenge, setWeeklyChallenge] = useState<WeeklyChallenge>(getStoredChallenge);
 
   const fetchProfileData = useCallback(async (uid: string, sessionEmail?: string) => {
+    let profileData = null;
+    let badgesData = null;
+    let isNewUser = false;
+
     try {
-      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', uid).single();
-      const { data: badgesData } = await supabase.from('user_badges').select('*').eq('user_id', uid);
-
-      // Proteção de Condição de Corrida: se o usuário interagiu com a tela
-      // enquanto o fetch ocorria, a gente descarta o fetch para não sobrescrever o ganho de XP
-      if (pendingSavesCount.current > 0) {
-        return;
-      }
-
-      if (profileData) {
-        let localOnboardingDone = false;
-        try { localOnboardingDone = !!localStorage.getItem('onboarding_profile'); } catch (e) { /* ignore */ }
-        const finalOnboardingDone = profileData.onboarding_done || localOnboardingDone || false;
-
-        setProfile(prev => {
-          // Double check at the exact moment of state application
-          if (pendingSavesCount.current > 0) return prev;
-          
-          return {
-            ...getInitialProfile(),
-            id: uid,
-            name: profileData.name || 'Peregrino',
-            email: sessionEmail || prev.email || '',
-            avatarId: profileData.avatar_id || 'cruz',
-            avatarUrl: profileData.avatar_url,
-            joinDate: profileData.join_date,
-            weeklyActivity: profileData.weekly_activity || [],
-            points: profileData.points || 0,
-            pointsBreakdown: profileData.points_breakdown || { freeExploration: 0, discipleTrail: 0, bonus: 0 },
-            streak: profileData.streak || 0,
-            longestStreak: profileData.longest_streak || 0,
-            lastActiveDate: profileData.last_active_date || new Date().toISOString(),
-            title: profileData.title || 'Iniciante',
-            completedBooks: profileData.completed_books || [],
-            discipleCompletedBooks: profileData.disciple_completed_books || [],
-            visitedBooks: profileData.visited_books || [],
-            readChapters: profileData.read_chapters || {},
-            xpChapters: profileData.xp_chapters || {},
-            notesCount: profileData.notes_count || 0,
-            favoritesCount: profileData.favorites_count || 0,
-            dailyVerseCount: profileData.daily_verse_count || 0,
-            completedPlans: profileData.completed_plans || 0,
-            streakFreezes: profileData.streak_freezes || 1,
-            lastFreezeEarnedWeek: profileData.last_freeze_earned_week,
-            lastDailyMissionDate: profileData.last_daily_mission_date,
-            dailyMissionStreak: profileData.daily_mission_streak || 0,
-            onboardingDone: finalOnboardingDone,
-            lastDailyVerseDate: profileData.last_daily_verse_date,
-            flashChallengeDone: profileData.flash_challenge_done,
-            saintsEncountered: profileData.saints_encountered || [],
-            lastLectioDate: profileData.last_lectio_date,
-            onboardingProfile: profileData.onboarding_profile,
-            ecoReactions: profileData.eco_reactions || {},
-            bibleFavorites: profileData.bible_favorites || {},
-            bibleFavoritesEver: profileData.bible_favorites_ever || {},
-          };
-        });
-
-        if (profileData.weekly_challenge) {
-          const challenge = profileData.weekly_challenge as WeeklyChallenge;
-          if (new Date(challenge.deadline).getTime() < Date.now()) {
-            setWeeklyChallenge(getStoredChallenge());
-          } else {
-            setWeeklyChallenge(challenge);
-          }
+      const profileRes = await supabase.from('profiles').select('*').eq('id', uid).single();
+      
+      if (profileRes.error) {
+        if (profileRes.error.code === 'PGRST116') {
+          // Novo usuário (trigger pode ainda não ter finalizado)
+          isNewUser = true;
         } else {
-          setWeeklyChallenge(getStoredChallenge());
+          throw profileRes.error;
         }
+      } else {
+        profileData = profileRes.data;
       }
 
-      if (badgesData) {
-        setBadges(badgesData.map(b => ({
-          id: b.badge_id as BadgeId,
-          title: b.title,
-          description: b.description,
-          emoji: b.emoji,
-          unlockedAt: b.unlocked_at
-        })));
+      if (!isNewUser) {
+        const badgesRes = await supabase.from('user_badges').select('*').eq('user_id', uid);
+        badgesData = badgesRes.data;
       }
     } catch (err) {
-      console.error('[gamification] fetchProfileData error:', err);
+      console.warn('[gamification] Erro de rede no Supabase. Tentando cache local...', err);
+      const cached = localStorage.getItem(`versiculando_profile_${uid}`);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setProfile(prev => pendingSavesCount.current > 0 ? prev : parsed);
+          // Podemos recuperar os badges cacheados aqui se quisermos, mas o perfil é essencial.
+          return;
+        } catch (e) {}
+      }
+      
+      // ALERTA CRÍTICO: Se chegamos aqui, o usuário NÃO tem internet e NÃO tem cache.
+      // Retornar um erro impede que a aplicação o sobrescreva com zeros.
+      throw new Error("Erro de rede e nenhum cache offline disponível.");
+    }
+
+    if (pendingSavesCount.current > 0) return;
+
+    if (isNewUser || !profileData) {
+      // Usuário realmente novo. 
+      const newProfile = { ...getInitialProfile(), id: uid, email: sessionEmail || '' };
+      localStorage.setItem(`versiculando_profile_${uid}`, JSON.stringify(newProfile));
+      setProfile(prev => pendingSavesCount.current > 0 ? prev : newProfile);
+      setWeeklyChallenge(getStoredChallenge());
+      setBadges([]);
+      return;
+    }
+
+    let localOnboardingDone = false;
+    try { localOnboardingDone = !!localStorage.getItem('onboarding_profile'); } catch (e) {}
+    const finalOnboardingDone = profileData.onboarding_done || localOnboardingDone || false;
+
+    const newProfile: UserProfile = {
+      ...getInitialProfile(),
+      id: uid,
+      name: profileData.name || 'Peregrino',
+      email: sessionEmail || profileData.email || '',
+      avatarId: profileData.avatar_id || 'cruz',
+      avatarUrl: profileData.avatar_url,
+      joinDate: profileData.join_date,
+      weeklyActivity: profileData.weekly_activity || [],
+      points: profileData.points || 0,
+      pointsBreakdown: profileData.points_breakdown || { freeExploration: 0, discipleTrail: 0, bonus: 0 },
+      streak: profileData.streak || 0,
+      longestStreak: profileData.longest_streak || 0,
+      lastActiveDate: profileData.last_active_date || new Date().toISOString(),
+      title: profileData.title || 'Iniciante',
+      completedBooks: profileData.completed_books || [],
+      discipleCompletedBooks: profileData.disciple_completed_books || [],
+      visitedBooks: profileData.visited_books || [],
+      readChapters: profileData.read_chapters || {},
+      xpChapters: profileData.xp_chapters || {},
+      notesCount: profileData.notes_count || 0,
+      favoritesCount: profileData.favorites_count || 0,
+      dailyVerseCount: profileData.daily_verse_count || 0,
+      completedPlans: profileData.completed_plans || 0,
+      streakFreezes: profileData.streak_freezes ?? 1,
+      lastFreezeEarnedWeek: profileData.last_freeze_earned_week,
+      lastDailyMissionDate: profileData.last_daily_mission_date,
+      dailyMissionStreak: profileData.daily_mission_streak || 0,
+      onboardingDone: finalOnboardingDone,
+      lastDailyVerseDate: profileData.last_daily_verse_date,
+      flashChallengeDone: profileData.flash_challenge_done,
+      saintsEncountered: profileData.saints_encountered || [],
+      lastLectioDate: profileData.last_lectio_date,
+      onboardingProfile: profileData.onboarding_profile,
+      ecoReactions: profileData.eco_reactions || {},
+      bibleFavorites: profileData.bible_favorites || {},
+      bibleFavoritesEver: profileData.bible_favorites_ever || {},
+    };
+
+    // Cache local imediato para prevenir perdas futuras
+    localStorage.setItem(`versiculando_profile_${uid}`, JSON.stringify(newProfile));
+    setProfile(prev => pendingSavesCount.current > 0 ? prev : newProfile);
+
+    if (profileData.weekly_challenge) {
+      const challenge = profileData.weekly_challenge as WeeklyChallenge;
+      if (new Date(challenge.deadline).getTime() < Date.now()) {
+        setWeeklyChallenge(getStoredChallenge());
+      } else {
+        setWeeklyChallenge(challenge);
+      }
+    } else {
+      setWeeklyChallenge(getStoredChallenge());
+    }
+
+    if (badgesData) {
+      setBadges(badgesData.map(b => ({
+        id: b.badge_id as BadgeId,
+        title: b.title,
+        description: b.description,
+        emoji: b.emoji,
+        unlockedAt: b.unlocked_at
+      })));
     }
   }, []);
 
@@ -402,6 +436,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         setBadges([]);
         setUserId(null);
         setSupabaseReady(true);
+        setLoadError(false);
         return;
       }
 
@@ -412,10 +447,18 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       setUserId(sessionUser.id);
       isLoadingFromSupabase.current = true;
       
-      await fetchProfileData(sessionUser.id, sessionUser.email);
-      
-      setSupabaseReady(true);
-      isLoadingFromSupabase.current = false;
+      try {
+        await fetchProfileData(sessionUser.id, sessionUser.email);
+        setSupabaseReady(true);
+        setLoadError(false);
+      } catch (err) {
+        // Falha crítica (offline e sem cache local).
+        // Evitamos setar supabaseReady para true, protegendo os dados da nuvem contra sobrescrita.
+        console.error("Carregamento do Supabase abortado para prevenir perda de dados:", err);
+        setLoadError(true);
+      } finally {
+        isLoadingFromSupabase.current = false;
+      }
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -429,7 +472,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchProfileData]);
 
-  // Canais de Sincronização em Tempo Real e Eventos de Janela
+  // Canais de Sincronização em Tempo Real
   useEffect(() => {
     if (!userId || !supabaseReady) return;
 
@@ -451,7 +494,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         nativeBroadcast.current = bc;
       }
     } catch (e) {
-      console.warn('[gamification] BroadcastChannel bloqueado ou indisponível', e);
+      console.warn('[gamification] BroadcastChannel indisponível', e);
     }
 
     const handleFocus = () => {
@@ -483,7 +526,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     };
   }, [userId, supabaseReady, fetchProfileData]);
 
-  // Save to Supabase
+  // Save to Supabase e LocalStorage
   useEffect(() => {
     if (!userId || isLoadingFromSupabase.current || !supabaseReady) return;
     if (pendingSavesCount.current === 0) return;
@@ -492,6 +535,11 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     
     saveDebounceRef.current = setTimeout(async () => {
       const currentSaveId = pendingSavesCount.current;
+      
+      // Sempre salvar localmente primeiro como salvaguarda
+      try {
+        localStorage.setItem(`versiculando_profile_${userId}`, JSON.stringify(profile));
+      } catch(e) {}
       
       try {
         await supabase.from('profiles').upsert({
@@ -543,7 +591,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           nativeBroadcast.current.postMessage('profile_updated');
         }
       } catch (err) {
-        console.warn('[gamification] saveToSupabase error:', err);
+        console.warn('[gamification] Erro ao salvar no Supabase:', err);
       } finally {
         if (pendingSavesCount.current === currentSaveId) {
           pendingSavesCount.current = 0;
@@ -881,7 +929,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   return (
     <GamificationContext.Provider value={{
-      profile, userId, badges, weeklyChallenge, isReady: supabaseReady,
+      profile, userId, badges, weeklyChallenge, isReady: supabaseReady, loadError,
       addPoints, markBookCompleted, markBookVisited, markChapterRead, markAllChaptersRead,
       addNote, addFavorite, updateFavorites, accessDailyVerse, completePlan, checkStreak,
       updateProfile, showFloatingPoints, useStreakFreeze, completeDailyMission,

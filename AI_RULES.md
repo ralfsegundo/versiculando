@@ -1,39 +1,40 @@
 # AI Development Rules & Guidelines
 
-This document outlines the core technology stack and strict development rules for this application. All AI assistants working on this codebase must adhere to these guidelines.
+Este documento define a stack de tecnologia principal e as regras estritas de desenvolvimento para esta aplicação (Versiculando). Todos os assistentes de IA que trabalharem neste código devem seguir estas diretrizes.
 
-## 🛠 Tech Stack
+## 🛠 Tech Stack (Pilha de Tecnologia)
 
-- **React**: Core UI library for building the application.
-- **TypeScript**: Primary programming language. Strong typing is mandatory.
-- **Tailwind CSS**: Utility-first CSS framework used for all styling.
-- **shadcn/ui**: Pre-built, customizable UI component library.
-- **Radix UI**: Headless UI primitives (the foundation of shadcn/ui components).
-- **React Router**: Library for handling client-side routing.
-- **lucide-react**: Official icon library for the application.
+- **React 19**: Biblioteca UI principal da aplicação.
+- **TypeScript**: Linguagem de programação principal. Tipagem forte é obrigatória.
+- **Vite & Tailwind CSS v4**: Ferramenta de build rápida (Vite) com framework CSS utilitário para estilização.
+- **Supabase**: Backend as a Service usado para banco de dados e possivelmente autenticação.
+- **Express & WebSockets**: Servidor Node.js customizado (`server.ts`) para lidar com conexões em tempo real.
+- **Framer Motion (`motion`)**: Biblioteca principal para animações e transições fluidas.
+- **Bibliotecas Utilitárias**: 
+  - `html2canvas`: Para captura e geração de imagens de elementos DOM.
+  - `canvas-confetti`: Para efeitos visuais de confete.
+  - `lucide-react`: Biblioteca oficial de ícones.
 
-## 📜 Development Rules & Library Usage
+## 📜 Regras de Desenvolvimento e Uso de Bibliotecas
 
-### 1. Styling & CSS (Tailwind CSS)
-- **Rule**: ALWAYS use Tailwind CSS utility classes for styling (layout, spacing, colors, typography, etc.).
-- **Avoid**: Do not write custom CSS or inline styles (`style={{...}}`) unless absolutely necessary for dynamic values that Tailwind cannot handle.
+### 1. Estilização & CSS (Tailwind v4)
+- **Regra**: SEMPRE use classes utilitárias do Tailwind CSS para toda a estilização (layout, espaçamento, cores, tipografia, etc.).
+- **Evitar**: Não escreva CSS customizado ou estilos inline (`style={{...}}`) a menos que seja absolutamente necessário para valores dinâmicos que o Tailwind não consiga processar.
 
-### 2. UI Components (shadcn/ui & Radix)
-- **Rule**: Always prioritize using the existing pre-built `shadcn/ui` components located in `src/components/ui/`.
-- **Rule**: **DO NOT** modify the pre-built `shadcn/ui` component files directly. If a component needs significant visual or functional changes beyond what its props allow, wrap it or create a new custom component in `src/components/`.
+### 2. Animações (Framer Motion)
+- **Regra**: Utilize o pacote `motion` (Framer Motion) para todas as animações complexas, transições de layout e micro-interações na interface.
 
-### 3. Routing (React Router)
-- **Rule**: All application routes must be defined and managed inside `src/App.tsx`.
-- **Rule**: Use standard React Router hooks (`useNavigate`, `useParams`, etc.) for navigation and route state management.
+### 3. Backend, Tempo Real e Banco de Dados (Express, WS, Supabase)
+- **Regra**: O projeto possui um backend integrado em `server.ts` rodando Express com WebSockets (`ws`). Alterações que necessitem de tempo real devem utilizar esta infraestrutura.
+- **Regra**: O Supabase (`@supabase/supabase-js`) deve ser utilizado para interações com o banco de dados (buscas, inserções, atualizações). Respeite as tipagens de retorno das queries.
 
-### 4. Icons (lucide-react)
-- **Rule**: ALWAYS use `lucide-react` for icons. Do not import icons from other libraries (like FontAwesome, Heroicons, etc.) unless explicitly requested.
+### 4. Estrutura do Projeto e Ícones
+- **Ícones**: SEMPRE use `lucide-react`. Não importe ícones de outras bibliotecas.
+- **Componentização**: Crie componentes pequenos, focados e reutilizáveis na pasta adequada (ex: `src/components/`). Mantenha a lógica separada quando ela se tornar complexa.
 
-### 5. Project Structure & Organization
-- **Pages**: Put all route-level components in the `src/pages/` directory.
-- **Components**: Put reusable, non-page components in the `src/components/` directory.
-- **Entry Point**: `src/pages/Index.tsx` is the main/default page. Always ensure it correctly integrates newly built components if they are meant to be displayed immediately.
+### 5. TypeScript & Gerenciamento de Estado
+- **Regra**: Escreva código TypeScript estrito. Evite usar `any`; defina `Interfaces` ou `Types` explícitos para props de componentes, respostas de APIs (especialmente do Supabase) e estados complexos.
+- **Regra**: Mantenha o gerenciamento de estado simples. Use os hooks nativos do React 19 (`useState`, `useContext`, `useReducer`, `useActionState`, etc.) antes de buscar soluções externas complexas.
 
-### 6. TypeScript & State Management
-- **Rule**: Write strict TypeScript. Avoid using `any`; define explicit `Interfaces` or `Types` for component props, API responses, and complex state.
-- **Rule**: Keep state management as simple as possible. Use React's built-in hooks (`useState`, `useContext`, `useReducer`) before reaching for external state management libraries, unless the complexity warrants it.
+### 6. Geração de Imagens
+- **Regra**: Ao usar `html2canvas` para transformar partes da UI em imagem, garanta que os componentes alvo tenham tamanhos definidos e lidem bem com o redimensionamento do canvas para evitar cortes ou problemas de resolução.

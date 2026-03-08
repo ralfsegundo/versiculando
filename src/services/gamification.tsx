@@ -83,6 +83,8 @@ export interface UserProfile {
   ecoReactions?: Record<string, string>;
   bibleFavorites?: Record<string, boolean>;
   bibleFavoritesEver?: Record<string, boolean>;
+  flashChallengeDone?: string;
+  saintsEncountered?: string[];
 }
 
 export interface WeeklyChallenge {
@@ -169,6 +171,8 @@ const getLocalProfile = (): UserProfile => {
     if (!parsed.bibleFavorites) parsed.bibleFavorites = {};
     if (!parsed.bibleFavoritesEver) parsed.bibleFavoritesEver = {};
     if (parsed.longestStreak === undefined) parsed.longestStreak = parsed.streak || 0;
+    if (!parsed.flashChallengeDone) parsed.flashChallengeDone = '';
+    if (!parsed.saintsEncountered) parsed.saintsEncountered = [];
     return parsed;
   }
   return {
@@ -198,6 +202,8 @@ const getLocalProfile = (): UserProfile => {
     ecoReactions: {},
     bibleFavorites: {},
     bibleFavoritesEver: {},
+    flashChallengeDone: '',
+    saintsEncountered: [],
   };
 };
 
@@ -231,7 +237,7 @@ interface GamificationContextType {
   completeDailyMission: (missionDate?: string) => void;
   addEcoReaction: (verseRef: string, emoji: string) => void;
   recordSaintEncounter: (saintKey: string) => void;
-  completeFlashChallenge: () => void;
+  completeFlashChallenge: (weekKey: string) => void;
   notificationTrigger: boolean;
   clearNotificationTrigger: () => void;
   triggerNotificationPrompt: () => void;
@@ -401,7 +407,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               ? (profileData.streak ?? prev.streak)
               : Math.max(prev.streak, profileData.streak ?? 0);
 
-            // Sincroniza o desafio semanal do banco para o estado local
             if (profileData.weekly_challenge) {
               setWeeklyChallenge(profileData.weekly_challenge);
               safeStorage.setItem('weekly_challenge', JSON.stringify(profileData.weekly_challenge));
@@ -415,10 +420,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               avatarUrl:     profileData.avatar_url    || prev.avatarUrl,
               joinDate:      profileData.join_date     || prev.joinDate,
               weeklyActivity: profileData.weekly_activity || prev.weeklyActivity || [],
-              
               lastActiveDate:  mergedLastActiveDate,
               streak:          mergedStreak,
-              
               points:          mergedPoints,
               title:           getTitleByPoints(mergedPoints),
               notesCount:      Math.max(prev.notesCount,      profileData.notes_count       ?? 0),
@@ -430,6 +433,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               lastFreezeEarnedWeek: profileData.last_freeze_earned_week || prev.lastFreezeEarnedWeek,
               lastDailyMissionDate: profileData.last_daily_mission_date || prev.lastDailyMissionDate,
               dailyMissionStreak:   Math.max(prev.dailyMissionStreak || 0, profileData.daily_mission_streak ?? 0),
+              flashChallengeDone:   profileData.flash_challenge_done || prev.flashChallengeDone || '',
+              saintsEncountered:    profileData.saints_encountered || prev.saintsEncountered || [],
               completedBooks:         mergeArrays(prev.completedBooks,          profileData.completed_books          || []),
               discipleCompletedBooks: mergeArrays(prev.discipleCompletedBooks,  profileData.disciple_completed_books || []),
               visitedBooks:           mergeArrays(prev.visitedBooks || [],      profileData.visited_books            || []),
@@ -545,6 +550,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           last_freeze_earned_week: profile.lastFreezeEarnedWeek || null,
           daily_mission_streak: profile.dailyMissionStreak || 0,
           weekly_challenge: weeklyChallenge,
+          flash_challenge_done: profile.flashChallengeDone || null,
+          saints_encountered: profile.saintsEncountered || [],
           updated_at: new Date().toISOString()
         });
       } catch (err) {
@@ -557,7 +564,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     return () => {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     };
-  }, [profile, userId, weeklyChallenge]); // adicionado weeklyChallenge as dependências
+  }, [profile, userId, weeklyChallenge]);
 
   const triggerConfetti = () => {
     confetti({
@@ -750,23 +757,34 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   };
 
   const recordSaintEncounter = (saintKey: string) => {
-    const key = 'saints_encountered';
-    const existing: string[] = JSON.parse(safeStorage.getItem(key) || '[]');
-    if (!existing.includes(saintKey)) {
-      const updated = [...existing, saintKey];
-      safeStorage.setItem(key, JSON.stringify(updated));
-      if (updated.length >= 10) unlockBadge('comunhao_santos');
-      const xp = applyMultiplier(10, profile.streak);
-      addPoints(xp, `Encontrou ${saintKey}`, 'freeExploration');
-      showFloatingPoints(xp, 'free');
+    if (!profile.saintsEncountered?.includes(saintKey)) {
+      setProfile(prev => {
+        const updatedSaints = [...(prev.saintsEncountered || []), saintKey];
+        const xp = applyMultiplier(10, prev.streak);
+        
+        setTimeout(() => {
+          if (updatedSaints.length >= 10) unlockBadge('comunhao_santos');
+          addPoints(xp, `Encontrou ${saintKey}`, 'freeExploration');
+          showFloatingPoints(xp, 'free');
+        }, 0);
+        
+        return { ...prev, saintsEncountered: updatedSaints };
+      });
     }
   };
 
-  const completeFlashChallenge = () => {
-    unlockBadge('guerreiro_luz');
-    const xp = applyMultiplier(300, profile.streak);
-    addPoints(xp, 'Desafio relâmpago concluído', 'bonus');
-    showFloatingPoints(xp, 'bonus_trail');
+  const completeFlashChallenge = (weekKey: string) => {
+    if (profile.flashChallengeDone !== weekKey) {
+      setProfile(prev => {
+        const xp = applyMultiplier(300, prev.streak);
+        setTimeout(() => {
+          unlockBadge('guerreiro_luz');
+          addPoints(xp, 'Desafio relâmpago concluído', 'bonus');
+          showFloatingPoints(xp, 'bonus_trail');
+        }, 0);
+        return { ...prev, flashChallengeDone: weekKey };
+      });
+    }
   };
 
   const markBookCompleted = (bookId: string, isGps: boolean = false) => {

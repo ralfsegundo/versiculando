@@ -88,7 +88,32 @@ function AppContent() {
     );
   }
 
-  if (isInitializing || !isReady) return null;
+  if (isInitializing || !isReady) {
+    return (
+      <div className="min-h-screen bg-[#fdfbf7] flex flex-col items-center justify-center relative overflow-hidden">
+        {/* Efeito de luz de fundo */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-amber-400/20 rounded-full blur-[60px] animate-pulse"></div>
+        
+        {/* Logo animado */}
+        <div className="relative z-10 mb-6">
+          <div className="w-20 h-20 bg-stone-900 rounded-[1.5rem] flex items-center justify-center shadow-2xl animate-bounce" style={{ animationDuration: '2s' }}>
+            <span className="text-amber-400 text-3xl font-black">BM</span>
+          </div>
+        </div>
+        
+        {/* Título e subtítulo */}
+        <h1 className="text-3xl font-serif font-bold text-stone-900 relative z-10">Versiculando</h1>
+        <p className="text-stone-500 text-sm mt-2 font-medium relative z-10">Preparando sua jornada...</p>
+        
+        {/* Pontinhos de loading */}
+        <div className="mt-8 flex gap-1.5 relative z-10">
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '0ms', animationDuration: '1s' }}></div>
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '150ms', animationDuration: '1s' }}></div>
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '300ms', animationDuration: '1s' }}></div>
+        </div>
+      </div>
+    );
+  }
 
   if (!session) return <Auth onAuthSuccess={() => {}} />;
 

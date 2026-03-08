@@ -546,6 +546,118 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     };
     
     loadSupabaseData();
+
+    // ── Realtime: sincroniza entre dispositivos (PWA ↔ Navegador) ──────────
+    // Quando outro dispositivo salva o profile no Supabase, este dispositivo
+    // recebe a atualização e faz merge — sem precisar de reload.
+    const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!hasSupabase) return;
+
+    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+
+    // Aguarda userId estar disponível antes de assinar (pode ser async)
+    const subscribeRealtime = (uid: string) => {
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+
+      realtimeChannel = supabase
+        .channel(`profile-sync:${uid}`)
+        .on(
+          'postgres_changes' as any,
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'profiles',
+            filter: `id=eq.${uid}`,
+          },
+          (payload: any) => {
+            const remote = payload.new;
+            if (!remote) return;
+
+            // Ignora se foi este dispositivo que disparou o save (updated_at muito recente)
+            // Margem de 3s para cobrir o debounce + latência de rede
+            const remoteUpdatedAt = remote.updated_at ? new Date(remote.updated_at).getTime() : 0;
+            const ageMs = Date.now() - remoteUpdatedAt;
+            if (ageMs < 3000) return; // provavelmente foi este próprio device
+
+            // Bloqueia o save enquanto aplica o merge remoto
+            isLoadingFromSupabase.current = true;
+
+            const mergeArrays = (local: string[] = [], rem: string[] = []) =>
+              Array.from(new Set([...rem, ...local]));
+            const mergeChapterMaps = (
+              local: Record<string, number[]> = {},
+              rem: Record<string, number[]> = {}
+            ): Record<string, number[]> => {
+              const keys = Array.from(new Set([...Object.keys(local), ...Object.keys(rem)]));
+              const result: Record<string, number[]> = {};
+              for (const k of keys) result[k] = Array.from(new Set([...(rem[k] || []), ...(local[k] || [])]));
+              return result;
+            };
+
+            setProfile(prev => {
+              const mergedPoints = Math.max(prev.points, remote.points ?? 0);
+              return {
+                ...prev,
+                points:           mergedPoints,
+                title:            getTitleByPoints(mergedPoints),
+                streak:           Math.max(prev.streak, remote.streak ?? 0),
+                longestStreak:    Math.max(prev.longestStreak || 0, remote.longest_streak ?? 0),
+                streakFreezes:    remote.streak_freezes ?? prev.streakFreezes,
+                notesCount:       Math.max(prev.notesCount,       remote.notes_count        ?? 0),
+                favoritesCount:   Math.max(prev.favoritesCount,   remote.favorites_count    ?? 0),
+                dailyVerseCount:  Math.max(prev.dailyVerseCount,  remote.daily_verse_count  ?? 0),
+                completedPlans:   Math.max(prev.completedPlans,   remote.completed_plans    ?? 0),
+                dailyMissionStreak: Math.max(prev.dailyMissionStreak || 0, remote.daily_mission_streak ?? 0),
+                lastDailyMissionDate: remote.last_daily_mission_date
+                  ? remote.last_daily_mission_date.split('T')[0]
+                  : prev.lastDailyMissionDate,
+                lastFreezeEarnedWeek: remote.last_freeze_earned_week || prev.lastFreezeEarnedWeek,
+                pointsBreakdown: {
+                  freeExploration: Math.max(prev.pointsBreakdown?.freeExploration ?? 0, remote.points_breakdown?.freeExploration ?? 0),
+                  discipleTrail:   Math.max(prev.pointsBreakdown?.discipleTrail   ?? 0, remote.points_breakdown?.discipleTrail   ?? 0),
+                  bonus:           Math.max(prev.pointsBreakdown?.bonus           ?? 0, remote.points_breakdown?.bonus           ?? 0),
+                },
+                completedBooks:          mergeArrays(prev.completedBooks,          remote.completed_books),
+                discipleCompletedBooks:  mergeArrays(prev.discipleCompletedBooks,  remote.disciple_completed_books),
+                visitedBooks:            mergeArrays(prev.visitedBooks,            remote.visited_books),
+                readChapters:  mergeChapterMaps(prev.readChapters,  remote.read_chapters),
+                xpChapters:    mergeChapterMaps(prev.xpChapters,    remote.xp_chapters),
+                ecoReactions:       { ...(remote.eco_reactions       || {}), ...(prev.ecoReactions       || {}) },
+                bibleFavorites:     { ...(remote.bible_favorites     || {}), ...(prev.bibleFavorites     || {}) },
+                bibleFavoritesEver: { ...(remote.bible_favorites_ever|| {}), ...(prev.bibleFavoritesEver || {}) },
+                weeklyActivity: remote.weekly_activity || prev.weeklyActivity || [],
+              };
+            });
+
+            // Libera o save após o React processar o merge
+            setTimeout(() => { isLoadingFromSupabase.current = false; }, 500);
+          }
+        )
+        .subscribe();
+    };
+
+    // userId pode ainda ser null — aguarda o loadSupabaseData setar o userId
+    // via polling leve (só na montagem inicial, máx ~3s)
+    let pollCount = 0;
+    const pollForUserId = setInterval(() => {
+      pollCount++;
+      // Lê direto do estado via ref trick — userId é setter, mas não temos ref aqui.
+      // Alternativa: usar supabase.auth.getSession() diretamente.
+      supabase.auth.getSession().then(({ data }) => {
+        const uid = data?.session?.user?.id;
+        if (uid) {
+          clearInterval(pollForUserId);
+          subscribeRealtime(uid);
+        } else if (pollCount >= 6) {
+          clearInterval(pollForUserId); // desiste após 3s
+        }
+      });
+    }, 500);
+
+    return () => {
+      clearInterval(pollForUserId);
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+    };
   }, []);
 
   const updateProfile = (updates: Partial<UserProfile>) => {

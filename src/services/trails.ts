@@ -1,6 +1,6 @@
 // ============================================================
 //  trails.ts — Serviço de Trilhas Temáticas
-//  Leitura e progresso 100% via Supabase
+//  Leitura e progresso via Supabase + Cache Local (PWA-proof)
 // ============================================================
 
 import { supabase } from '../lib/supabase';
@@ -44,6 +44,22 @@ async function withTimeout<T>(promise: Promise<T>, ms = 8000): Promise<T> {
   return Promise.race([promise, timeout]);
 }
 
+// ============================================================
+// Helpers de Cache Local (A vacina contra o reload do PWA)
+// ============================================================
+const getLocalProgress = (userId: string): UserTrailProgress[] => {
+  try {
+    const stored = localStorage.getItem(`trail_progress_${userId}`);
+    return stored ? JSON.parse(stored) : [];
+  } catch { return []; }
+};
+
+const saveLocalProgress = (userId: string, progress: UserTrailProgress[]) => {
+  try {
+    localStorage.setItem(`trail_progress_${userId}`, JSON.stringify(progress));
+  } catch {}
+};
+
 // Busca todas as trilhas ativas
 export async function fetchTrails(): Promise<Trail[]> {
   try {
@@ -74,26 +90,40 @@ export async function fetchTrailDays(trailId: string): Promise<TrailDay[]> {
 
 // Busca o progresso do usuário em todas as trilhas
 export async function fetchUserProgress(userId: string): Promise<UserTrailProgress[]> {
-  try {
-    // FIX: A Mágica Contra o Cache do PWA
-    // O Service Worker está interceptando o GET e devolvendo dados velhos.
-    // Usamos o .neq com a data atual para forçar a URL a ser única a cada reload.
-    // Isso obriga o PWA a buscar a verdade no banco de dados.
-    const cacheBuster = new Date().toISOString();
+  const localProgress = getLocalProgress(userId);
 
+  try {
     const { data, error } = await withTimeout(
       supabase
         .from('user_trail_progress')
         .select('trail_id, day_number, completed_at')
         .eq('user_id', userId)
-        .neq('completed_at', cacheBuster) // Bypass do Service Worker
     );
-    
-    if (error) { console.warn('[trails] fetchUserProgress:', error.message); return []; }
-    return (data || []) as UserTrailProgress[];
+
+    if (error) {
+      console.warn('[trails] fetchUserProgress:', error.message);
+      return localProgress; // Se der erro ou offline, confia no que está no aparelho
+    }
+
+    // Merge: O que o PWA deixou passar do banco + o que você salvou no local
+    const remoteProgress = (data || []) as UserTrailProgress[];
+    const mergedMap = new Map<string, UserTrailProgress>();
+
+    remoteProgress.forEach(p => mergedMap.set(`${p.trail_id}_${p.day_number}`, p));
+    localProgress.forEach(p => {
+      // Se o local diz que completou, mas o banco omitiu pelo cache maldito, o local vence
+      if (!mergedMap.has(`${p.trail_id}_${p.day_number}`)) {
+        mergedMap.set(`${p.trail_id}_${p.day_number}`, p);
+      }
+    });
+
+    const merged = Array.from(mergedMap.values());
+    saveLocalProgress(userId, merged); // Atualiza a verdade no aparelho
+    return merged;
+
   } catch (e) {
     console.warn('[trails] fetchUserProgress exception:', e);
-    return [];
+    return localProgress;
   }
 }
 
@@ -103,6 +133,16 @@ export async function completeTrailDay(
   trailId: string,
   dayNumber: number
 ): Promise<boolean> {
+  
+  // 1. SALVA NO LOCAL IMEDIATAMENTE. O PWA nunca mais vai esquecer no reload.
+  const currentLocal = getLocalProgress(userId);
+  const alreadyExists = currentLocal.some(p => p.trail_id === trailId && p.day_number === dayNumber);
+  if (!alreadyExists) {
+    const newLocal = [...currentLocal, { trail_id: trailId, day_number: dayNumber, completed_at: new Date().toISOString() }];
+    saveLocalProgress(userId, newLocal);
+  }
+
+  // 2. TENTA SALVAR NO BANCO DE DADOS
   try {
     const { error } = await withTimeout(
       supabase.from('user_trail_progress').upsert({
@@ -112,11 +152,16 @@ export async function completeTrailDay(
         completed_at: new Date().toISOString(),
       }, { onConflict: 'user_id,trail_id,day_number' })
     );
-    if (error) { console.warn('[trails] completeTrailDay:', error.message); return false; }
+    
+    if (error) { 
+      console.warn('[trails] completeTrailDay Supabase error:', error.message); 
+    }
+    
+    // Retornamos true mesmo se der timeout de rede, pois o usuário já avançou via cache local
     return true;
   } catch (e) {
     console.warn('[trails] completeTrailDay exception:', e);
-    return false;
+    return true; // Padrão "Offline-First"
   }
 }
 

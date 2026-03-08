@@ -637,7 +637,11 @@ const DAILY_XP_CAP: Record<Exclude<GameId, 'menu'>, number> = {
   'word-search':    1200,
 };
 
-const TODAY_KEY = () => new Date().toISOString().split('T')[0]; // "2026-03-06"
+const TODAY_KEY = () => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+};
 
 // Retorna quantos XP o jogador já ganhou hoje neste jogo
 function getDailyXpEarned(gameId: Exclude<GameId, 'menu'>, userId: string | null): number {

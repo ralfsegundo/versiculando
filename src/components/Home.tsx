@@ -73,7 +73,8 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   
   const now = new Date();
   const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const DAY_OF_YEAR = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+  // Usa Math.round para evitar erros causados por horário de verão e sub/soma de milissegundos
+  const DAY_OF_YEAR = Math.round((now.getTime() - startOfYear.getTime()) / 86400000);
   const TODAY_STR = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const WEEK_OF_YEAR = Math.floor(DAY_OF_YEAR / 7);
   const CURRENT_WEEK_KEY = `${now.getFullYear()}-W${WEEK_OF_YEAR}`;
@@ -679,7 +680,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
             { ref: 'Sl 23', title: 'O Senhor é meu Pastor', text: 'O Senhor é o meu pastor; nada me faltará. Em verdes pastagens me faz repousar...', bookId: 'psa', reflection: 'Em que área da minha vida preciso confiar mais no Senhor?' },
             { ref: 'Rm 8,28-39', title: 'Nada nos Separa', text: 'Sabemos que tudo concorre para o bem daqueles que amam a Deus...', bookId: 'rom', reflection: 'O que me impede de crer que Deus está no controle?' },
             { ref: 'Lc 15,11-32', title: 'O Filho Pródigo', text: 'Um homem tinha dois filhos. O mais novo disse ao pai: Pai, dá-me a parte da herança...', bookId: 'luk', reflection: 'Qual filho me representa mais hoje — o que voltou ou o que ficou?' },
-            { ref: '1Cor 13', title: 'Hino ao Amor', text: 'Ainda que eu falasse as línguas dos homens e dos anjos, se não tiver amor...', bookId: '1co', reflection: 'Em quais relações preciso praticar mais o amor descrito por Paulo?' },
+            { ref: '1Cor 13', title: 'Hino ao Amor', text: 'Ainda que eu falasse as línguas dos homens e dos anjos, se não tiver amor...', bookId: '1co', reflection: 'Em quais relations preciso praticar mais o amor descrito por Paulo?' },
             { ref: 'Is 40,28-31', title: 'Os que esperam no Senhor', text: 'Não sabes? Não ouviste? O Senhor é o Deus eterno...', bookId: 'isa', reflection: 'Onde estou cansado e preciso de renovação divina?' },
             { ref: 'Ef 6,10-18', title: 'A Armadura de Deus', text: 'Revesti-vos de toda a armadura de Deus para poderdes resistir...', bookId: 'eph', reflection: 'Qual parte da armadura espiritual mais negligencio?' },
             { ref: 'Fl 4,4-9', title: 'A Paz de Deus', text: 'Alegrai-vos sempre no Senhor! Repito: alegrai-vos!...', bookId: 'php', reflection: 'O que me rouba a paz e como posso entregar isso a Deus?' },

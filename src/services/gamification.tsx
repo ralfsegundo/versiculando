@@ -311,7 +311,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       
       if (profileRes.error) {
         if (profileRes.error.code === 'PGRST116') {
-          // Novo usuário (trigger pode ainda não ter finalizado)
           isNewUser = true;
         } else {
           throw profileRes.error;
@@ -330,21 +329,21 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
-          setProfile(prev => pendingSavesCount.current > 0 ? prev : parsed);
-          // Podemos recuperar os badges cacheados aqui se quisermos, mas o perfil é essencial.
-          return;
-        } catch (e) {}
+          if (parsed && typeof parsed === 'object' && parsed.id) {
+             setProfile(prev => pendingSavesCount.current > 0 ? prev : parsed);
+             return;
+          }
+        } catch (e) {
+             console.warn('[gamification] Erro ao carregar cache corrompido:', e);
+        }
       }
       
-      // ALERTA CRÍTICO: Se chegamos aqui, o usuário NÃO tem internet e NÃO tem cache.
-      // Retornar um erro impede que a aplicação o sobrescreva com zeros.
       throw new Error("Erro de rede e nenhum cache offline disponível.");
     }
 
     if (pendingSavesCount.current > 0) return;
 
     if (isNewUser || !profileData) {
-      // Usuário realmente novo. 
       const newProfile = { ...getInitialProfile(), id: uid, email: sessionEmail || '' };
       localStorage.setItem(`versiculando_profile_${uid}`, JSON.stringify(newProfile));
       setProfile(prev => pendingSavesCount.current > 0 ? prev : newProfile);
@@ -396,7 +395,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       bibleFavoritesEver: profileData.bible_favorites_ever || {},
     };
 
-    // Cache local imediato para prevenir perdas futuras
     localStorage.setItem(`versiculando_profile_${uid}`, JSON.stringify(newProfile));
     setProfile(prev => pendingSavesCount.current > 0 ? prev : newProfile);
 
@@ -422,7 +420,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Inicialização e Auth
   useEffect(() => {
     const loadSupabaseData = async (sessionUser: any) => {
       const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -435,7 +432,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         setProfile(getInitialProfile());
         setBadges([]);
         setUserId(null);
-        // FIX CRÍTICO: Previne que o estado "zerado" do visitante envenene o login futuro
         pendingSavesCount.current = 0; 
         hasCheckedStreak.current = false;
         setSupabaseReady(true);
@@ -445,8 +441,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
       if (userId !== sessionUser.id) {
          setSupabaseReady(false);
-         // FIX CRÍTICO: Se o usuário trocou (fez login), limpa a fila de salvamento
-         // garantindo que os dados que vierem do banco não sejam bloqueados
          pendingSavesCount.current = 0; 
          hasCheckedStreak.current = false;
       }
@@ -477,7 +471,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchProfileData]);
 
-  // Canais de Sincronização em Tempo Real
   useEffect(() => {
     if (!userId || !supabaseReady) return;
 
@@ -531,7 +524,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     };
   }, [userId, supabaseReady, fetchProfileData]);
 
-  // Save to Supabase e LocalStorage
   useEffect(() => {
     if (!userId || isLoadingFromSupabase.current || !supabaseReady) return;
     if (pendingSavesCount.current === 0) return;
@@ -541,7 +533,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     saveDebounceRef.current = setTimeout(async () => {
       const currentSaveId = pendingSavesCount.current;
       
-      // Sempre salvar localmente primeiro como salvaguarda
       try {
         localStorage.setItem(`versiculando_profile_${userId}`, JSON.stringify(profile));
       } catch(e) {}
@@ -925,8 +916,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     updateStateFromUserAction(prev => ({ ...prev, ...updates }));
   };
 
-  // FIX CRÍTICO: Previne que checkStreak seja rodado para visitantes deslogados
-  // que envenenariam a flag de salvamento
   useEffect(() => {
     if (supabaseReady && userId && !hasCheckedStreak.current) {
       hasCheckedStreak.current = true;

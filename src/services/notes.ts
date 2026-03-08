@@ -104,8 +104,10 @@ export function useNotes(bookId: string, userId: string | null = null) {
   }, [bookId, userId]);
 
   const addNote = async (text: string, color?: string, context?: NoteContext) => {
+    // Atualização otimista: salva localmente primeiro para resposta instantânea da UI
+    const tempId = Date.now().toString();
     const newNote: Note = {
-      id: Date.now().toString(),
+      id: tempId,
       bookId,
       text,
       createdAt: new Date().toISOString(),
@@ -113,6 +115,12 @@ export function useNotes(bookId: string, userId: string | null = null) {
       context,
     };
 
+    const storedNotes = localStorage.getItem(localKey(userId));
+    const allNotes: Note[] = storedNotes ? JSON.parse(storedNotes) : [];
+    localStorage.setItem(localKey(userId), JSON.stringify([newNote, ...allNotes]));
+    setNotes(prev => [newNote, ...prev]);
+
+    // Sincronização em background com Supabase
     if (userId) {
       try {
         const { data, error } = await supabase.from('bible_notes').insert({
@@ -126,16 +134,18 @@ export function useNotes(bookId: string, userId: string | null = null) {
         }).select().single();
 
         if (!error && data) {
-          newNote.id = data.id;
+          // Atualiza o ID temporário pelo UUID real do banco
+          const currentLocal = localStorage.getItem(localKey(userId));
+          if (currentLocal) {
+            const updatedNotesList = JSON.parse(currentLocal).map((n: Note) => n.id === tempId ? { ...n, id: data.id } : n);
+            localStorage.setItem(localKey(userId), JSON.stringify(updatedNotesList));
+          }
+          setNotes(prev => prev.map(n => n.id === tempId ? { ...n, id: data.id } : n));
         }
       } catch (err) {
-        console.warn('[notes] addNote error:', err);
+        console.warn('[notes] Falha ao sincronizar nota com o servidor. Ela está salva offline.', err);
       }
     }
-    const storedNotes = localStorage.getItem(localKey(userId));
-    const allNotes: Note[] = storedNotes ? JSON.parse(storedNotes) : [];
-    localStorage.setItem(localKey(userId), JSON.stringify([...allNotes, newNote]));
-    setNotes(prev => [newNote, ...prev]);
   };
 
   const deleteNote = async (id: string) => {

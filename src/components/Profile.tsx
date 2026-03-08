@@ -36,7 +36,6 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
 
   const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  // Sincroniza os campos de edição quando o perfil for carregado do Supabase
   useEffect(() => {
     setEditName(profile.name);
     setEditEmail(profile.email || '');
@@ -48,13 +47,11 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
       if (hasSupabase) {
         const { supabase } = await import('../lib/supabase');
         
-        // Update auth email if changed
         if (editEmail !== profile.email) {
           const { error: authError } = await supabase.auth.updateUser({ email: editEmail });
           if (authError) throw authError;
         }
 
-        // Update profile name (usa userId já disponível no contexto)
         if (userId) {
           const { error: profileError } = await supabase
             .from('profiles')
@@ -81,16 +78,13 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
         const { supabase } = await import('../lib/supabase');
         await supabase.auth.signOut();
       }
-      // Limpa todo o localStorage
       localStorage.clear();
 
-      // Remove Service Workers
       if ('serviceWorker' in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
         for (const r of registrations) await r.unregister();
       }
 
-      // Limpa cache do PWA
       const cacheNames = await caches.keys();
       for (const name of cacheNames) await caches.delete(name);
 
@@ -147,7 +141,6 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
 
   const completedPercentage = Math.round((profile.completedBooks.length / 73) * 100);
 
-  // --- Title Progress Logic ---
   const currentTitleIndex = TITLES.findIndex(t => t.name === profile.title);
   const nextTitle = TITLES[currentTitleIndex + 1];
   const currentTitleDef = TITLES[currentTitleIndex];
@@ -159,12 +152,10 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
     titleProgress = Math.min(100, Math.max(0, (pointsInCurrentTier / pointsNeededForNextTier) * 100));
   }
 
-  // --- Next Achievement Logic ---
   const getNextAchievement = () => {
     const lockedBadges = (Object.keys(BADGES) as BadgeId[]).filter(id => !badges.find(b => b.id === id));
     if (lockedBadges.length === 0) return null;
 
-    // Calcula progresso real de cada badge bloqueado
     const withProgress = lockedBadges.map(id => {
       switch (id) {
         case 'escriba':
@@ -190,13 +181,11 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
       }
     });
 
-    // Mostra o badge com maior progresso (mais perto de desbloquear)
     const best = withProgress.sort((a, b) => b.progress - a.progress)[0];
     return { ...BADGES[best.id], progress: best.progress, missing: best.missing };
   };
   const nextAchievement = getNextAchievement();
 
-  // --- Share Logic ---
   const handleShare = async () => {
     if (!shareRef.current) return;
     setIsSharing(true);
@@ -209,10 +198,8 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
       
       const image = canvas.toDataURL('image/png');
       
-      // Try native share first
       if (navigator.share) {
         try {
-          // Convert data URL to blob manually to avoid fetch issues with data URLs in some environments
           const byteString = atob(image.split(',')[1]);
           const mimeString = image.split(',')[0].split(':')[1].split(';')[0];
           const ab = new ArrayBuffer(byteString.length);
@@ -235,7 +222,6 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
         }
       }
       
-      // Fallback to download
       const link = document.createElement('a');
       link.href = image;
       link.download = 'minha-jornada-biblica.png';
@@ -254,10 +240,40 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result as string;
-      updateProfile({ avatarUrl: base64String, avatarId: undefined });
-      setIsAvatarModalOpen(false);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        // Create canvas to resize and compress image to avoid LocalStorage QuotaExceeded errors
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 256;
+        const MAX_HEIGHT = 256;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          // Compress to JPEG to drastically reduce base64 size string
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          updateProfile({ avatarUrl: dataUrl, avatarId: undefined });
+        }
+        setIsAvatarModalOpen(false);
+      };
+      img.src = e.target?.result as string;
     };
     reader.readAsDataURL(file);
   };
@@ -522,7 +538,6 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const WEEKS = 12;
-            // Alinha para domingo anterior
             const startDate = new Date(today);
             startDate.setDate(today.getDate() - (today.getDay()) - (WEEKS - 1) * 7);
 
@@ -530,7 +545,6 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
               (profile.weeklyActivity || []).map((d: any) => d.split('T')[0])
             );
 
-            // Build grid: columns = weeks, rows = days of week
             const weeks: { date: Date; active: boolean; isToday: boolean; isFuture: boolean }[][] = [];
             for (let w = 0; w < WEEKS; w++) {
               const week = [];
@@ -562,7 +576,6 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
 
             return (
               <div className="overflow-x-auto pb-1">
-                {/* Month labels */}
                 <div className="flex gap-[3px] mb-1 ml-0">
                   {weeks.map((_, i) => {
                     const label = monthLabels.find(m => m?.idx === i);
@@ -577,7 +590,6 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
                     );
                   })}
                 </div>
-                {/* Grid */}
                 <div className="flex gap-[3px]">
                   {weeks.map((week, wi) => (
                     <div key={wi} className="flex flex-col gap-[3px]">

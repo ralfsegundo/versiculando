@@ -42,7 +42,7 @@ interface GroupMessage {
   avatarId: string;
   avatarUrl?: string;
   text: string;
-  timestamp: string;     // ISO 8601 — sempre salvo como new Date().toISOString()
+  timestamp: string;     // ISO 8601
   type?: 'text' | 'poll' | 'verse' | 'goal' | 'question_box' | 'member_reply';
   poll?: {
     question: string;
@@ -52,7 +52,7 @@ interface GroupMessage {
     question: string;
     answers: QuestionBoxAnswer[];
   };
-  replyToId?: number;    // id da mensagem que está respondendo (para member_reply)
+  replyToId?: number;    // id da mensagem que está respondendo
   isPinned?: boolean;
   reactions?: Reaction[];
 }
@@ -88,7 +88,7 @@ export default function Community() {
   const [unreadFeedCount, setUnreadFeedCount] = useState(0);
   const [unreadGroupsCount, setUnreadGroupsCount] = useState(0);
   const [unreadPrayersCount, setUnreadPrayersCount] = useState(0);
-  const prayingIds = useRef<Set<string>>(new Set()); // guard anti-clique duplo
+  const prayingIds = useRef<Set<string>>(new Set());
 
   // Toast notifications
   const [toasts, setToasts] = useState<{ id: number; message: string; type: 'success' | 'info' | 'error' }[]>([]);
@@ -98,8 +98,14 @@ export default function Community() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
   };
 
-  // Debounced search
+  // Debounced search (com cleanup para evitar memory leaks)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, []);
 
   const handleTabsScroll = () => {
     const el = tabsScrollRef.current;
@@ -129,11 +135,11 @@ export default function Community() {
   const [showReactionMenu, setShowReactionMenu] = useState<number | null>(null);
   const [showReactionDetails, setShowReactionDetails] = useState<{ messageId: number, emoji: string } | null>(null);
 
-  // Member reply state (non-admins can reply to specific messages)
+  // Member reply state
   const [replyingToId, setReplyingToId] = useState<number | null>(null);
   const [memberReplyText, setMemberReplyText] = useState('');
 
-  // Mural scroll ref — auto-scroll to bottom on new message
+  // Mural scroll ref
   const muralScrollRef = useRef<HTMLDivElement>(null);
   const scrollMuralToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     setTimeout(() => {
@@ -183,23 +189,18 @@ export default function Community() {
   const [mockPrayers, setMockPrayers] = useState<{ id: string; user: string; userId: string; avatarId: string; avatarUrl?: string; request: string; prayedCount: number; hasPrayed: boolean }[]>([]);
   const [isLoadingCommunity, setIsLoadingCommunity] = useState(false);
 
-  // Alias para compatibilidade com renderização do ranking
   const mockRanking = mockRankingData;
 
   // ── Carregamento de dados ─────────────────────────────────
   const loadCommunityData = async () => {
     setIsLoadingCommunity(true);
-
-    // Timeout de segurança — nunca trava o loading indefinidamente
     const timeoutId = setTimeout(() => setIsLoadingCommunity(false), 8000);
 
     try {
-      // Se não tem email (sem auth), apenas carrega feed e ranking públicos
       if (!profile.email) {
         await Promise.allSettled([loadFeed(), loadRanking()]);
         return;
       }
-      // Cada função tem seu próprio try/catch — uma falha não bloqueia as outras
       await Promise.allSettled([
         loadFeed(),
         loadRanking(),
@@ -229,7 +230,6 @@ export default function Community() {
           action: r.action,
           time: formatRelativeTime(r.created_at),
         })));
-        // Compute unread count — ignora ações do próprio usuário
         const lastSeenId = parseInt(localStorage.getItem(`${userId}_feed_last_seen_id`) || '0', 10);
         const newCount = data.filter((r: any) =>
           r.id > lastSeenId && r.user_email !== profile.email
@@ -248,8 +248,6 @@ export default function Community() {
         .limit(20);
 
       const rows = (!error && data && data.length > 0) ? data : [];
-
-      // Garante que o usuário local sempre aparece no ranking
       const profileAlreadyIn = rows.some((u: any) => u.id === userId);
       const finalRows = profileAlreadyIn ? rows : [...rows, {
         id: userId,
@@ -268,7 +266,6 @@ export default function Community() {
         position: i + 1,
       })));
     } catch (e) {
-      // Mesmo em erro total, mostra o usuário local
       setMockRankingData([{
         id: userId,
         name: profile.name,
@@ -277,21 +274,18 @@ export default function Community() {
         points: profile.points,
         position: 1,
       }]);
-      console.warn('[Community] loadRanking exception:', e);
     }
   };
 
   const loadGroups = async () => {
     if (!profile.email) return;
     try {
-      // Filtra no servidor: grupos onde o array JSON de members contém o email do usuário
       const { data, error } = await supabase
         .from('community_groups')
         .select('id, name, target_id, target_name, members, messages, materials')
         .contains('members', JSON.stringify([{ email: profile.email }]))
         .order('created_at', { ascending: false });
 
-      // Fallback: se o contains falhar (índice não configurado), faz o filtro no cliente
       if (error) {
         const { data: allData, error: allError } = await supabase
           .from('community_groups')
@@ -309,7 +303,6 @@ export default function Community() {
       }
 
       if (data) {
-        // Double-check no cliente por segurança (contains pode retornar falsos positivos)
         const myGroups = data.filter((g: any) =>
           Array.isArray(g.members) && g.members.some((m: any) => m.email === profile.email)
         );
@@ -319,7 +312,6 @@ export default function Community() {
         }));
         setMockGroups(mapped);
 
-        // Count new messages across all groups since last visit
         const lastSeenTs = parseInt(localStorage.getItem(`${userId}_groups_last_seen_ts`) || '0', 10);
         const newMsgs = mapped.reduce((acc, g) => {
           return acc + g.messages.filter((m: any) => {
@@ -382,7 +374,6 @@ export default function Community() {
         hasPrayed: prayedSet.has(p.id),
       })));
 
-      // Count new prayers since last visit
       const lastSeenTs = parseInt(localStorage.getItem(`${userId}_prayers_last_seen_ts`) || '0', 10);
       const newPrayers = prayers.filter((p: any) =>
         new Date(p.created_at).getTime() > lastSeenTs && p.user_id !== (userId || '')
@@ -391,9 +382,12 @@ export default function Community() {
     } catch (e) { console.warn('[Community] loadPrayers exception:', e); }
   };
 
+  // Melhorada para lidar com falhas de parse de datas e evitar `NaN`
   const formatRelativeTime = (isoString: string) => {
     if (!isoString) return '';
-    const diff = Date.now() - new Date(isoString).getTime();
+    const dateVal = new Date(isoString).getTime();
+    if (isNaN(dateVal)) return ''; // Falha ao formatar, retorna string vazia com segurança
+    const diff = Date.now() - dateVal;
     if (diff < 0) return 'Agora mesmo';
     const m = Math.floor(diff / 60000);
     if (m < 1) return 'Agora mesmo';
@@ -405,9 +399,7 @@ export default function Community() {
     return new Date(isoString).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
   };
 
-  // Calcula o progresso REAL de um membro para o livro/trilha alvo do grupo
   const calculateMemberProgress = useCallback((memberEmail: string, targetId: string): number => {
-    // Tenta buscar do perfil local se for o próprio usuário
     if (memberEmail === profile.email) {
       if (targetId === 'beginner') {
         const total = BEGINNER_PATH.length;
@@ -416,17 +408,14 @@ export default function Community() {
       }
       return profile.completedBooks.includes(targetId) ? 100 : 0;
     }
-    // Para outros membros, retorna o progress salvo no grupo (atualizado quando eles entram/completam)
     return 0;
   }, [profile.completedBooks, profile.email]);
 
-  // Calcula progresso coletivo real: média dos membros que já têm dado registrado
   const calculateGroupProgress = useCallback((members: GroupMember[], targetId: string): number => {
     if (members.length === 0) return 0;
     const values = members.map(m =>
       m.email === profile.email ? calculateMemberProgress(m.email, targetId) : m.progress
     );
-    // Inclui só quem tem dado real (>0) ou é o próprio usuário
     const activeValues = values.filter((v, i) => v > 0 || members[i].email === profile.email);
     if (activeValues.length === 0) return 0;
     return Math.round(activeValues.reduce((a, b) => a + b, 0) / activeValues.length);
@@ -442,7 +431,7 @@ export default function Community() {
     });
     await loadFeed();
   };
-  // ── Helper: persiste grupo no Supabase ──────────────────
+
   const persistGroup = async (group: Group) => {
     await supabase
       .from('community_groups')
@@ -482,7 +471,6 @@ export default function Community() {
       setMockGroups(prev => [newGroup, ...prev]);
       await addToFeed(`criou o grupo "${newGroupName}"`);
 
-      // Enviar convites
       if (newGroupInvites.length > 0) {
         const invites = newGroupInvites.map(email => ({
           group_id: data.id,
@@ -509,7 +497,6 @@ export default function Community() {
     const invite = mockGroupInvites.find(i => i.id === inviteId);
     if (!invite || !profile.email) return;
     await supabase.from('community_group_invites').update({ status: 'accepted' }).eq('id', inviteId);
-    // Fetch group by ID (not name) to avoid collision with same-name groups
     const { data: groupData } = await supabase
       .from('community_groups')
       .select('*')
@@ -536,7 +523,6 @@ export default function Community() {
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !activeGroup) return;
-    // Guard: only admins can post non-reply messages
     const isAdmin = activeGroup.members.find(m => m.email === profile.email)?.isLeader === true;
     if (!isAdmin) return;
 
@@ -556,7 +542,7 @@ export default function Community() {
         avatarId: profile.avatarId || '',
         avatarUrl: profile.avatarUrl,
         text: newMessage,
-        timestamp: new Date().toISOString(),   // ← ISO, não toLocaleTimeString
+        timestamp: new Date().toISOString(),
         type: postType,
       });
     }
@@ -571,7 +557,6 @@ export default function Community() {
     scrollMuralToBottom();
   };
 
-  // Membros (não-admin) podem deixar uma reply em qualquer mensagem
   const handleMemberReply = async () => {
     if (!memberReplyText.trim() || !activeGroup || replyingToId === null) return;
     const replyMsg: GroupMessage = {
@@ -726,7 +711,6 @@ export default function Community() {
         const updatedGroup = {
           ...activeGroup,
           materials: (activeGroup.materials || []).filter(m => m.id !== materialId),
-          // Remove a mensagem de alerta pelo título exato do material deletado
           messages: activeGroup.messages.filter(msg =>
             !(materialToDelete && msg.text.includes(`"${materialToDelete.title}"`))
           ),
@@ -745,14 +729,12 @@ export default function Community() {
     const updatedMessages = activeGroup.messages.map(msg => {
       if (msg.id === messageId && msg.type === 'poll' && msg.poll) {
         const alreadyVotedThis = msg.poll.options.find(opt => opt.id === optionId)?.votes.includes(userEmail);
-        // Toggle: clicking the same option removes the vote
         const updatedOptions = msg.poll.options.map(opt => {
           if (opt.id === optionId) {
             return alreadyVotedThis
               ? { ...opt, votes: opt.votes.filter(v => v !== userEmail) } // unvote
               : { ...opt, votes: [...opt.votes.filter(v => v !== userEmail), userEmail] }; // vote
           }
-          // Remove vote from other options (single choice)
           return { ...opt, votes: opt.votes.filter(v => v !== userEmail) };
         });
         return { ...msg, poll: { ...msg.poll, options: updatedOptions } };
@@ -903,8 +885,6 @@ export default function Community() {
     });
   };
 
-  // isCurrentUserAdmin — computed once, stable reference
-
   const handleCreatePrayer = async () => {
     if (!newPrayerRequest.trim() || !profile.email || !userId) return;
     const { data } = await supabase.from('community_prayers').insert({
@@ -940,16 +920,13 @@ export default function Community() {
     const prayer = mockPrayers.find(p => p.id === id);
     if (!prayer) return;
 
-    // Não pode orar por si mesmo — oração é intercessão pelos outros
     if (prayer.userId === userId) return;
 
-    // Guard anti-clique duplo — evita XP e incremento duplicado
     if (prayingIds.current.has(id)) return;
     prayingIds.current.add(id);
 
     const isUndoing = prayer.hasPrayed;
 
-    // Atualização otimista
     setMockPrayers(prev => prev.map(p =>
       p.id === id
         ? { ...p, prayedCount: isUndoing ? p.prayedCount - 1 : p.prayedCount + 1, hasPrayed: !isUndoing }
@@ -957,7 +934,6 @@ export default function Community() {
     ));
 
     if (isUndoing) {
-      // Desfazer oração — remove o voto
       const { error } = await supabase
         .from('community_prayer_votes')
         .delete()
@@ -965,7 +941,6 @@ export default function Community() {
         .eq('user_email', profile.email);
 
       if (error) {
-        // Rollback
         setMockPrayers(prev => prev.map(p =>
           p.id === id ? { ...p, prayedCount: prayer.prayedCount, hasPrayed: true } : p
         ));
@@ -973,20 +948,17 @@ export default function Community() {
         return;
       }
 
-      // Decrementa contador no banco
       await supabase.from('community_prayers')
         .update({ prayed_count: Math.max(0, prayer.prayedCount - 1) })
         .eq('id', id);
 
     } else {
-      // Nova oração — registra voto
       const { error: voteError } = await supabase.from('community_prayer_votes').upsert(
         { prayer_id: id, user_email: profile.email, user_id: userId || null },
         { onConflict: 'prayer_id,user_email' }
       );
 
       if (voteError) {
-        // Rollback
         setMockPrayers(prev => prev.map(p =>
           p.id === id ? { ...p, prayedCount: prayer.prayedCount, hasPrayed: false } : p
         ));
@@ -994,7 +966,6 @@ export default function Community() {
         return;
       }
 
-      // Incrementa contador
       const { error } = await supabase.rpc('increment_prayer_count', { prayer_id: id });
       if (error) {
         await supabase.from('community_prayers')
@@ -1002,7 +973,6 @@ export default function Community() {
           .eq('id', id);
       }
 
-      // XP para quem intercede pelos outros — com multiplicador de streak
       const { applyMultiplier } = await import('../services/gamification');
       const xp = applyMultiplier(20, profile.streak);
       addPoints(xp, 'Orou por alguém da comunidade', 'bonus');
@@ -1011,7 +981,6 @@ export default function Community() {
     prayingIds.current.delete(id);
   };
   useEffect(() => {
-    // Carrega sempre — ranking e feed são públicos mesmo sem login
     loadCommunityData();
 
     if (profile.email) {
@@ -1026,7 +995,6 @@ export default function Community() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.email]);
 
-  // ── Realtime: atualiza activeGroup quando outros membros mudam ──
   useEffect(() => {
     if (!activeGroup) return;
 
@@ -1054,7 +1022,6 @@ export default function Community() {
           };
           setActiveGroup(updated);
           setMockGroups(prev => prev.map(g => g.id === updated.id ? updated : g));
-          // Auto-scroll only if user was already at bottom
           const el = muralScrollRef.current;
           if (el) {
             const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -1065,9 +1032,8 @@ export default function Community() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [activeGroup?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeGroup?.id]);
 
-  // ── Ao abrir grupo: atualiza progresso do usuário local no grupo ──
   useEffect(() => {
     if (!activeGroup || !profile.email) return;
     const myMember = activeGroup.members.find(m => m.email === profile.email);
@@ -1080,9 +1046,9 @@ export default function Community() {
       const updatedGroup = { ...activeGroup, members: updatedMembers };
       setActiveGroup(updatedGroup);
       setMockGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
-      persistGroup(updatedGroup); // fire and forget
+      persistGroup(updatedGroup);
     }
-  }, [activeGroup?.id, profile.completedBooks]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeGroup?.id, profile.completedBooks]);
 
   const loadConnections = async () => {
     if (profile.email) {
@@ -1147,7 +1113,6 @@ export default function Community() {
       confirmColor: 'bg-rose-700 hover:bg-rose-800',
       onConfirm: async () => {
         if (profile.email) {
-          // Delete both directions separately to avoid complex OR syntax issues
           await supabase.from('user_connections')
             .delete()
             .eq('from_email', profile.email)
@@ -1163,12 +1128,10 @@ export default function Community() {
     });
   };
 
-  // Sem campo last_seen no banco — exibe texto neutro
   const getLastOnline = (_email: string) => {
     return 'recentemente';
   };
 
-  // ── isCurrentUserAdmin — stable memo, never recalculated inside render ──
   const isCurrentUserAdmin = useMemo(() =>
     !!(profile.email && activeGroup?.members.find(m => m.email === profile.email)?.isLeader),
     [profile.email, activeGroup]
@@ -1179,11 +1142,10 @@ export default function Community() {
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         
         <header className="mb-5 relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 p-4 md:p-6 text-white shadow-lg">
-          {/* decorative circles */}
           <div className="absolute -top-6 -right-6 w-28 h-28 bg-white/5 rounded-full" />
           <div className="absolute -bottom-4 -left-4 w-20 h-20 bg-white/5 rounded-full" />
           <div className="flex items-center gap-3 md:gap-4 relative">
-            <div className="w-11 h-11 md:w-14 md:h-14 bg-white/15 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-sm shrink-0 border border-white/20">
+            <div className="w-11 h-11 md:w-14 h-14 bg-white/15 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-sm shrink-0 border border-white/20">
               <Users size={22} className="text-white" />
             </div>
             <div className="flex-1 min-w-0">
@@ -1199,7 +1161,6 @@ export default function Community() {
           </div>
         </header>
 
-        {/* Tabs */}
         {!activeGroup && (
           <div className="relative mb-4">
             <div ref={tabsScrollRef} onScroll={handleTabsScroll} className="flex overflow-x-auto hide-scrollbar gap-2 pb-1 pt-2 px-0.5">
@@ -1257,9 +1218,7 @@ export default function Community() {
                 );
               })}
             </div>
-            {/* Fade esquerda */}
             <div className={`absolute left-0 top-0 bottom-1 w-10 bg-gradient-to-r from-[#fdfbf7] to-transparent pointer-events-none transition-opacity duration-200 ${tabsScroll.left ? 'opacity-100' : 'opacity-0'}`} />
-            {/* Fade direita */}
             <div className={`absolute right-0 top-0 bottom-1 w-10 bg-gradient-to-l from-[#fdfbf7] to-transparent pointer-events-none transition-opacity duration-200 ${tabsScroll.right ? 'opacity-100' : 'opacity-0'}`} />
           </div>
         )}
@@ -1304,14 +1263,12 @@ export default function Community() {
                     <BookOpen size={12} /> Estudando: {activeGroup.targetName}
                   </p>
                 </div>
-                {/* Realtime indicator */}
                 <div className="flex items-center gap-1.5 text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-full shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   Ao vivo
                 </div>
               </div>
 
-              {/* Collective Progress */}
               <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="font-bold text-indigo-900 text-sm flex items-center gap-2">🎯 Progresso Coletivo</h3>
@@ -1330,7 +1287,6 @@ export default function Community() {
                 </p>
               </div>
 
-              {/* Sub-tabs */}
               <div className="flex gap-1.5 border-b border-stone-100 pb-0">
                 {([
                   { id: 'mural', label: '📋 Mural' },
@@ -1351,7 +1307,6 @@ export default function Community() {
                 ))}
               </div>
 
-              {/* Sub-tab: Membros */}
               {groupSubTab === 'membros' && (
                 <div>
                   <div className="flex justify-end mb-3">
@@ -1418,7 +1373,6 @@ export default function Community() {
                 </div>
               )}
 
-              {/* Sub-tab: Materiais */}
               {groupSubTab === 'materiais' && (
                 <div>
                   {isCurrentUserAdmin && !isAddingMaterial && (
@@ -1515,11 +1469,9 @@ export default function Community() {
                 </div>
               )}
 
-              {/* Sub-tab: Mural */}
               {groupSubTab === 'mural' && (
               <div>
                 <div className="bg-stone-50 rounded-2xl border border-stone-200 flex flex-col overflow-hidden">
-                  {/* ── Message list ── */}
                   <div ref={muralScrollRef} className="overflow-y-auto space-y-4 p-3 pr-2" style={{ maxHeight: 'min(calc(100svh - 420px), 480px)', minHeight: '160px' }}>
                     {activeGroup.messages.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-14 gap-2 text-center">
@@ -1534,20 +1486,17 @@ export default function Community() {
                       </div>
                     ) : (
                       (() => {
-                        // Separa pinadas (no topo) das demais (por ordem de criação)
                         const pinned = activeGroup.messages.filter(m => m.isPinned);
                         const rest = activeGroup.messages.filter(m => !m.isPinned).sort((a, b) => a.id - b.id);
                         const sorted = [...pinned, ...rest];
 
                         return sorted.map(msg => {
-                          // Contexto da mensagem original para member_reply
                           const parentMsg = msg.type === 'member_reply' && msg.replyToId
                             ? activeGroup.messages.find(m => m.id === msg.replyToId)
                             : null;
 
                         return (
                         <div key={msg.id} className={`flex gap-2.5 ${msg.type === 'member_reply' ? 'pl-6' : ''}`}>
-                          {/* Avatar */}
                           <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-sm border border-stone-200 shrink-0 overflow-hidden mt-0.5">
                             {msg.avatarUrl ? (
                               <img src={msg.avatarUrl} alt={msg.user} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -1556,7 +1505,6 @@ export default function Community() {
                             )}
                           </div>
 
-                          {/* Bubble */}
                           <div className={`flex-1 min-w-0 px-3 py-2.5 rounded-2xl rounded-tl-none border ${
                             msg.isPinned ? 'bg-amber-50 border-amber-200' :
                             msg.type === 'verse' ? 'bg-indigo-50 border-indigo-100' :
@@ -1565,7 +1513,6 @@ export default function Community() {
                             'bg-white border-stone-100'
                           }`}>
 
-                            {/* Reply context thread */}
                             {parentMsg && (
                               <div className="mb-2 px-2 py-1.5 bg-white border-l-2 border-indigo-300 rounded-r-lg">
                                 <p className="text-[10px] font-bold text-indigo-500 mb-0.5">{parentMsg.user}</p>
@@ -1577,7 +1524,6 @@ export default function Community() {
                               </div>
                             )}
 
-                            {/* Header: name + badges + timestamp */}
                             <div className="flex items-center justify-between gap-2 mb-1.5">
                               <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                                 <span className="font-bold text-stone-900 text-sm leading-none">{msg.user}</span>
@@ -1590,14 +1536,6 @@ export default function Community() {
                                 {formatRelativeTime(msg.timestamp)}
                               </span>
                             </div>
-
-                            {/* Reply context */}
-                            {parentMsg && (
-                              <div className="mb-2 pl-2 border-l-2 border-stone-300">
-                                <p className="text-[11px] text-stone-500 font-bold">{parentMsg.user}</p>
-                                <p className="text-[11px] text-stone-400 truncate">{parentMsg.text || (parentMsg.type === 'poll' ? '📊 Enquete' : parentMsg.type === 'verse' ? '📖 Versículo' : '')}</p>
-                              </div>
-                            )}
                             
                             {msg.type === 'poll' && msg.poll ? (
                               <div className="mt-2 space-y-2">
@@ -1716,7 +1654,6 @@ export default function Community() {
                               </p>
                             )}
 
-                            {/* Reactions + actions row */}
                             <div className="mt-2.5 flex items-center justify-between gap-2">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {msg.reactions && msg.reactions.map(reaction => {
@@ -1742,7 +1679,6 @@ export default function Community() {
                                   );
                                 })}
 
-                                {/* Add reaction */}
                                 <div className="relative">
                                   <button
                                     onClick={() => setShowReactionMenu(showReactionMenu === msg.id ? null : msg.id)}
@@ -1765,7 +1701,6 @@ export default function Community() {
                                   )}
                                 </div>
 
-                                {/* Member reply button — only for admin messages, non-reply types */}
                                 {!isCurrentUserAdmin && msg.type !== 'member_reply' && (
                                   <button
                                     onClick={() => {
@@ -1780,7 +1715,6 @@ export default function Community() {
                                 )}
                               </div>
 
-                              {/* Admin actions */}
                               {isCurrentUserAdmin && msg.type !== 'member_reply' && (
                                 <div className="flex items-center gap-0.5 shrink-0">
                                   <button
@@ -1800,7 +1734,6 @@ export default function Community() {
                                   ><Trash2 size={15} /></button>
                                 </div>
                               )}
-                              {/* Admin can also delete member replies */}
                               {isCurrentUserAdmin && msg.type === 'member_reply' && (
                                 <button
                                   onClick={() => handleDeleteMessage(msg.id)}
@@ -1810,7 +1743,6 @@ export default function Community() {
                               )}
                             </div>
 
-                            {/* Inline reply input for member */}
                             {replyingToId === msg.id && !isCurrentUserAdmin && (
                               <div className="mt-2.5 flex gap-2">
                                 <input
@@ -1940,7 +1872,6 @@ export default function Community() {
                         </div>
                       )}
 
-                      {/* Type selector */}
                       {!editingMessageId && (
                         <div className="flex border-b border-stone-100">
                           {[
@@ -1960,7 +1891,6 @@ export default function Community() {
                         </div>
                       )}
 
-                      {/* Textarea + send row */}
                       <div className="p-2 space-y-2">
                         <textarea
                           rows={2}
@@ -2004,7 +1934,6 @@ export default function Community() {
                       </div>
                     </div>
                   ) : (
-                    /* Non-admin footer — explains interaction via reply button on each message */
                     <div className="bg-white border-t border-stone-200 rounded-b-2xl px-4 py-3 flex items-center gap-2 text-stone-500">
                       <div className="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
                         <MessageSquare size={13} className="text-indigo-500" />
@@ -2024,9 +1953,8 @@ export default function Community() {
                   )}
                 </div>
               </div>
-              )} {/* end groupSubTab === 'mural' */}
+              )}
 
-              {/* Leave / Delete Group */}
               <div className="pt-2 flex justify-center">
                 {isCurrentUserAdmin ? (
                   <button 
@@ -2045,7 +1973,6 @@ export default function Community() {
                 )}
               </div>
 
-              {/* Invite Modal Overlay */}
               {showInviteModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                   <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
@@ -2107,7 +2034,6 @@ export default function Community() {
                   <p className="text-sm text-stone-400 mt-1">As ações da comunidade aparecerão aqui.</p>
                 </div>
               ) : mockFeed.map((item, idx) => {
-                // Determine icon color based on action text
                 const isVerse = item.action.includes('versículo') || item.action.includes('leu');
                 const isPrayer = item.action.includes('oração') || item.action.includes('orou');
                 const isTrophy = item.action.includes('pontos') || item.action.includes('conquist');
@@ -2142,8 +2068,6 @@ export default function Community() {
           )}
 
           {activeTab === 'ranking' && (() => {
-            // Liga semanal: divide usuários em grupos de 20 por pontos similares
-            // O usuário está sempre visível no centro do ranking
             const weekStr = (() => {
               const now = new Date();
               const start = new Date(now.getFullYear(), 0, 1);
@@ -2151,20 +2075,17 @@ export default function Community() {
               return `${now.getFullYear()}-W${week}`;
             })();
 
-            // Cria liga pseudo-determinística baseada no email+semana
             const userSeed = (profile.email || 'anon').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
             const leagueNames = ['Liga Ouro ✨', 'Liga Prata 🥈', 'Liga Bronze 🥉', 'Liga Esmeralda 💚', 'Liga Safira 💎'];
             const leagueName = leagueNames[userSeed % leagueNames.length];
 
-            // Monta competidores da liga misturando ranking real com pares fictícios do mesmo nível
             const myPoints = profile.points;
             const fakeNames = ['Maria G.','João P.','Ana L.','Carlos M.','Lucia F.','Pedro H.','Teresa A.','Paulo R.','Clara S.','Francisco B.','Beatriz N.','Mateus C.','Rosa O.','André V.','Isabel T.','Lucas D.','Cecília M.','Marcos F.','Helena R.','Gabriel S.'];
             const fakeAvatars = ['livro','cruz','peixe','rosario','pomba','estrela','vela','espiga','ancora','chave'];
 
-            // Gera pontos distribuídos ao redor do usuário
             const leagueRival = (idx: number) => {
               const seed = (userSeed * 13 + idx * 7 + weekStr.length) % 100;
-              const spread = Math.floor(myPoints * 0.6); // ±60% dos pontos do usuário
+              const spread = Math.floor(myPoints * 0.6);
               const pts = Math.max(10, myPoints + Math.floor((seed - 50) / 50 * spread));
               return {
                 id: `rival-${idx}`,
@@ -2177,14 +2098,12 @@ export default function Community() {
 
             const myEntry = { id: 'me', name: profile.name, avatarId: profile.avatarId || 'cruz', avatarUrl: profile.avatarUrl, points: myPoints, isMe: true };
 
-            // Mistura reais do Supabase com fictícios para completar 20
             const realOthers = mockRanking.filter(u => u.id !== (userId || '') && u.id !== 'me').slice(0, 8).map(u => ({ ...u, isMe: false }));
             const fakeCount = Math.max(0, 19 - realOthers.length);
             const fakeRivals = Array.from({ length: fakeCount }, (_, i) => leagueRival(i));
             const allEntries = [...realOthers, ...fakeRivals, myEntry].sort((a, b) => b.points - a.points).slice(0, 20);
             const myPosition = allEntries.findIndex(e => e.isMe) + 1;
 
-            // Deadline: próximo domingo
             const now = new Date();
             const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
             const deadline = new Date(now);
@@ -2194,7 +2113,6 @@ export default function Community() {
 
             return (
               <div className="space-y-4">
-                {/* Liga header */}
                 <div className="bg-gradient-to-r from-indigo-600 to-purple-700 rounded-2xl p-4 text-white">
                   <div className="flex items-center justify-between mb-3">
                     <div>
@@ -2214,7 +2132,6 @@ export default function Community() {
                   </div>
                 </div>
 
-                {/* Podium top 3 */}
                 {allEntries.length >= 3 && (
                   <div className="flex items-end justify-center gap-2 mb-2">
                     {[allEntries[1], allEntries[0], allEntries[2]].map((u, i) => {
@@ -2236,7 +2153,6 @@ export default function Community() {
                   </div>
                 )}
 
-                {/* Full ranking list */}
                 <div className="space-y-1.5">
                   {allEntries.map((user, idx) => {
                     const pos = idx + 1;
@@ -2284,7 +2200,6 @@ export default function Community() {
 
           {activeTab === 'groups' && !activeGroup && (
             <div className="space-y-4">
-              {/* Group Invites */}
               {mockGroupInvites.length > 0 && (
                 <div className="mb-6 space-y-3">
                   <h4 className="text-sm font-bold text-rose-700 uppercase tracking-wider px-2 flex items-center gap-2">
@@ -2298,11 +2213,9 @@ export default function Community() {
                       key={invite.id} 
                       className="relative overflow-hidden rounded-2xl border border-indigo-100 shadow-sm bg-white"
                     >
-                      {/* Top accent bar */}
                       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-t-2xl" />
                       
                       <div className="p-4 pt-5">
-                        {/* Header row: avatar + text */}
                         <div className="flex items-center gap-3 mb-4">
                           <div className="w-11 h-11 rounded-2xl bg-indigo-50 flex items-center justify-center text-2xl border border-indigo-100 flex-shrink-0">
                             {AVATARS.find(a => a.id === invite.fromAvatarId)?.emoji || '👤'}
@@ -2315,7 +2228,6 @@ export default function Community() {
                           </div>
                         </div>
 
-                        {/* Group info pill */}
                         <div className="bg-indigo-50 rounded-xl px-3 py-2.5 flex items-center gap-2.5 mb-4">
                           <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
                             <Users size={14} className="text-white" />
@@ -2328,7 +2240,6 @@ export default function Community() {
                           </div>
                         </div>
 
-                        {/* Action buttons */}
                         <div className="flex gap-2">
                           <button 
                             onClick={() => handleAcceptGroupInvite(invite.id)}
@@ -2476,7 +2387,6 @@ export default function Community() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: groupIdx * 0.05 }}
                     onClick={async () => {
-                      // Reset estado do grupo anterior
                       setReplyingToId(null);
                       setMemberReplyText('');
                       setGroupSubTab('mural');
@@ -2484,7 +2394,6 @@ export default function Community() {
                       setNewMessage('');
                       setIsCreatingPoll(false);
                       setIsCreatingQuestionBox(false);
-                      // Fetch the freshest version of this group directly from Supabase
                       const { data } = await supabase
                         .from('community_groups')
                         .select('id, name, target_id, target_name, members, messages, materials')
@@ -2506,10 +2415,8 @@ export default function Community() {
                     }}
                     className="relative overflow-hidden rounded-2xl border border-stone-200 hover:border-indigo-200 hover:shadow-lg transition-all cursor-pointer group bg-white"
                   >
-                    {/* Colored top bar */}
                     <div className={`h-1.5 bg-gradient-to-r ${accentColor} w-full`} />
                     <div className="p-4">
-                    {/* Nome + livro */}
                     <div className="mb-3">
                       <h3 className="font-bold text-stone-900 text-base leading-tight group-hover:text-indigo-600 transition-colors">{group.name}</h3>
                       <p className="text-xs text-indigo-500 font-medium flex items-center gap-1 mt-0.5">
@@ -2517,7 +2424,6 @@ export default function Community() {
                       </p>
                     </div>
 
-                    {/* Progress bar */}
                     <div className="mb-3">
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-[10px] text-stone-400 font-medium">Progresso coletivo</span>
@@ -2528,7 +2434,6 @@ export default function Community() {
                       </div>
                     </div>
 
-                    {/* Avatares + membros */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <div className="flex -space-x-1.5">
@@ -2625,7 +2530,6 @@ export default function Community() {
                     transition={{ delay: idx * 0.05 }}
                     className="relative overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm hover:shadow-md transition-all"
                   >
-                    {/* left accent */}
                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-rose-400 to-rose-500 rounded-l-2xl" />
                     <div className="pl-5 pr-4 pt-4 pb-3">
                       <div className="flex items-center gap-2.5 mb-2.5">
@@ -2791,7 +2695,7 @@ export default function Community() {
                 </div>
               )}
 
-              {/* Convites Enviados (aguardando resposta) */}
+              {/* Convites Enviados */}
               {connections.some(c => c.status === 'pending' && c.isRequester) && (
                 <div className="mb-8 space-y-3">
                   <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider px-2">

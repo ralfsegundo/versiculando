@@ -26,7 +26,6 @@ const NOTE_COLORS = [
   { id: 'purple',  class: 'bg-purple-50 border-purple-200' },
 ];
 
-// ── Skeleton ──────────────────────────────────────────────────
 function BookDetailSkeleton({ accent }: { accent: string }) {
   return (
     <div className="animate-pulse space-y-5 px-4 pt-4">
@@ -43,7 +42,6 @@ function BookDetailSkeleton({ accent }: { accent: string }) {
   );
 }
 
-// ── DuoButton — botão com borda inferior estilo Duolingo ──────
 function DuoButton({
   children, onClick, disabled, color = 'amber', size = 'md', className = '',
 }: {
@@ -80,7 +78,6 @@ function DuoButton({
   );
 }
 
-// ── XP Pill ───────────────────────────────────────────────────
 function XpPill({ xp, color = 'amber' }: { xp: number | string; color?: string }) {
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black
@@ -92,7 +89,6 @@ function XpPill({ xp, color = 'amber' }: { xp: number | string; color?: string }
   );
 }
 
-// ── Main Component ────────────────────────────────────────────
 export default function BookDetail({ bookId, onBack }: BookDetailProps) {
   const { addPoints, markBookCompleted, markBookVisited, markChapterRead, markAllChaptersRead, profile, addNote, userId } = useGamification();
   const book = BIBLE_BOOKS.find(b => b.id === bookId);
@@ -116,14 +112,16 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
 
   const handleNavigateToChapter = (chapter: string | number) => {
     setActiveTab('chapters');
-    setTimeout(() => {
-      const el = document.getElementById(`chapter-${chapter}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.classList.add('ring-4', 'ring-amber-400', 'transition-all');
-        setTimeout(() => el.classList.remove('ring-4', 'ring-amber-400'), 2000);
-      }
-    }, 100);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const el = document.getElementById(`chapter-${chapter}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('ring-4', 'ring-amber-400', 'transition-all');
+          setTimeout(() => el.classList.remove('ring-4', 'ring-amber-400'), 2000);
+        }
+      }, 150);
+    });
   };
 
   const isGpsBook = BEGINNER_PATH.some(step => step.books.includes(bookId));
@@ -151,8 +149,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
         if (isMounted) {
           setData(result);
           setLoading(false);
-          // Guard: só dá XP se o livro não está em visitedBooks (sincronizado com Supabase)
-          // Isso evita re-award ao trocar de dispositivo
           const alreadyVisited = profile.visitedBooks?.includes(book.id);
           if (!hasVisited.current && !alreadyVisited) {
             const xp = applyMultiplier(10, profile.streak);
@@ -183,11 +179,8 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
 
   return (
     <div className="min-h-screen bg-[#fdfbf7] text-stone-900 font-sans flex flex-col pb-32">
-
-      {/* ── HEADER estilo Duolingo ── */}
       <header className="sticky top-0 z-30 bg-white border-b-2 border-stone-100 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
-          {/* Voltar */}
           <button
             onClick={onBack}
             className="w-11 h-11 rounded-xl flex items-center justify-center text-stone-500 hover:bg-stone-100 active:bg-stone-200 transition-colors shrink-0"
@@ -195,7 +188,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
             <ArrowLeft size={22} />
           </button>
 
-          {/* Progresso central */}
           <div className="flex-1 flex flex-col justify-center gap-0.5">
             <div className="flex items-center justify-between">
               <span className={`text-[10px] font-black uppercase tracking-wider ${textColor}`}>
@@ -221,7 +213,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
             </div>
           </div>
 
-          {/* XP badge / streak */}
           <div className="flex items-center gap-1.5 shrink-0">
             {profile.streak > 0 && (
               <div className="flex items-center gap-1 bg-orange-50 border border-orange-200 rounded-xl px-2 py-1">
@@ -239,20 +230,17 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
 
       <div className="max-w-2xl mx-auto w-full px-4 sm:px-6">
 
-        {/* ── HERO do livro ── */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           className={`mt-5 rounded-3xl overflow-hidden border-2 ${borderColor} shadow-md`}
         >
-          {/* Banner colorido */}
           <div className={`${baseColor} px-6 pt-6 pb-4 relative overflow-hidden`}>
             <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/20 rounded-full" />
             <div className="absolute -bottom-4 -left-4 w-20 h-20 bg-white/10 rounded-full" />
 
             <div className="relative flex items-start justify-between gap-3">
               <div className="flex-1">
-                {/* Testamento badge */}
                 <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-white/40 ${textColor} mb-2`}>
                   {book.testament === 'VT' ? '📜 Antigo Testamento' : '✝️ Novo Testamento'}
                 </span>
@@ -264,7 +252,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                 )}
               </div>
 
-              {/* Círculo de conclusão */}
               <div className={`shrink-0 w-16 h-16 rounded-2xl bg-white/30 border-2 border-white/50 flex flex-col items-center justify-center shadow-sm`}>
                 {isCompleted ? (
                   <>
@@ -280,7 +267,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
               </div>
             </div>
 
-            {/* Info chips */}
             {data && (
               <div className="relative flex flex-wrap gap-2 mt-4">
                 {[
@@ -301,11 +287,9 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
             )}
           </div>
 
-          {/* XP reward strip */}
           <div className="bg-white px-6 py-3 flex items-center justify-between border-t-2 border-stone-100">
             <span className="text-sm font-bold text-stone-500">Recompensas por concluir</span>
             <div className="flex items-center gap-2">
-              {/* BUG 8 FIX: XP real = base + chapters*fator, exibido com multiplicador atual de streak */}
               <XpPill
                 xp={applyMultiplier(isGpsBook ? 100 + book.chapters * 2 : 50 + book.chapters * 1, profile.streak)}
                 color={isGpsBook ? 'green' : 'amber'}
@@ -315,7 +299,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
           </div>
         </motion.div>
 
-        {/* ── TABS estilo Duolingo pill ── */}
         <div className="mt-4 flex gap-1.5 overflow-x-auto hide-scrollbar pb-1">
           {TABS.map(tab => {
             const isActive = activeTab === tab.id;
@@ -340,7 +323,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
           })}
         </div>
 
-        {/* ── CONTEÚDO ── */}
         {loading ? (
           <BookDetailSkeleton accent={baseColor} />
         ) : error ? (
@@ -371,7 +353,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
         ) : null}
       </div>
 
-      {/* ── BOTTOM ACTION BAR — fixo, estilo Duolingo ── */}
       {data && (
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-stone-100 px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
           <div className="max-w-2xl mx-auto">
@@ -394,7 +375,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
               </div>
             ) : (
               <div className="flex items-center gap-3">
-                {/* Mini progress */}
                 <div className="flex-1">
                   <div className="flex justify-between mb-1">
                     <span className="text-sm font-bold text-stone-500">Progresso</span>
@@ -415,7 +395,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                   )}
                 </div>
 
-                {/* Botão de conclusão */}
                 <div className="relative shrink-0">
                   <DuoButton
                     color={allRead ? (isGpsBook ? 'green' : 'stone') : 'stone'}
@@ -429,7 +408,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
                     )}
                   </DuoButton>
 
-                  {/* Tooltip exploração livre */}
                   <AnimatePresence>
                     {showTooltip && !isGpsBook && allRead && (
                       <motion.div
@@ -455,7 +433,6 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
   );
 }
 
-// ── Small badge showing note count ───────────────────────────
 function NotesBadge({ bookId, userId }: { bookId: string; userId: string | null }) {
   const { notes } = useNotes(bookId, userId);
   if (notes.length === 0) return null;
@@ -466,9 +443,6 @@ function NotesBadge({ bookId, userId }: { bookId: string; userId: string | null 
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// OVERVIEW TAB — "Mapa" reformulado
-// ══════════════════════════════════════════════════════════════
 function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userId }: {
   data: BookData;
   book: typeof BIBLE_BOOKS[0];
@@ -531,7 +505,6 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
   return (
     <div className="space-y-5 pb-4">
 
-      {/* ── VERSÍCULO EM DESTAQUE ── */}
       <div className={`${baseColor} border-2 ${borderColor} rounded-3xl p-5 relative overflow-hidden`}>
         <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/20 rounded-full" />
         <p className={`text-[10px] font-black uppercase tracking-widest ${textColor} opacity-70 mb-2`}>✨ Versículo do Livro</p>
@@ -541,7 +514,6 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
         <p className={`text-[0.8rem] font-black uppercase tracking-widest ${textColor} opacity-60`}>— {data.quoteReference}</p>
       </div>
 
-      {/* ── CARDS DUOLINGO: Summary + Context ── */}
       <DuoCard icon="📖" title="Resumo" accent={baseColor} border={borderColor}>
         <p className="text-stone-600 text-[0.9375rem] leading-relaxed">{data.summary}</p>
       </DuoCard>
@@ -554,7 +526,6 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
         <p className="text-stone-600 text-[0.9375rem] leading-relaxed">{data.practicalApplication}</p>
       </DuoCard>
 
-      {/* ── TEMAS — grid de pills ── */}
       <DuoCard icon="💡" title="Principais Temas" accent={baseColor} border={borderColor}>
         <div className="flex flex-wrap gap-2">
           {(data.themes ?? []).map((t, i) => (
@@ -565,7 +536,6 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
         </div>
       </DuoCard>
 
-      {/* ── PALAVRAS-CHAVE ── */}
       <DuoCard icon="🔑" title="Palavras-Chave" accent={baseColor} border={borderColor}>
         <div className="flex flex-wrap gap-2">
           {(data.keywords ?? []).map((kw, i) => (
@@ -576,7 +546,6 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
         </div>
       </DuoCard>
 
-      {/* ── PERSONAGENS — cards horizontais ── */}
       <DuoCard icon="👤" title="Personagens" accent={baseColor} border={borderColor}>
         <div className="space-y-3">
           {(data.names ?? []).map((person, i) => (
@@ -593,13 +562,11 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
         </div>
       </DuoCard>
 
-      {/* ── CURIOSIDADE ── */}
       <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-5">
         <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2">💎 Curiosidade</p>
         <p className="text-stone-700 text-[0.9375rem] leading-relaxed">{data.curiosity}</p>
       </div>
 
-      {/* ── FAB Notas ── */}
       <AnimatePresence>
         {!noteDrawerOpen && fabVisible && (
           <motion.button
@@ -621,7 +588,6 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
         )}
       </AnimatePresence>
 
-      {/* ── NOTE DRAWER ── */}
       <AnimatePresence>
         {noteDrawerOpen && (
           <>
@@ -651,7 +617,6 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
                   className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center text-stone-500 font-bold text-sm">✕</button>
               </div>
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 overscroll-contain">
-                {/* Nova nota */}
                 <div className={`rounded-2xl border-2 p-4 ${NOTE_COLORS.find(c=>c.id===selectedColor)?.class || NOTE_COLORS[0].class}`}>
                   <textarea ref={noteTextareaRef} value={noteText} onChange={e=>setNoteText(e.target.value)}
                     placeholder={`O que você aprendeu em ${book.name}?`} rows={3}
@@ -671,7 +636,6 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
                     </DuoButton>
                   </div>
                 </div>
-                {/* Notas existentes */}
                 {notes.length === 0 ? (
                   <div className="text-center py-8 text-stone-400">
                     <FileText size={28} className="mx-auto mb-2 opacity-30" />
@@ -734,7 +698,6 @@ function OverviewTab({ data, book, theme, colorClass, onNavigateToChapter, userI
   );
 }
 
-// ── DuoCard — card genérico estilo Duolingo ──────────────────
 function DuoCard({ icon, title, children, accent, border }: {
   icon: string; title: string; children: ReactNode; accent: string; border: string;
 }) {
@@ -749,9 +712,6 @@ function DuoCard({ icon, title, children, accent, border }: {
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// CHAPTERS TAB — cards estilo "lições" Duolingo
-// ══════════════════════════════════════════════════════════════
 function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onMarkChapterRead, onMarkAllChaptersRead }: {
   chapters: BookData['chapters'];
   colorClass: string;
@@ -767,13 +727,11 @@ function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onM
   const readCount  = readChapters.length;
   const total      = chapters.length;
   const progressPct = total > 0 ? Math.round((readCount / total) * 100) : 0;
-  // BUG 8 FIX: calcular XP real por capítulo com streak atual
   const { profile } = useGamification();
   const xpPerChapter = applyMultiplier(5, profile.streak);
 
   return (
     <div className="space-y-4 pb-4">
-      {/* Progress header */}
       <div className="bg-white border-2 border-stone-100 rounded-3xl p-5 shadow-sm">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-black uppercase tracking-wider text-stone-500">Capítulos Lidos</span>
@@ -803,7 +761,6 @@ function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onM
         )}
       </div>
 
-      {/* Chapter cards estilo "lições" */}
       {chapters.map((ch, idx) => {
         const chapterNum = typeof ch.chapter === 'string' ? parseInt(ch.chapter) : ch.chapter as number;
         const isRead = readChapters.includes(chapterNum);
@@ -856,9 +813,7 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
           : 'bg-white border-stone-100 hover:border-stone-200'
         }`}
     >
-      {/* Top strip — número e título */}
       <div className={`flex items-center gap-3 px-5 py-4 ${isRead ? 'border-b-2 border-emerald-200' : 'border-b-2 border-stone-100'}`}>
-        {/* Número / check */}
         <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border-b-4 shrink-0 font-black text-sm transition-all
           ${isRead
             ? 'bg-emerald-500 border-emerald-700 text-white shadow-sm'
@@ -875,11 +830,9 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
         <XpPill xp={xpPerChapter} color={isRead ? 'green' : 'stone'} />
       </div>
 
-      {/* Conteúdo */}
       <div className="px-5 py-4">
         <p className="text-stone-600 text-[0.9375rem] leading-relaxed">{ch.summary}</p>
 
-        {/* Notas deste capítulo */}
         {chapterNotes.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {chapterNotes.map(note => (
@@ -890,7 +843,6 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
           </div>
         )}
 
-        {/* Botões */}
         <div className="flex items-center gap-2 mt-4 flex-wrap">
           <motion.button
             whileTap={{ scale: 0.93, y: 1 }}
@@ -920,7 +872,6 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
         </div>
       </div>
 
-      {/* Drawer de nota inline */}
       <AnimatePresence>
         {noteOpen && (
           <motion.div
@@ -974,9 +925,6 @@ function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMar
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// TIMELINE TAB
-// ══════════════════════════════════════════════════════════════
 function TimelineTab({ timeline, bookName, colorClass }: { timeline: BookData['timeline']; bookName: string; colorClass: string }) {
   const baseColor  = colorClass.split(' ')[0];
   const textColor  = colorClass.split(' ').find(c => c.startsWith('text-')) || 'text-stone-900';
@@ -1015,17 +963,12 @@ function TimelineTab({ timeline, bookName, colorClass }: { timeline: BookData['t
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// VERSES TAB
-// ══════════════════════════════════════════════════════════════
 function VersesTab({ verses, bookName, colorClass }: { verses: BookData['mainVerses']; bookName: string; colorClass: string }) {
   const baseColor  = colorClass.split(' ')[0];
   const textColor  = colorClass.split(' ').find(c => c.startsWith('text-')) || 'text-stone-900';
   const borderColor = colorClass.split(' ').find(c => c.startsWith('border-')) || 'border-stone-200';
   const { addFavorite, updateFavorites, userId, addEcoReaction, profile } = useGamification();
   const [favorites, setFavorites] = useState<Record<string, boolean>>(() => {
-    // Usa perfil como fonte de verdade (sincronizado com Supabase)
-    // Fallback para localStorage para compatibilidade com dados antigos
     if (profile.bibleFavorites && Object.keys(profile.bibleFavorites).length > 0) {
       return profile.bibleFavorites;
     }
@@ -1041,22 +984,17 @@ function VersesTab({ verses, bookName, colorClass }: { verses: BookData['mainVer
   const handleFavorite = (ref: string) => {
     const updated = { ...favorites };
     if (updated[ref]) {
-      // Desfavoritar — remove mas NÃO decrementa contador (one-way, como XP)
       delete updated[ref];
     } else {
-      // Favoritar — verifica se é primeira vez para badge
       const wasEverFavorited = profile.bibleFavoritesEver || {};
       if (!wasEverFavorited[ref]) {
         addFavorite();
       }
       updated[ref] = true;
     }
-    // Atualiza bibleFavoritesEver incluindo o novo
     const updatedEver = { ...(profile.bibleFavoritesEver || {}), ...Object.fromEntries(Object.keys(updated).map(k => [k, true])) };
     setFavorites(updated);
-    // Sincroniza com Supabase via contexto (debounce 2s)
     updateFavorites(updated, updatedEver);
-    // Mantém localStorage como cache local para leitura rápida
     localStorage.setItem(`${userId}_bible_favorites`, JSON.stringify(updated));
     localStorage.setItem(`${userId}_bible_favorites_ever`, JSON.stringify(updatedEver));
   };
@@ -1078,7 +1016,6 @@ function VersesTab({ verses, bookName, colorClass }: { verses: BookData['mainVer
           transition={{ delay: idx * 0.06 }}
           className="bg-white border-2 border-stone-100 rounded-3xl overflow-hidden shadow-sm"
         >
-          {/* Header */}
           <div className={`flex items-center justify-between px-5 py-3 border-b-2 border-stone-100 ${baseColor} bg-opacity-40`}>
             <div className="flex items-center gap-2">
               <span className="text-xl">{verse.emoji}</span>
@@ -1090,7 +1027,6 @@ function VersesTab({ verses, bookName, colorClass }: { verses: BookData['mainVer
             </button>
           </div>
 
-          {/* Texto */}
           <div className="px-5 py-4 space-y-3">
             <p className="text-stone-800 text-base font-serif italic leading-relaxed">"{verse.text}"</p>
             <div className="bg-stone-50 border border-stone-100 rounded-2xl p-3">
@@ -1098,7 +1034,6 @@ function VersesTab({ verses, bookName, colorClass }: { verses: BookData['mainVer
                 <span className="font-bold text-stone-700">Significado: </span>{verse.explanation}
               </p>
             </div>
-            {/* Eco reactions */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {ECO_EMOJIS.map(({ emoji, label }) => {
                 const isSelected = profile.ecoReactions?.[verse.reference] === emoji;
@@ -1123,9 +1058,6 @@ function VersesTab({ verses, bookName, colorClass }: { verses: BookData['mainVer
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// NOTES SECTION (tab dedicada)
-// ══════════════════════════════════════════════════════════════
 function NotesSection({ bookId, bookName, colorClass, initialContext, onClearContext, onNavigateToChapter }: {
   bookId: string; bookName: string; colorClass: string;
   initialContext: NoteContext | null; onClearContext: () => void;
@@ -1183,7 +1115,6 @@ function NotesSection({ bookId, bookName, colorClass, initialContext, onClearCon
 
   return (
     <div className="space-y-4 pb-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <p className="text-xs font-black uppercase tracking-wider text-stone-400">✍️ Anotações — {bookName}</p>
         {notes.length > 0 && (
@@ -1196,7 +1127,6 @@ function NotesSection({ bookId, bookName, colorClass, initialContext, onClearCon
         )}
       </div>
 
-      {/* Nova nota */}
       <div className={`rounded-3xl border-2 overflow-hidden shadow-sm ${NOTE_COLORS.find(c=>c.id===selectedColor)?.class||NOTE_COLORS[0].class}`}>
         {currentContext && (
           <div className="flex items-center justify-between bg-white/60 px-5 py-2.5 border-b border-stone-200/50">
@@ -1227,7 +1157,6 @@ function NotesSection({ bookId, bookName, colorClass, initialContext, onClearCon
         </div>
       </div>
 
-      {/* Lista de notas */}
       {notes.length === 0 ? (
         <div className="text-center py-14 text-stone-400 bg-white border-2 border-dashed border-stone-200 rounded-3xl">
           <FileText size={28} className="mx-auto mb-2 opacity-30"/>
@@ -1292,7 +1221,6 @@ function NotesSection({ bookId, bookName, colorClass, initialContext, onClearCon
         );
       })}
 
-      {/* Notas de amigos */}
       {friendNotes.length > 0 && (
         <div className="mt-6 space-y-3">
           <div className="flex items-center gap-2 px-1">

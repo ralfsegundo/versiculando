@@ -227,8 +227,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [supabaseReady, setSupabaseReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  
+  // Ref para controlar ciclos de save e fetch e evitar echos
   const isLoadingFromSupabase = useRef(false);
+  const skipNextSave = useRef(false);
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   const hasCheckedStreak = useRef(false);
   const [notificationTrigger, setNotificationTrigger] = useState(false);
   const notifAlreadyTriggered = useRef(false);
@@ -275,7 +279,86 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const [weeklyChallenge, setWeeklyChallenge] = useState<WeeklyChallenge>(getStoredChallenge);
 
-  // Load from Supabase on auth change
+  // Função central para buscar dados do Supabase
+  const fetchProfileData = useCallback(async (uid: string, sessionEmail?: string) => {
+    try {
+      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', uid).single();
+      const { data: badgesData } = await supabase.from('user_badges').select('*').eq('user_id', uid);
+
+      if (profileData) {
+        const localOnboardingStr = localStorage.getItem('onboarding_profile');
+        const localOnboardingDone = !!localOnboardingStr;
+        const finalOnboardingDone = profileData.onboarding_done || localOnboardingDone || false;
+
+        // Sinaliza que o próximo efeito de perfil não deve disparar um save pro banco (evita loop)
+        skipNextSave.current = true;
+
+        setProfile(prev => ({
+          ...getInitialProfile(),
+          id: uid,
+          name: profileData.name || 'Peregrino',
+          email: sessionEmail || prev.email || '',
+          avatarId: profileData.avatar_id || 'cruz',
+          avatarUrl: profileData.avatar_url,
+          joinDate: profileData.join_date,
+          weeklyActivity: profileData.weekly_activity || [],
+          points: profileData.points || 0,
+          pointsBreakdown: profileData.points_breakdown || { freeExploration: 0, discipleTrail: 0, bonus: 0 },
+          streak: profileData.streak || 0,
+          longestStreak: profileData.longest_streak || 0,
+          lastActiveDate: profileData.last_active_date || new Date().toISOString(),
+          title: profileData.title || 'Iniciante',
+          completedBooks: profileData.completed_books || [],
+          discipleCompletedBooks: profileData.disciple_completed_books || [],
+          visitedBooks: profileData.visited_books || [],
+          readChapters: profileData.read_chapters || {},
+          xpChapters: profileData.xp_chapters || {},
+          notesCount: profileData.notes_count || 0,
+          favoritesCount: profileData.favorites_count || 0,
+          dailyVerseCount: profileData.daily_verse_count || 0,
+          completedPlans: profileData.completed_plans || 0,
+          streakFreezes: profileData.streak_freezes || 1,
+          lastFreezeEarnedWeek: profileData.last_freeze_earned_week,
+          lastDailyMissionDate: profileData.last_daily_mission_date,
+          dailyMissionStreak: profileData.daily_mission_streak || 0,
+          onboardingDone: finalOnboardingDone,
+          lastDailyVerseDate: profileData.last_daily_verse_date,
+          flashChallengeDone: profileData.flash_challenge_done,
+          saintsEncountered: profileData.saints_encountered || [],
+          lastLectioDate: profileData.last_lectio_date,
+          onboardingProfile: profileData.onboarding_profile,
+          ecoReactions: profileData.eco_reactions || {},
+          bibleFavorites: profileData.bible_favorites || {},
+          bibleFavoritesEver: profileData.bible_favorites_ever || {},
+        }));
+
+        if (profileData.weekly_challenge) {
+          const challenge = profileData.weekly_challenge as WeeklyChallenge;
+          if (new Date(challenge.deadline).getTime() < Date.now()) {
+            setWeeklyChallenge(getStoredChallenge());
+          } else {
+            setWeeklyChallenge(challenge);
+          }
+        } else {
+          setWeeklyChallenge(getStoredChallenge());
+        }
+      }
+
+      if (badgesData) {
+        setBadges(badgesData.map(b => ({
+          id: b.badge_id as BadgeId,
+          title: b.title,
+          description: b.description,
+          emoji: b.emoji,
+          unlockedAt: b.unlocked_at
+        })));
+      }
+    } catch (err) {
+      console.error('[gamification] fetchProfileData error:', err);
+    }
+  }, []);
+
+  // Load initial Supabase Data
   useEffect(() => {
     const loadSupabaseData = async (sessionUser: any) => {
       const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -298,83 +381,11 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
       setUserId(sessionUser.id);
       isLoadingFromSupabase.current = true;
-
-      try {
-        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', sessionUser.id).single();
-        const { data: badgesData } = await supabase.from('user_badges').select('*').eq('user_id', sessionUser.id);
-
-        if (profileData) {
-          const localOnboardingStr = localStorage.getItem('onboarding_profile');
-          const localOnboardingDone = !!localOnboardingStr;
-          const finalOnboardingDone = profileData.onboarding_done || localOnboardingDone || false;
-
-          setProfile({
-            ...getInitialProfile(),
-            id: sessionUser.id,
-            name: profileData.name || 'Peregrino',
-            email: sessionUser.email || '',
-            avatarId: profileData.avatar_id || 'cruz',
-            avatarUrl: profileData.avatar_url,
-            joinDate: profileData.join_date,
-            weeklyActivity: profileData.weekly_activity || [],
-            points: profileData.points || 0,
-            pointsBreakdown: profileData.points_breakdown || { freeExploration: 0, discipleTrail: 0, bonus: 0 },
-            streak: profileData.streak || 0,
-            longestStreak: profileData.longest_streak || 0,
-            lastActiveDate: profileData.last_active_date || new Date().toISOString(),
-            title: profileData.title || 'Iniciante',
-            completedBooks: profileData.completed_books || [],
-            discipleCompletedBooks: profileData.disciple_completed_books || [],
-            visitedBooks: profileData.visited_books || [],
-            readChapters: profileData.read_chapters || {},
-            xpChapters: profileData.xp_chapters || {},
-            notesCount: profileData.notes_count || 0,
-            favoritesCount: profileData.favorites_count || 0,
-            dailyVerseCount: profileData.daily_verse_count || 0,
-            completedPlans: profileData.completed_plans || 0,
-            streakFreezes: profileData.streak_freezes || 1,
-            lastFreezeEarnedWeek: profileData.last_freeze_earned_week,
-            lastDailyMissionDate: profileData.last_daily_mission_date,
-            dailyMissionStreak: profileData.daily_mission_streak || 0,
-            onboardingDone: finalOnboardingDone,
-            lastDailyVerseDate: profileData.last_daily_verse_date,
-            flashChallengeDone: profileData.flash_challenge_done,
-            saintsEncountered: profileData.saints_encountered || [],
-            lastLectioDate: profileData.last_lectio_date,
-            onboardingProfile: profileData.onboarding_profile,
-            ecoReactions: profileData.eco_reactions || {},
-            bibleFavorites: profileData.bible_favorites || {},
-            bibleFavoritesEver: profileData.bible_favorites_ever || {},
-          });
-
-          if (profileData.weekly_challenge) {
-            const challenge = profileData.weekly_challenge as WeeklyChallenge;
-            if (new Date(challenge.deadline).getTime() < Date.now()) {
-              setWeeklyChallenge(getStoredChallenge());
-            } else {
-              setWeeklyChallenge(challenge);
-            }
-          } else {
-            setWeeklyChallenge(getStoredChallenge());
-          }
-        }
-
-        if (badgesData) {
-          setBadges(badgesData.map(b => ({
-            id: b.badge_id as BadgeId,
-            title: b.title,
-            description: b.description,
-            emoji: b.emoji,
-            unlockedAt: b.unlocked_at
-          })));
-        }
-
-      } catch (err) {
-        console.error('[gamification] loadSupabaseData error:', err);
-      } finally {
-        setSupabaseReady(true);
-        isLoadingFromSupabase.current = false;
-      }
+      
+      await fetchProfileData(sessionUser.id, sessionUser.email);
+      
+      setSupabaseReady(true);
+      isLoadingFromSupabase.current = false;
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -386,11 +397,36 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [fetchProfileData]);
+
+  // Atualização em Background quando a aba ganha foco
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && userId && supabaseReady) {
+        fetchProfileData(userId);
+      }
+    };
+    
+    // Suporte Web
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Suporte mobile extra
+    window.addEventListener('focus', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
+  }, [userId, supabaseReady, fetchProfileData]);
 
   // Save to Supabase (Debounced)
   useEffect(() => {
     if (!userId || isLoadingFromSupabase.current || !supabaseReady) return;
+
+    // Se o profile foi atualizado pelo fetchProfileData, ignoramos esse save para evitar loop
+    if (skipNextSave.current) {
+      skipNextSave.current = false;
+      return;
+    }
 
     if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     saveDebounceRef.current = setTimeout(async () => {
@@ -591,12 +627,16 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const completeDailyMission = (_missionDate?: string) => {
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    // Ajuste de Fuso Horário local para salvar
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
     if (profile.lastDailyMissionDate === today) return;
+    
     setProfile(prev => {
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+      
       const newMissionStreak = (prev.lastDailyMissionDate === yesterdayStr)
         ? prev.dailyMissionStreak + 1
         : 1;
@@ -747,7 +787,10 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const accessDailyVerse = (dateStr?: string) => {
     setProfile(prev => {
-      const today = dateStr || new Date().toISOString().split('T')[0];
+      // Ajuste para Timezone local
+      const now = new Date();
+      const today = dateStr || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      
       if (prev.lastDailyVerseDate === today) return prev;
       const newProfile = { ...prev, dailyVerseCount: prev.dailyVerseCount + 1, lastDailyVerseDate: today };
       const xp = applyMultiplier(15, prev.streak);

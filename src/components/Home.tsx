@@ -10,15 +10,6 @@ interface HomeProps {
   onDismissWelcome?: () => void;
 }
 
-// ── Constantes estáticas do dia ──
-const _now = new Date();
-const _startOfYear = new Date(_now.getFullYear(), 0, 1);
-export const DAY_OF_YEAR = Math.floor((_now.getTime() - _startOfYear.getTime()) / 86400000);
-// Correção para Fuso Horário Local (evita que vire o dia às 21h do Brasil)
-export const TODAY_STR = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`;
-const WEEK_OF_YEAR = Math.floor(DAY_OF_YEAR / 7);
-const CURRENT_WEEK_KEY = `${_now.getFullYear()}-W${WEEK_OF_YEAR}`;
-
 // PWA Install Hook
 function usePWAInstall() {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
@@ -63,13 +54,19 @@ function usePWAInstall() {
 export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }: HomeProps) {
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Incluído completeLectio e lendo dados direto da fonte da verdade: o profile
+  // ── Constantes Dinâmicas do Dia (Avaliadas na renderização do Componente) ──
+  const now = new Date();
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+  const DAY_OF_YEAR = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+  const TODAY_STR = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const WEEK_OF_YEAR = Math.floor(DAY_OF_YEAR / 7);
+  const CURRENT_WEEK_KEY = `${now.getFullYear()}-W${WEEK_OF_YEAR}`;
+
   const { 
     profile, accessDailyVerse, userId, useStreakFreeze, 
     completeDailyMission, recordSaintEncounter, completeFlashChallenge, completeLectio 
   } = useGamification();
 
-  // 🔴 O SEGREDO DO PWA: O estado agora é derivado do profile oficial, que sincroniza com o banco!
   const lectioDone = profile.lastLectioDate === TODAY_STR;
   const dailyVerseRead = profile.lastDailyVerseDate === TODAY_STR;
   const flashCompleted = profile.flashChallengeDone === CURRENT_WEEK_KEY;

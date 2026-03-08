@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ElementType } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Users, BookOpen, BarChart2, Bell, LogOut,
@@ -561,7 +561,7 @@ export default function Admin({ onExit }: { onExit: () => void }) {
     setToast({ message, type });
   }
 
-  const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
+  const tabs: { id: Tab; label: string; icon: ElementType }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart2 },
     { id: 'users', label: 'Usuários', icon: Users },
     { id: 'trails', label: 'Trilhas', icon: BookOpen },

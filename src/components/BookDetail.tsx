@@ -818,7 +818,7 @@ function ChapterList({ chapters, colorClass, onAnotar, bookId, readChapters, onM
 }
 
 function ChapterCard({ ch, idx, baseColor, textColor, borderColor, isRead, onMarkChapterRead, bookId, chapterNum, xpPerChapter }: {
-  ch: BookData['chapters'][0]; idx: number; baseColor: string; textColor: string; borderColor: string;
+  key?: React.Key; ch: BookData['chapters'][0]; idx: number; baseColor: string; textColor: string; borderColor: string;
   isRead: boolean; onMarkChapterRead: (n: number) => void; bookId: string; chapterNum: number; xpPerChapter: number;
 }) {
   const [noteOpen, setNoteOpen] = useState(false);

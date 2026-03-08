@@ -21,11 +21,11 @@ export interface Connection {
 type ConnectionListener = (data: { type: string; [key: string]: any }) => void;
 
 // Helper: query com timeout de segurança
-async function withTimeout<T>(promise: PromiseLike<T> | Promise<T>, ms = 8000): Promise<T> {
+async function withTimeout<T>(promise: PromiseLike<T>, ms = 8000): Promise<T> {
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error('Supabase query timeout')), ms)
   );
-  return Promise.race([promise as Promise<T>, timeout]);
+  return Promise.race([Promise.resolve(promise), timeout]);
 }
 
 class SharingService {

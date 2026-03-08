@@ -1,4 +1,4 @@
-import {StrictMode, Component, ReactNode, ErrorInfo} from 'react';
+import React, {StrictMode, ReactNode, ErrorInfo} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
@@ -6,9 +6,13 @@ import './index.css';
 // ── Error Boundary global ──────────────────────────────────────────────────
 // Sem isso, qualquer exceção não tratada resulta em tela branca silenciosa.
 interface EBState { hasError: boolean; error: Error | null }
-class ErrorBoundary extends Component<{ children: ReactNode }, EBState> {
+class ErrorBoundary extends React.Component<{ children: ReactNode }, EBState> {
+  public state: EBState;
+  public props: { children: ReactNode };
+  
   constructor(props: { children: ReactNode }) {
     super(props);
+    this.props = props;
     this.state = { hasError: false, error: null };
   }
   static getDerivedStateFromError(error: Error): EBState {

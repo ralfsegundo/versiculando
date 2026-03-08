@@ -74,15 +74,14 @@ function AppContent() {
       <StreakNotificationBanner />
       
       {currentTab === 'home' && (
-        <Home 
-          onNavigateToBook={setSelectedBookId} 
-          onNavigateToTrail={setSelectedTrail}
+        <Home
+          onSelectBook={setSelectedBookId}
         />
       )}
-      {currentTab === 'journey' && <JourneyMap onNavigateToBook={setSelectedBookId} />}
-      {currentTab === 'trails' && <Trails onNavigateToTrail={setSelectedTrail} />}
+      {currentTab === 'journey' && <JourneyMap onSelectBook={setSelectedBookId} />}
+      {currentTab === 'trails' && <Trails onSelectTrail={setSelectedTrail} onSelectBook={setSelectedBookId} />}
       {currentTab === 'community' && <Community />}
-      {currentTab === 'profile' && <Profile onLogout={() => supabase.auth.signOut()} />}
+      {currentTab === 'profile' && <Profile />}
 
       {selectedBookId && (
         <BookDetail

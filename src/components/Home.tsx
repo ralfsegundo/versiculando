@@ -177,7 +177,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const [saintExpanded, setSaintExpanded] = useState(false);
   const [saintSeen, setSaintSeen] = useState(() => profile.saintsEncountered?.includes(todaySaint.key) ?? false);
   
-  // CORREÇÃO: Fonte da verdade centralizada via Supabase
+  // CORREÇÃO FINAL: Fonte da verdade 100% centralizada via banco de dados
   const lectioDone = profile.lastLectioDate === TODAY_STR;
   const dailyVerseRead = profile.lastDailyVerseDate === TODAY_STR;
 
@@ -197,6 +197,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { isInstallable, install, dismiss, dismissed } = usePWAInstall();
 
+  // CORREÇÃO: Chama o gamification com a string do dia e abandona o cache local
   const handleReadDailyVerse = () => {
     if (!dailyVerseRead) {
       accessDailyVerse(TODAY_STR);

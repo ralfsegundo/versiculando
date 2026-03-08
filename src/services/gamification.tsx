@@ -477,7 +477,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               longestStreak:   Math.max(prev.longestStreak || 0, profileData.longest_streak ?? 0),
               streakFreezes:   profileData.streak_freezes ?? prev.streakFreezes ?? 1,
               lastFreezeEarnedWeek: profileData.last_freeze_earned_week || prev.lastFreezeEarnedWeek,
-              lastDailyMissionDate: profileData.last_daily_mission_date || prev.lastDailyMissionDate,
+              lastDailyMissionDate: profileData.last_daily_mission_date
+                ? profileData.last_daily_mission_date.split('T')[0]
+                : prev.lastDailyMissionDate,
               dailyMissionStreak:   Math.max(prev.dailyMissionStreak || 0, profileData.daily_mission_streak ?? 0),
               // Arrays de progresso — união (local pode ter itens ainda não sincronizados)
               completedBooks:         mergeArrays(prev.completedBooks,          profileData.completed_books          || []),
@@ -782,12 +784,14 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   // Completa missão diária
   const completeDailyMission = (_missionDate?: string) => {
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const localStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const today = localStr(now);
     if (profile.lastDailyMissionDate === today) return; // já completou hoje
     setProfile(prev => {
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const yesterdayStr = localStr(yesterday);
       const newMissionStreak = (prev.lastDailyMissionDate === yesterdayStr)
         ? prev.dailyMissionStreak + 1
         : 1;

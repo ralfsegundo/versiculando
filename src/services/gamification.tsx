@@ -24,9 +24,21 @@ export const AVATARS = [
 ];
 
 export type BadgeId = 
-  | 'semente_fe' | 'leitor_pentateuco' | 'fogo_espirito' | 'pomba_paz' | 'servo_fiel' 
-  | 'escriba' | 'coracao_aberto' | 'madrugador' | 'peregrino' | 'doutor_fe'
-  | 'missao_diaria' | 'comunhao_santos' | 'guerreiro_luz' | 'eco_vivo' | 'graca_dia';
+  | 'semente_fe' 
+  | 'leitor_pentateuco' 
+  | 'fogo_espirito' 
+  | 'pomba_paz' 
+  | 'servo_fiel' 
+  | 'escriba' 
+  | 'coracao_aberto' 
+  | 'madrugador' 
+  | 'peregrino' 
+  | 'doutor_fe'
+  | 'missao_diaria'
+  | 'comunhao_santos'
+  | 'guerreiro_luz'
+  | 'eco_vivo'
+  | 'graca_dia';
 
 export interface Badge {
   id: BadgeId;
@@ -45,7 +57,11 @@ export interface UserProfile {
   joinDate?: string;
   weeklyActivity?: string[];
   points: number;
-  pointsBreakdown?: { freeExploration: number; discipleTrail: number; bonus: number; };
+  pointsBreakdown?: {
+    freeExploration: number;
+    discipleTrail: number;
+    bonus: number;
+  };
   streak: number;
   longestStreak: number;
   lastActiveDate: string;
@@ -67,10 +83,11 @@ export interface UserProfile {
   ecoReactions?: Record<string, string>;
   bibleFavorites?: Record<string, boolean>;
   bibleFavoritesEver?: Record<string, boolean>;
-  flashChallengeDone?: string;
-  saintsEncountered?: string[];
-  lastLectioDate?: string;
+  // Novos campos para persistência remota
+  onboardingDone?: boolean;
   lastDailyVerseDate?: string;
+  lastFlashChallengeWeek?: string;
+  lastSaintSeenDate?: string;
 }
 
 export interface WeeklyChallenge {
@@ -132,76 +149,41 @@ export const getStreakMultiplier = (streak: number): number => {
 export const applyMultiplier = (base: number, streak: number): number =>
   Math.round(base * getStreakMultiplier(streak));
 
-// --- Safe localStorage wrapper ---
-const safeStorage = {
-  getItem: (key: string): string | null => {
-    try { return localStorage.getItem(key); } catch { return null; }
+// --- Initial State ---
+
+const getInitialProfile = (): UserProfile => ({
+  id: 'local-user',
+  name: 'Peregrino',
+  email: '',
+  avatarId: 'cruz',
+  joinDate: new Date().toISOString(),
+  weeklyActivity: [new Date().toISOString()],
+  points: 0,
+  pointsBreakdown: {
+    freeExploration: 0,
+    discipleTrail: 0,
+    bonus: 0,
   },
-  setItem: (key: string, value: string): void => {
-    try { localStorage.setItem(key, value); } catch { /* ignore */ }
-  }
-};
-
-// --- Mock Data / Local Storage Fallback ---
-
-const getLocalProfile = (): UserProfile => {
-  const stored = safeStorage.getItem('user_profile');
-  if (stored) {
-    const parsed = JSON.parse(stored);
-    if (!parsed.discipleCompletedBooks) parsed.discipleCompletedBooks = [];
-    if (!parsed.readChapters) parsed.readChapters = {};
-    if (!parsed.xpChapters) parsed.xpChapters = {};
-    if (parsed.streakFreezes === undefined) parsed.streakFreezes = 1;
-    if (parsed.dailyMissionStreak === undefined) parsed.dailyMissionStreak = 0;
-    if (!parsed.ecoReactions) parsed.ecoReactions = {};
-    if (!parsed.bibleFavorites) parsed.bibleFavorites = {};
-    if (!parsed.bibleFavoritesEver) parsed.bibleFavoritesEver = {};
-    if (parsed.longestStreak === undefined) parsed.longestStreak = parsed.streak || 0;
-    if (!parsed.flashChallengeDone) parsed.flashChallengeDone = '';
-    if (!parsed.saintsEncountered) parsed.saintsEncountered = [];
-    if (!parsed.lastLectioDate) parsed.lastLectioDate = '';
-    if (!parsed.lastDailyVerseDate) parsed.lastDailyVerseDate = '';
-    return parsed;
-  }
-  return {
-    id: 'local-user',
-    name: 'Peregrino',
-    email: '',
-    avatarId: 'cruz',
-    joinDate: new Date().toISOString(),
-    weeklyActivity: [new Date().toISOString()],
-    points: 0,
-    pointsBreakdown: { freeExploration: 0, discipleTrail: 0, bonus: 0 },
-    streak: 0,
-    longestStreak: 0,
-    lastActiveDate: '2000-01-01T00:00:00.000Z',
-    title: 'Iniciante',
-    completedBooks: [],
-    discipleCompletedBooks: [],
-    visitedBooks: [],
-    readChapters: {},
-    xpChapters: {},
-    notesCount: 0,
-    favoritesCount: 0,
-    dailyVerseCount: 0,
-    completedPlans: 0,
-    streakFreezes: 1,
-    dailyMissionStreak: 0,
-    ecoReactions: {},
-    bibleFavorites: {},
-    bibleFavoritesEver: {},
-    flashChallengeDone: '',
-    saintsEncountered: [],
-    lastLectioDate: '',
-    lastDailyVerseDate: '',
-  };
-};
-
-const getLocalBadges = (): Badge[] => {
-  const stored = safeStorage.getItem('user_badges');
-  if (stored) return JSON.parse(stored);
-  return [];
-};
+  streak: 0,
+  longestStreak: 0,
+  lastActiveDate: new Date().toISOString(),
+  title: 'Iniciante',
+  completedBooks: [],
+  discipleCompletedBooks: [],
+  visitedBooks: [],
+  readChapters: {},
+  xpChapters: {},
+  notesCount: 0,
+  favoritesCount: 0,
+  dailyVerseCount: 0,
+  completedPlans: 0,
+  streakFreezes: 1,
+  dailyMissionStreak: 0,
+  ecoReactions: {},
+  bibleFavorites: {},
+  bibleFavoritesEver: {},
+  onboardingDone: false,
+});
 
 // --- Context ---
 
@@ -218,8 +200,7 @@ interface GamificationContextType {
   addNote: () => void;
   addFavorite: () => void;
   updateFavorites: (favorites: Record<string, boolean>, favoritesEver: Record<string, boolean>) => void;
-  accessDailyVerse: (dateStr?: string) => void;
-  completeLectio: (dateStr: string) => void;
+  accessDailyVerse: () => void;
   completePlan: () => void;
   checkStreak: () => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
@@ -228,7 +209,7 @@ interface GamificationContextType {
   completeDailyMission: (missionDate?: string) => void;
   addEcoReaction: (verseRef: string, emoji: string) => void;
   recordSaintEncounter: (saintKey: string) => void;
-  completeFlashChallenge: (weekKey: string) => void;
+  completeFlashChallenge: () => void;
   notificationTrigger: boolean;
   clearNotificationTrigger: () => void;
   triggerNotificationPrompt: () => void;
@@ -237,23 +218,20 @@ interface GamificationContextType {
 export const GamificationContext = createContext<GamificationContextType | null>(null);
 
 export function GamificationProvider({ children }: { children: ReactNode }) {
-  const [profile, setProfile] = useState<UserProfile>(getLocalProfile());
-  const [badges, setBadges] = useState<Badge[]>(getLocalBadges());
+  const [profile, setProfile] = useState<UserProfile>(getInitialProfile());
+  const [badges, setBadges] = useState<Badge[]>([]);
   const [floatingPoints, setFloatingPoints] = useState<FloatingPoint[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [supabaseReady, setSupabaseReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  
   const isLoadingFromSupabase = useRef(false);
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasCheckedStreak = useRef(false);
-
   const [notificationTrigger, setNotificationTrigger] = useState(false);
   const notifAlreadyTriggered = useRef(false);
 
   const fireNotificationTrigger = useCallback(() => {
     if (notifAlreadyTriggered.current) return;
-    if (localStorage.getItem('notif_prompt_done_v3')) return;
     notifAlreadyTriggered.current = true;
     setNotificationTrigger(true);
   }, []);
@@ -280,269 +258,114 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     { title: 'Conclua 4 livros esta semana', description: 'Complete a leitura de qualquer 4 livros.', target: 4, rewardPoints: 400 },
   ];
 
-  const getPersonalizedChallenges = (): typeof WEEKLY_CHALLENGES => {
-    try {
-      const saved = localStorage.getItem('onboarding_profile');
-      if (!saved) return WEEKLY_CHALLENGES;
-      const { timePerDay, goal } = JSON.parse(saved);
-      if (timePerDay === '5') {
-        return [
-          { title: 'Leia 1 livro esta semana', description: 'Pequenos passos levam longe. Conclua qualquer 1 livro.', target: 1, rewardPoints: 150 },
-          { title: 'Acesse o versículo do dia 5 vezes', description: 'Uma dose diária da Palavra. 5 dias seguidos.', target: 5, rewardPoints: 200 },
-        ];
-      }
-      if (timePerDay === '15') {
-        return [
-          { title: 'Conclua 2 livros esta semana', description: '15 minutos por dia, resultados reais.', target: 2, rewardPoints: 250 },
-          { title: 'Conclua 3 livros esta semana', description: 'Continue no ritmo. Mais 3 livros!', target: 3, rewardPoints: 300 },
-        ];
-      }
-      if (timePerDay === '60') {
-        return [
-          { title: 'Conclua 7 livros esta semana', description: 'Você tem tempo e disposição. Use os dois!', target: 7, rewardPoints: 600 },
-          { title: 'Conclua 5 livros esta semana', description: 'Semana intensa. Bora lá!', target: 5, rewardPoints: 500 },
-        ];
-      }
-      if (goal === 'complete') {
-        return [
-          { title: 'Conclua 5 livros esta semana', description: 'Rumo aos 73! Mais 5 livros.', target: 5, rewardPoints: 500 },
-          { title: 'Conclua 4 livros esta semana', description: 'Cada livro é um passo para a meta.', target: 4, rewardPoints: 400 },
-        ];
-      }
-    } catch { /* ignora */ }
-    return WEEKLY_CHALLENGES;
-  };
-
   const getStoredChallenge = (): WeeklyChallenge => {
-    const stored = safeStorage.getItem('weekly_challenge');
-    if (stored) {
-      try {
-        const parsed: WeeklyChallenge = JSON.parse(stored);
-        if (new Date(parsed.deadline) > new Date()) return parsed;
-      } catch { /* ignore */ }
-    }
-    const pool = getPersonalizedChallenges();
+    const pool = WEEKLY_CHALLENGES;
     const template = pool[Math.floor(Math.random() * pool.length)];
-    const challenge: WeeklyChallenge = {
+    return {
       ...template,
       id: `week-${Date.now()}`,
       progress: 0,
       deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       completed: false,
     };
-    safeStorage.setItem('weekly_challenge', JSON.stringify(challenge));
-    return challenge;
   };
 
   const [weeklyChallenge, setWeeklyChallenge] = useState<WeeklyChallenge>(getStoredChallenge);
 
-  // 1. Lógica centralizada e blindada de sincronização com o banco de dados
-  const syncWithSupabase = useCallback(async (isBackgroundSync = false) => {
-    const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if (!hasSupabase) return;
+  // Load from Supabase on mount/auth change
+  useEffect(() => {
+    const loadSupabaseData = async () => {
+      const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!hasSupabase) return;
 
-    if (!isBackgroundSync) isLoadingFromSupabase.current = true;
-
-    try {
-      const sessionResult = await Promise.race([
-        supabase.auth.getSession(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('session timeout')), 5000)),
-      ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>;
-
-      const session = sessionResult?.data?.session;
-      if (!session?.user) {
-        if (!isBackgroundSync) setSupabaseReady(true);
-        return;
-      }
-
-      setUserId(session.user.id);
-      const authEmail = session.user.email || '';
-
-      const { data: profileData } = await Promise.race([
-        supabase.from('profiles').select('*').eq('id', session.user.id).single(),
-        new Promise<{ data: null; error: Error }>((resolve) =>
-          setTimeout(() => resolve({ data: null, error: new Error('timeout') }), 6000)
-        ),
-      ]) as any;
-
-      if (profileData) {
-        const localLastSync = safeStorage.getItem('last_sync_time') || '0';
-        const remoteUpdatedAt = profileData.updated_at || profileData.last_active_date || '0';
-        
-        // A MAGIA ACONTECE AQUI: Se a nuvem tem uma data de salvamento maior que o último salvamento local, a nuvem vence e sobrepõe o local.
-        const remoteIsNewer = remoteUpdatedAt > localLastSync;
-
-        setProfile(prev => {
-          // Se for sync de fundo e o celular/PC local já estiver com a versão mais nova, não mexe no estado para não dar "glitch" visual.
-          if (isBackgroundSync && !remoteIsNewer) return prev;
-
-          const syncArrays = (local: string[], remote: string[]) =>
-            remoteIsNewer ? (remote || []) : Array.from(new Set([...(remote || []), ...(local || [])]));
-
-          const syncChapterMaps = (local: Record<string, number[]> = {}, remote: Record<string, number[]> = {}) => {
-            if (remoteIsNewer) return remote || {};
-            const keys = Array.from(new Set([...Object.keys(local || {}), ...Object.keys(remote || {})]));
-            const result: Record<string, number[]> = {};
-            for (const k of keys) result[k] = Array.from(new Set([...(remote?.[k] || []), ...(local?.[k] || [])]));
-            return result;
-          };
-
-          const syncStrings = (local?: string | null, remote?: string | null) => {
-            if (remoteIsNewer) return remote || local || '';
-            if (!local) return remote || '';
-            if (!remote) return local || '';
-            return local > remote ? local : remote;
-          };
-
-          const mergedPoints = remoteIsNewer ? (profileData.points ?? prev.points) : Math.max(prev.points, profileData.points ?? 0);
-          const mergedStreak = remoteIsNewer ? (profileData.streak ?? prev.streak) : Math.max(prev.streak, profileData.streak ?? 0);
-
-          if (remoteIsNewer && profileData.weekly_challenge) {
-            setWeeklyChallenge(profileData.weekly_challenge);
-            safeStorage.setItem('weekly_challenge', JSON.stringify(profileData.weekly_challenge));
-          }
-
-          return {
-            ...prev,
-            name: profileData.name || prev.name,
-            email: profileData.email || authEmail,
-            avatarId: profileData.avatar_id || prev.avatarId,
-            avatarUrl: profileData.avatar_url || prev.avatarUrl,
-            joinDate: profileData.join_date || prev.joinDate,
-            weeklyActivity: profileData.weekly_activity || prev.weeklyActivity || [],
-            lastActiveDate: syncStrings(prev.lastActiveDate, profileData.last_active_date),
-            streak: mergedStreak,
-            points: mergedPoints,
-            title: getTitleByPoints(mergedPoints),
-            notesCount: remoteIsNewer ? (profileData.notes_count ?? prev.notesCount) : Math.max(prev.notesCount, profileData.notes_count ?? 0),
-            favoritesCount: remoteIsNewer ? (profileData.favorites_count ?? prev.favoritesCount) : Math.max(prev.favoritesCount, profileData.favorites_count ?? 0),
-            dailyVerseCount: remoteIsNewer ? (profileData.daily_verse_count ?? prev.dailyVerseCount) : Math.max(prev.dailyVerseCount, profileData.daily_verse_count ?? 0),
-            completedPlans: remoteIsNewer ? (profileData.completed_plans ?? prev.completedPlans) : Math.max(prev.completedPlans, profileData.completed_plans ?? 0),
-            longestStreak: remoteIsNewer ? (profileData.longest_streak ?? prev.longestStreak) : Math.max(prev.longestStreak || 0, profileData.longest_streak ?? 0),
-            streakFreezes: remoteIsNewer ? (profileData.streak_freezes ?? prev.streakFreezes) : (profileData.streak_freezes ?? prev.streakFreezes ?? 1),
-            lastFreezeEarnedWeek: syncStrings(prev.lastFreezeEarnedWeek, profileData.last_freeze_earned_week),
-            lastDailyMissionDate: syncStrings(prev.lastDailyMissionDate, profileData.last_daily_mission_date),
-            dailyMissionStreak: remoteIsNewer ? (profileData.daily_mission_streak ?? prev.dailyMissionStreak) : Math.max(prev.dailyMissionStreak || 0, profileData.daily_mission_streak ?? 0),
-            flashChallengeDone: syncStrings(prev.flashChallengeDone, profileData.flash_challenge_done),
-            saintsEncountered: syncArrays(prev.saintsEncountered || [], profileData.saints_encountered),
-            lastLectioDate: syncStrings(prev.lastLectioDate, profileData.last_lectio_date),
-            lastDailyVerseDate: syncStrings(prev.lastDailyVerseDate, profileData.last_daily_verse_date),
-            completedBooks: syncArrays(prev.completedBooks, profileData.completed_books),
-            discipleCompletedBooks: syncArrays(prev.discipleCompletedBooks, profileData.disciple_completed_books),
-            visitedBooks: syncArrays(prev.visitedBooks || [], profileData.visited_books),
-            readChapters: syncChapterMaps(prev.readChapters, profileData.read_chapters),
-            xpChapters: syncChapterMaps(prev.xpChapters, profileData.xp_chapters),
-            pointsBreakdown: {
-              freeExploration: remoteIsNewer ? (profileData.points_breakdown?.freeExploration ?? 0) : Math.max(prev.pointsBreakdown?.freeExploration ?? 0, profileData.points_breakdown?.freeExploration ?? 0),
-              discipleTrail: remoteIsNewer ? (profileData.points_breakdown?.discipleTrail ?? 0) : Math.max(prev.pointsBreakdown?.discipleTrail ?? 0, profileData.points_breakdown?.discipleTrail ?? 0),
-              bonus: remoteIsNewer ? (profileData.points_breakdown?.bonus ?? 0) : Math.max(prev.pointsBreakdown?.bonus ?? 0, profileData.points_breakdown?.bonus ?? 0),
-            },
-            ecoReactions: remoteIsNewer ? (profileData.eco_reactions || {}) : { ...(profileData.eco_reactions || {}), ...(prev.ecoReactions || {}) },
-            bibleFavorites: remoteIsNewer ? (profileData.bible_favorites || {}) : { ...(profileData.bible_favorites || {}), ...(prev.bibleFavorites || {}) },
-            bibleFavoritesEver: remoteIsNewer ? (profileData.bible_favorites_ever || {}) : { ...(profileData.bible_favorites_ever || {}), ...(prev.bibleFavoritesEver || {}) },
-          };
-        });
-
-        if (remoteIsNewer) {
-          safeStorage.setItem('last_sync_time', remoteUpdatedAt);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+          setSupabaseReady(true);
+          return;
         }
-      } else {
-        setProfile(prev => ({ ...prev, email: authEmail }));
-      }
 
-      const { data: badgesData } = await Promise.race([
-        supabase.from('user_badges').select('*').eq('user_id', session.user.id),
-        new Promise<{ data: null; error: Error }>((resolve) =>
-          setTimeout(() => resolve({ data: null, error: new Error('timeout') }), 5000)
-        ),
-      ]) as any;
+        setUserId(session.user.id);
+        isLoadingFromSupabase.current = true;
 
-      if (badgesData && badgesData.length > 0) {
-        setBadges(badgesData.map((b: any) => ({
-          id: b.badge_id as BadgeId,
-          title: b.title,
-          description: b.description,
-          emoji: b.emoji,
-          unlockedAt: b.unlocked_at
-        })));
-      }
+        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+        const { data: badgesData } = await supabase.from('user_badges').select('*').eq('user_id', session.user.id);
 
-    } catch (e) {
-      console.warn('[gamification] syncWithSupabase error:', e);
-    } finally {
-      if (!isBackgroundSync) {
+        if (profileData) {
+          setProfile({
+            ...getInitialProfile(),
+            id: session.user.id,
+            name: profileData.name || 'Peregrino',
+            email: session.user.email || '',
+            avatarId: profileData.avatar_id || 'cruz',
+            avatarUrl: profileData.avatar_url,
+            joinDate: profileData.join_date,
+            weeklyActivity: profileData.weekly_activity || [],
+            points: profileData.points || 0,
+            pointsBreakdown: profileData.points_breakdown || { freeExploration: 0, discipleTrail: 0, bonus: 0 },
+            streak: profileData.streak || 0,
+            longestStreak: profileData.longest_streak || 0,
+            lastActiveDate: profileData.last_active_date || new Date().toISOString(),
+            title: profileData.title || 'Iniciante',
+            completedBooks: profileData.completed_books || [],
+            discipleCompletedBooks: profileData.disciple_completed_books || [],
+            visitedBooks: profileData.visited_books || [],
+            readChapters: profileData.read_chapters || {},
+            xpChapters: profileData.xp_chapters || {},
+            notesCount: profileData.notes_count || 0,
+            favoritesCount: profileData.favorites_count || 0,
+            dailyVerseCount: profileData.daily_verse_count || 0,
+            completedPlans: profileData.completed_plans || 0,
+            streakFreezes: profileData.streak_freezes || 1,
+            lastFreezeEarnedWeek: profileData.last_freeze_earned_week,
+            lastDailyMissionDate: profileData.last_daily_mission_date,
+            dailyMissionStreak: profileData.daily_mission_streak || 0,
+            onboardingDone: profileData.onboarding_done || false,
+            lastDailyVerseDate: profileData.last_daily_verse_date,
+            lastFlashChallengeWeek: profileData.last_flash_challenge_week,
+            lastSaintSeenDate: profileData.last_saint_seen_date,
+          });
+        }
+
+        if (badgesData) {
+          setBadges(badgesData.map(b => ({
+            id: b.badge_id as BadgeId,
+            title: b.title,
+            description: b.description,
+            emoji: b.emoji,
+            unlockedAt: b.unlocked_at
+          })));
+        }
+
+        setSupabaseReady(true);
         isLoadingFromSupabase.current = false;
+      } catch (err) {
+        console.error('[gamification] loadSupabaseData error:', err);
         setSupabaseReady(true);
       }
-    }
+    };
+
+    loadSupabaseData();
   }, []);
 
-  // 2. Acorda o PWA toda vez que ele vier para primeiro plano (focus ou visibility)
+  // Save to Supabase (Debounced)
   useEffect(() => {
-    // Roda a primeira vez ao montar (cold start)
-    syncWithSupabase(false);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        syncWithSupabase(true);
-      }
-    };
-
-    const handleFocus = () => {
-      syncWithSupabase(true);
-    };
-
-    window.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      window.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [syncWithSupabase]);
-
-  const updateProfile = (updates: Partial<UserProfile>) => {
-    setProfile(prev => ({ ...prev, ...updates }));
-  };
-
-  useEffect(() => {
-    if (profile.email && userId) {
-      sharingService.register(profile);
-    }
-  }, [profile.email, profile.avatarId, profile.avatarUrl, profile.name, userId]);
-
-  // 3. Atualização do processo de salvamento para injetar o updated_at e atualizar a flag de sinc local
-  useEffect(() => {
-    safeStorage.setItem('user_profile', JSON.stringify(profile));
-    safeStorage.setItem('user_badges', JSON.stringify(badges));
-    safeStorage.setItem('weekly_challenge', JSON.stringify(weeklyChallenge));
-
-    if (!userId || isLoadingFromSupabase.current) return;
-
-    const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if (!hasSupabase) return;
+    if (!userId || isLoadingFromSupabase.current || !supabaseReady) return;
 
     if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     saveDebounceRef.current = setTimeout(async () => {
-      if (isSyncing) return;
       setIsSyncing(true);
-      
-      const now = new Date().toISOString();
-      
       try {
         await supabase.from('profiles').upsert({
           id: userId,
           name: profile.name,
-          email: profile.email,
           avatar_id: profile.avatarId,
           avatar_url: profile.avatarUrl,
-          join_date: profile.joinDate,
           weekly_activity: profile.weeklyActivity,
           points: profile.points,
           points_breakdown: profile.pointsBreakdown,
           streak: profile.streak,
-          longest_streak: profile.longestStreak || 0,
-          streak_freezes: profile.streakFreezes,
+          longest_streak: profile.longestStreak,
           last_active_date: profile.lastActiveDate,
           title: profile.title,
           completed_books: profile.completedBooks,
@@ -554,23 +377,16 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           favorites_count: profile.favoritesCount,
           daily_verse_count: profile.dailyVerseCount,
           completed_plans: profile.completedPlans,
-          eco_reactions: profile.ecoReactions || {},
-          bible_favorites: profile.bibleFavorites || {},
-          bible_favorites_ever: profile.bibleFavoritesEver || {},
-          last_daily_mission_date: profile.lastDailyMissionDate || null,
-          last_freeze_earned_week: profile.lastFreezeEarnedWeek || null,
-          daily_mission_streak: profile.dailyMissionStreak || 0,
-          weekly_challenge: weeklyChallenge,
-          flash_challenge_done: profile.flashChallengeDone || null,
-          saints_encountered: profile.saintsEncountered || [],
-          last_lectio_date: profile.lastLectioDate || null,
-          last_daily_verse_date: profile.lastDailyVerseDate || null,
-          updated_at: now
+          streak_freezes: profile.streakFreezes,
+          last_freeze_earned_week: profile.lastFreezeEarnedWeek,
+          last_daily_mission_date: profile.lastDailyMissionDate,
+          daily_mission_streak: profile.dailyMissionStreak,
+          onboarding_done: profile.onboardingDone,
+          last_daily_verse_date: profile.lastDailyVerseDate,
+          last_flash_challenge_week: profile.lastFlashChallengeWeek,
+          last_saint_seen_date: profile.lastSaintSeenDate,
+          updated_at: new Date().toISOString()
         });
-        
-        // Só marcamos que o sync está na data de hoje SE a nuvem aceitar. Evita sobrepor se estiver offline.
-        safeStorage.setItem('last_sync_time', now);
-        
       } catch (err) {
         console.warn('[gamification] saveToSupabase error:', err);
       } finally {
@@ -581,7 +397,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     return () => {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     };
-  }, [profile, userId, weeklyChallenge]);
+  }, [profile, userId, supabaseReady]);
 
   const triggerConfetti = () => {
     confetti({
@@ -608,8 +424,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       setBadges(prev => [...prev, newBadge]);
       triggerConfetti();
       
-      const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-      if (userId && hasSupabase) {
+      if (userId) {
         try {
           await supabase.from('user_badges').insert({
             user_id: userId,
@@ -628,21 +443,16 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const checkBadges = (newProfile: UserProfile, currentBadges: Badge[] = badges) => {
     if (newProfile.completedBooks.length >= 1) unlockBadge('semente_fe');
-    
     const pentateuch = ['gen', 'exo', 'lev', 'num', 'deu'];
     if (pentateuch.every(id => newProfile.completedBooks.includes(id))) unlockBadge('leitor_pentateuco');
-    
     if (newProfile.streak >= 7) unlockBadge('fogo_espirito');
-    
     const ntBooksCount = newProfile.completedBooks.filter(id => ['mat', 'mrk', 'luk', 'jhn', 'act', 'rom', '1co', '2co', 'gal', 'eph', 'php', 'col', '1th', '2th', '1ti', '2ti', 'tit', 'phm', 'heb', 'jas', '1pe', '2pe', '1jn', '2jn', '3jn', 'jud', 'rev'].includes(id)).length;
     if (ntBooksCount >= 27) unlockBadge('pomba_paz');
-    
     if (newProfile.completedBooks.length >= 73) unlockBadge('servo_fiel');
     if (newProfile.notesCount >= 10) unlockBadge('escriba');
     if (newProfile.favoritesCount >= 20) unlockBadge('coracao_aberto');
     if (newProfile.dailyVerseCount >= 30) unlockBadge('madrugador');
     if (newProfile.completedPlans >= 1) unlockBadge('peregrino');
-    
     const totalOtherBadges = Object.keys(BADGES).filter(id => id !== 'doutor_fe').length;
     if (currentBadges.length >= totalOtherBadges && !currentBadges.find(b => b.id === 'doutor_fe')) unlockBadge('doutor_fe');
   };
@@ -651,26 +461,13 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     setProfile(prev => {
       const newPoints = prev.points + amount;
       const newBreakdown = { ...(prev.pointsBreakdown || { freeExploration: 0, discipleTrail: 0, bonus: 0 }) };
-      if (category) {
-        newBreakdown[category] += amount;
-      }
-
+      if (category) newBreakdown[category] += amount;
       const newProfile = {
         ...prev,
         points: newPoints,
         pointsBreakdown: newBreakdown,
         title: getTitleByPoints(newPoints)
       };
-
-      const eventLog = JSON.parse(safeStorage.getItem('points_event_log') || '[]');
-      eventLog.push({
-        type: reason,
-        points: amount,
-        category,
-        timestamp: new Date().toISOString()
-      });
-      safeStorage.setItem('points_event_log', JSON.stringify(eventLog));
-
       return newProfile;
     });
   };
@@ -702,7 +499,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         newStreak += 1;
       } else if (diffDays === 2 && newFreezes > 0) {
         newFreezes -= 1;
-        newStreak += 1; 
+        newStreak += 1;
         unlockBadge('graca_dia');
       } else {
         newStreak = 1;
@@ -733,12 +530,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const completeDailyMission = (_missionDate?: string) => {
     const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    if (profile.lastDailyMissionDate === today) return; 
+    const today = now.toISOString().split('T')[0];
+    if (profile.lastDailyMissionDate === today) return;
     setProfile(prev => {
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
       const newMissionStreak = (prev.lastDailyMissionDate === yesterdayStr)
         ? prev.dailyMissionStreak + 1
         : 1;
@@ -761,271 +558,70 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       if (ecoCount >= 15) unlockBadge('eco_vivo');
       return newProfile;
     });
-    
-    const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if (hasSupabase && profile.email) {
-      supabase.from('verse_eco_reactions').upsert({
-        user_email: profile.email,
-        verse_ref: verseRef,
-        emoji,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_email,verse_ref' }).then(() => {}).catch(() => {});
-    }
   };
 
   const recordSaintEncounter = (saintKey: string) => {
-    if (!profile.saintsEncountered?.includes(saintKey)) {
-      setProfile(prev => {
-        const updatedSaints = [...(prev.saintsEncountered || []), saintKey];
-        const xp = applyMultiplier(10, prev.streak);
-        
-        setTimeout(() => {
-          if (updatedSaints.length >= 10) unlockBadge('comunhao_santos');
-          addPoints(xp, `Encontrou ${saintKey}`, 'freeExploration');
-          showFloatingPoints(xp, 'free');
-        }, 0);
-        
-        return { ...prev, saintsEncountered: updatedSaints };
-      });
-    }
-  };
-
-  const completeFlashChallenge = (weekKey: string) => {
-    if (profile.flashChallengeDone !== weekKey) {
-      setProfile(prev => {
-        const xp = applyMultiplier(300, prev.streak);
-        setTimeout(() => {
-          unlockBadge('guerreiro_luz');
-          addPoints(xp, 'Desafio relâmpago concluído', 'bonus');
-          showFloatingPoints(xp, 'bonus_trail');
-        }, 0);
-        return { ...prev, flashChallengeDone: weekKey };
-      });
-    }
-  };
-
-  const completeLectio = (dateStr: string) => {
-    if (profile.lastLectioDate === dateStr) return;
-    setProfile(prev => ({ ...prev, lastLectioDate: dateStr }));
-    const xp = applyMultiplier(20, profile.streak);
-    addPoints(xp, 'Lectio Divina concluída', 'freeExploration');
-    showFloatingPoints(xp, 'bonus_step');
-  };
-
-  const accessDailyVerse = (dateStr?: string) => {
-    if (dateStr && profile.lastDailyVerseDate === dateStr) return;
     setProfile(prev => {
-      const newProfile = { 
-        ...prev, 
-        dailyVerseCount: prev.dailyVerseCount + 1,
-        lastDailyVerseDate: dateStr || prev.lastDailyVerseDate
-      };
-      checkBadges(newProfile);
-      return newProfile;
+      const today = new Date().toISOString().split('T')[0];
+      if (prev.lastSaintSeenDate === today) return prev;
+      const xp = applyMultiplier(10, prev.streak);
+      addPoints(xp, `Encontrou ${saintKey}`, 'freeExploration');
+      showFloatingPoints(xp, 'free');
+      return { ...prev, lastSaintSeenDate: today };
     });
-    const xp = applyMultiplier(15, profile.streak);
-    addPoints(xp, 'Acessou versículo do dia', 'freeExploration');
-    showFloatingPoints(xp, 'free');
-    fireNotificationTrigger();
+  };
+
+  const completeFlashChallenge = () => {
+    unlockBadge('guerreiro_luz');
+    const xp = applyMultiplier(300, profile.streak);
+    addPoints(xp, 'Desafio relâmpago concluído', 'bonus');
+    showFloatingPoints(xp, 'bonus_trail');
   };
 
   const markBookCompleted = (bookId: string, isGps: boolean = false) => {
     const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
     const chapters = bookData?.chapters || 1;
-
-    let earnedXp = 0;
-    let earnedCategory: 'freeExploration' | 'discipleTrail' = 'freeExploration';
-    let earnedType: 'free' | 'disciple' = 'free';
-    let earnedReason = '';
-    let isFirstCompletion = false;
-    let isReconquest = false;
-    let didCompleteTrial = false;
-
     setProfile(prev => {
       const alreadyCompleted = prev.completedBooks.includes(bookId);
-      const alreadyDisciple  = (prev.discipleCompletedBooks || []).includes(bookId);
+      if (alreadyCompleted) return prev;
       const mult = getStreakMultiplier(prev.streak);
-
-      if (!alreadyCompleted) {
-        earnedXp = isGps
-          ? Math.round((100 + chapters * 2) * mult)
-          : Math.round((50 + chapters * 1) * mult);
-        earnedCategory = isGps ? 'discipleTrail' : 'freeExploration';
-        earnedType     = isGps ? 'disciple' : 'free';
-        earnedReason   = `Completou ${bookData?.name || bookId}${isGps ? ' (Trilha)' : ''}`;
-        isFirstCompletion = true;
-
-        const newCompletedBooks = [...prev.completedBooks, bookId];
-        const newProfile = {
-          ...prev,
-          completedBooks: newCompletedBooks,
-          discipleCompletedBooks: isGps
-            ? [...(prev.discipleCompletedBooks || []), bookId]
-            : (prev.discipleCompletedBooks || []),
-        };
-        checkBadges(newProfile, badges);
-
-        const discipleBookIds = BEGINNER_PATH.flatMap(step => step.books);
-        const allDiscipleNow = discipleBookIds.every(
-          id => id === bookId || prev.completedBooks.includes(id)
-        );
-        if (allDiscipleNow && newProfile.completedPlans < 1) {
-          didCompleteTrial = true;
-          return { ...newProfile, completedPlans: newProfile.completedPlans + 1 };
-        }
-        return newProfile;
-
-      } else if (isGps && !alreadyDisciple) {
-        earnedXp       = Math.round((50 + chapters * 1) * mult);
-        earnedCategory = 'discipleTrail';
-        earnedType     = 'disciple';
-        earnedReason   = `Reconquistou ${bookData?.name || bookId} pela Trilha`;
-        isReconquest   = true;
-
-        return {
-          ...prev,
-          discipleCompletedBooks: [...(prev.discipleCompletedBooks || []), bookId],
-        };
-      }
-
-      return prev; 
+      const xp = isGps ? Math.round((100 + chapters * 2) * mult) : Math.round((50 + chapters * 1) * mult);
+      const newProfile = {
+        ...prev,
+        completedBooks: [...prev.completedBooks, bookId],
+        points: prev.points + xp,
+        title: getTitleByPoints(prev.points + xp)
+      };
+      showFloatingPoints(xp, isGps ? 'disciple' : 'free');
+      checkBadges(newProfile);
+      return newProfile;
     });
-
-    setTimeout(() => {
-      if (earnedXp > 0) {
-        addPoints(earnedXp, earnedReason, earnedCategory);
-        showFloatingPoints(earnedXp, earnedType);
-        fireNotificationTrigger();
-      }
-
-      if (isFirstCompletion) {
-        setWeeklyChallenge(prev => {
-          if (prev.completed) return prev;
-          const newProgress = prev.progress + 1;
-          const completed   = newProgress >= prev.target;
-          if (completed) {
-            setTimeout(() => {
-              addPoints(prev.rewardPoints, `Desafio semanal concluído: ${prev.title}`, 'bonus');
-              showFloatingPoints(prev.rewardPoints, 'bonus_trail');
-            }, 300);
-          }
-          return { ...prev, progress: newProgress, completed };
-        });
-
-        if (profile.email) {
-          const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-          if (hasSupabase) {
-            const BIBLE_BOOKS_MAP: Record<string, string> = {
-              'gen':'Gênesis','exo':'Êxodo','lev':'Levítico','num':'Números','deu':'Deuteronômio',
-              'jos':'Josué','jdg':'Juízes','rut':'Rute','1sa':'1 Samuel','2sa':'2 Samuel',
-              '1ki':'1 Reis','2ki':'2 Reis','1ch':'1 Crônicas','2ch':'2 Crônicas','ezr':'Esdras',
-              'neh':'Neemias','tob':'Tobias','jdt':'Judite','est':'Ester','1ma':'1 Macabeus',
-              '2ma':'2 Macabeus','job':'Jó','psa':'Salmos','pro':'Provérbios','ecc':'Eclesiastes',
-              'sng':'Cânticos','wis':'Sabedoria','sir':'Eclesiástico','isa':'Isaías','jer':'Jeremias',
-              'lam':'Lamentações','bar':'Baruc','ezk':'Ezequiel','dan':'Daniel','hos':'Oseias',
-              'jol':'Joel','amo':'Amós','oba':'Obadias','jon':'Jonas','mic':'Miqueias','nam':'Naum',
-              'hab':'Habacuque','zep':'Sofonias','hag':'Ageu','zec':'Zacarias','mal':'Malaquias',
-              'mat':'Mateus','mrk':'Marcos','luk':'Lucas','jhn':'João','act':'Atos','rom':'Romanos',
-              '1co':'1 Coríntios','2co':'2 Coríntios','gal':'Gálatas','eph':'Efésios','php':'Filipenses',
-              'col':'Colossenses','1th':'1 Tessalonicenses','2th':'2 Tessalonicenses','1ti':'1 Timóteo',
-              '2ti':'2 Timóteo','tit':'Tito','phm':'Filemom','heb':'Hebreus','jas':'Tiago',
-              '1pe':'1 Pedro','2pe':'2 Pedro','1jn':'1 João','2jn':'2 João','3jn':'3 João',
-              'jud':'Judas','rev':'Apocalipse',
-            };
-            const bookName = BIBLE_BOOKS_MAP[bookId] || bookId;
-            const action   = isGps
-              ? `concluiu "${bookName}" pela Trilha do Discípulo 🧭`
-              : `concluiu o livro de "${bookName}" 📖`;
-            supabase.from('community_feed').insert({
-              user_name: profile.name, user_email: profile.email,
-              avatar_id: profile.avatarId || '', action,
-            }).then(() => {}).catch(() => {});
-          }
-        }
-
-        if (didCompleteTrial) {
-          const trailKey = `trail_disciple_xp_awarded_${userId || 'local'}`;
-          if (!safeStorage.getItem(trailKey)) {
-            safeStorage.setItem(trailKey, 'true');
-            setTimeout(() => {
-              addPoints(1000, 'Trilha do Discípulo completa! 🏆', 'bonus');
-              showFloatingPoints(1000, 'bonus_trail');
-            }, 300);
-          }
-        }
-      }
-    }, 0);
   };
 
   const markBookVisited = (bookId: string) => {
-    if (!profile.visitedBooks?.includes(bookId)) {
-      setProfile(prev => ({
-        ...prev,
-        visitedBooks: [...(prev.visitedBooks || []), bookId]
-      }));
-    }
+    setProfile(prev => {
+      if (prev.visitedBooks?.includes(bookId)) return prev;
+      return { ...prev, visitedBooks: [...(prev.visitedBooks || []), bookId] };
+    });
   };
 
   const markChapterRead = (bookId: string, chapterNum: number, _totalChapters: number) => {
     setProfile(prev => {
-      const currentRead   = prev.readChapters?.[bookId]  || [];
-      const alreadyEarned = (prev.xpChapters?.[bookId]   || []).includes(chapterNum);
-      const isAlreadyRead = currentRead.includes(chapterNum);
-
-      const updatedRead = isAlreadyRead
-        ? currentRead.filter(c => c !== chapterNum)
-        : [...currentRead, chapterNum];
-
-      if (!isAlreadyRead && !alreadyEarned) {
-        const xp = applyMultiplier(5, prev.streak);
-        const updatedXpChapters = [...(prev.xpChapters?.[bookId] || []), chapterNum];
-        setTimeout(() => {
-          addPoints(xp, `Leu capítulo ${chapterNum} de ${bookId}`, 'freeExploration');
-          showFloatingPoints(xp, 'free');
-          fireNotificationTrigger();
-        }, 0);
-        return {
-          ...prev,
-          readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead },
-          xpChapters:   { ...(prev.xpChapters   || {}), [bookId]: updatedXpChapters },
-        };
-      }
-
-      return {
-        ...prev,
-        readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead },
-      };
+      const current = prev.readChapters?.[bookId] || [];
+      if (current.includes(chapterNum)) return prev;
+      const newChapters = [...current, chapterNum];
+      const xp = applyMultiplier(5, prev.streak);
+      addPoints(xp, `Leu cap ${chapterNum} de ${bookId}`, 'freeExploration');
+      showFloatingPoints(xp, 'free');
+      return { ...prev, readChapters: { ...prev.readChapters, [bookId]: newChapters } };
     });
   };
 
   const markAllChaptersRead = (bookId: string, chapterNums: number[]) => {
-    setProfile(prev => {
-      const currentRead   = prev.readChapters?.[bookId] || [];
-      const alreadyEarned = prev.xpChapters?.[bookId]   || [];
-
-      const newReadChapters = chapterNums.filter(n => !currentRead.includes(n));
-      const newXpChapters   = chapterNums.filter(n => !alreadyEarned.includes(n));
-
-      if (newReadChapters.length === 0 && newXpChapters.length === 0) return prev;
-
-      const updatedRead       = [...currentRead, ...newReadChapters.filter(n => !currentRead.includes(n))];
-      const updatedXpChapters = [...alreadyEarned, ...newXpChapters];
-
-      if (newXpChapters.length > 0) {
-        const xpPerChapter = applyMultiplier(5, prev.streak);
-        const totalXp      = xpPerChapter * newXpChapters.length;
-        setTimeout(() => {
-          addPoints(totalXp, `Marcou ${newXpChapters.length} capítulos de ${bookId}`, 'freeExploration');
-          showFloatingPoints(totalXp, 'free');
-        }, 0);
-      }
-
-      return {
-        ...prev,
-        readChapters: { ...(prev.readChapters || {}), [bookId]: updatedRead },
-        xpChapters:   { ...(prev.xpChapters   || {}), [bookId]: updatedXpChapters },
-      };
-    });
+    setProfile(prev => ({
+      ...prev,
+      readChapters: { ...prev.readChapters, [bookId]: chapterNums }
+    }));
   };
 
   const addNote = () => {
@@ -1047,15 +643,22 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const updateFavorites = (
-    favorites: Record<string, boolean>,
-    favoritesEver: Record<string, boolean>
-  ) => {
-    setProfile(prev => ({
-      ...prev,
-      bibleFavorites: favorites,
-      bibleFavoritesEver: favoritesEver,
-    }));
+  const updateFavorites = (favorites: Record<string, boolean>, favoritesEver: Record<string, boolean>) => {
+    setProfile(prev => ({ ...prev, bibleFavorites: favorites, bibleFavoritesEver: favoritesEver }));
+  };
+
+  const accessDailyVerse = () => {
+    setProfile(prev => {
+      const today = new Date().toISOString().split('T')[0];
+      if (prev.lastDailyVerseDate === today) return prev;
+      const newProfile = { ...prev, dailyVerseCount: prev.dailyVerseCount + 1, lastDailyVerseDate: today };
+      const xp = applyMultiplier(15, prev.streak);
+      addPoints(xp, 'Acessou versículo do dia', 'freeExploration');
+      showFloatingPoints(xp, 'free');
+      checkBadges(newProfile);
+      fireNotificationTrigger();
+      return newProfile;
+    });
   };
 
   const completePlan = () => {
@@ -1066,10 +669,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const updateProfile = (updates: Partial<UserProfile>) => {
+    setProfile(prev => ({ ...prev, ...updates }));
+  };
+
   useEffect(() => {
-    const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if (!hasSupabase || supabaseReady) {
-      if (hasCheckedStreak.current) return;
+    if (supabaseReady && !hasCheckedStreak.current) {
       hasCheckedStreak.current = true;
       checkStreak();
     }
@@ -1090,7 +695,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       addFavorite,
       updateFavorites,
       accessDailyVerse,
-      completeLectio,
       completePlan,
       checkStreak,
       updateProfile,
@@ -1105,7 +709,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       triggerNotificationPrompt: fireNotificationTrigger,
     }}>
       {children}
-      
       <div className="fixed inset-0 pointer-events-none z-[100] flex items-center justify-center">
         <AnimatePresence>
           {floatingPoints.map(fp => (
@@ -1117,31 +720,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               transition={{ duration: 1.5, ease: "easeOut" }}
               className="absolute"
             >
-              {fp.type === 'free' && (
-                <div className="text-stone-700 font-bold text-2xl drop-shadow-md">
-                  +{fp.amount} XP
-                </div>
-              )}
-              {fp.type === 'disciple' && (
-                <div className="text-amber-500 font-bold text-3xl drop-shadow-lg flex items-center gap-2 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full border border-amber-200">
-                  +{fp.amount} XP ⭐
-                </div>
-              )}
-              {fp.type === 'bonus_step' && (
-                <div className="text-orange-500 font-black text-4xl drop-shadow-xl flex items-center gap-2 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full border-2 border-orange-300">
-                  +{fp.amount} XP BÔNUS!
-                </div>
-              )}
-              {fp.type === 'bonus_trail' && (
-                <div className="text-amber-400 font-black text-5xl drop-shadow-2xl flex items-center gap-3 bg-stone-900/90 backdrop-blur-md px-8 py-4 rounded-full border-4 border-amber-400">
-                  +{fp.amount} XP 🏆
-                </div>
-              )}
-              {fp.type === 'streak' && (
-                <div className="text-rose-500 font-black text-3xl drop-shadow-xl flex items-center gap-2 bg-white/90 backdrop-blur-sm px-5 py-2.5 rounded-full border-2 border-rose-300">
-                  🔥 {fp.amount}x STREAK!
-                </div>
-              )}
+              <div className="text-stone-700 font-bold text-2xl drop-shadow-md">
+                +{fp.amount} XP {fp.type === 'disciple' ? '⭐' : ''}
+              </div>
             </motion.div>
           ))}
         </AnimatePresence>

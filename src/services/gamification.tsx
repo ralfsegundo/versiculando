@@ -577,6 +577,29 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       if (isSyncing) return;
       setIsSyncing(true);
       try {
+        // ── Fetch + merge antes de salvar ─────────────────────────────
+        // Garante que dados de OUTRO dispositivo (pontos, progresso) não
+        // sejam sobrescritos pelo upsert cego do cliente atual.
+        const { data: remote } = await supabase
+          .from('profiles').select('*').eq('id', userId).single();
+
+        // Helper locais (mesmos do merge de load)
+        const maxArr = (a: string[] = [], b: string[] = []) =>
+          Array.from(new Set([...a, ...b]));
+        const maxMap = (
+          a: Record<string, number[]> = {},
+          b: Record<string, number[]> = {}
+        ): Record<string, number[]> => {
+          const keys = Array.from(new Set([...Object.keys(a), ...Object.keys(b)]));
+          const r: Record<string, number[]> = {};
+          for (const k of keys) r[k] = Array.from(new Set([...(a[k] || []), ...(b[k] || [])]));
+          return r;
+        };
+
+        // Para cada campo monotônico: max(local, remote)
+        const rp = remote?.points ?? 0;
+        const finalPoints = Math.max(profile.points, rp);
+
         await supabase.from('profiles').upsert({
           id: userId,
           name: profile.name,
@@ -585,30 +608,51 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           avatar_url: profile.avatarUrl,
           join_date: profile.joinDate,
           weekly_activity: profile.weeklyActivity,
-          points: profile.points,
-          points_breakdown: profile.pointsBreakdown,
-          streak: profile.streak,
-          longest_streak: profile.longestStreak || 0,
-          streak_freezes: profile.streakFreezes,
+          points:           finalPoints,
+          points_breakdown: {
+            freeExploration: Math.max(profile.pointsBreakdown?.freeExploration ?? 0, remote?.points_breakdown?.freeExploration ?? 0),
+            discipleTrail:   Math.max(profile.pointsBreakdown?.discipleTrail   ?? 0, remote?.points_breakdown?.discipleTrail   ?? 0),
+            bonus:           Math.max(profile.pointsBreakdown?.bonus           ?? 0, remote?.points_breakdown?.bonus           ?? 0),
+          },
+          streak:           Math.max(profile.streak, remote?.streak ?? 0),
+          longest_streak:   Math.max(profile.longestStreak || 0, remote?.longest_streak ?? 0),
+          streak_freezes:   profile.streakFreezes,
           last_active_date: profile.lastActiveDate,
-          title: profile.title,
-          completed_books: profile.completedBooks,
-          disciple_completed_books: profile.discipleCompletedBooks,
-          visited_books: profile.visitedBooks,
-          read_chapters: profile.readChapters,
-          xp_chapters: profile.xpChapters,
-          notes_count: profile.notesCount,
-          favorites_count: profile.favoritesCount,
-          daily_verse_count: profile.dailyVerseCount,
-          completed_plans: profile.completedPlans,
-          eco_reactions: profile.ecoReactions || {},
-          bible_favorites: profile.bibleFavorites || {},
-          bible_favorites_ever: profile.bibleFavoritesEver || {},
-          last_daily_mission_date: profile.lastDailyMissionDate || null,
-          last_freeze_earned_week: profile.lastFreezeEarnedWeek || null,
-          daily_mission_streak: profile.dailyMissionStreak || 0,
-          updated_at: new Date().toISOString()
+          title:            getTitleByPoints(finalPoints),
+          completed_books:         maxArr(profile.completedBooks,         remote?.completed_books),
+          disciple_completed_books:maxArr(profile.discipleCompletedBooks, remote?.disciple_completed_books),
+          visited_books:           maxArr(profile.visitedBooks,           remote?.visited_books),
+          read_chapters:   maxMap(profile.readChapters,  remote?.read_chapters),
+          xp_chapters:     maxMap(profile.xpChapters,    remote?.xp_chapters),
+          notes_count:      Math.max(profile.notesCount,      remote?.notes_count      ?? 0),
+          favorites_count:  Math.max(profile.favoritesCount,  remote?.favorites_count  ?? 0),
+          daily_verse_count:Math.max(profile.dailyVerseCount, remote?.daily_verse_count?? 0),
+          completed_plans:  Math.max(profile.completedPlans,  remote?.completed_plans  ?? 0),
+          eco_reactions:    { ...(remote?.eco_reactions   || {}), ...(profile.ecoReactions    || {}) },
+          bible_favorites:  { ...(remote?.bible_favorites || {}), ...(profile.bibleFavorites  || {}) },
+          bible_favorites_ever: { ...(remote?.bible_favorites_ever || {}), ...(profile.bibleFavoritesEver || {}) },
+          last_daily_mission_date: profile.lastDailyMissionDate || remote?.last_daily_mission_date || null,
+          last_freeze_earned_week: profile.lastFreezeEarnedWeek || remote?.last_freeze_earned_week || null,
+          daily_mission_streak:    Math.max(profile.dailyMissionStreak || 0, remote?.daily_mission_streak ?? 0),
+          updated_at: new Date().toISOString(),
         });
+
+        // Se o remote tinha pontos maiores, atualiza o estado local também
+        if (remote && remote.points > profile.points) {
+          setProfile(prev => ({
+            ...prev,
+            points: Math.max(prev.points, remote.points),
+            streak: Math.max(prev.streak, remote.streak ?? 0),
+            longestStreak: Math.max(prev.longestStreak || 0, remote.longest_streak ?? 0),
+            notesCount: Math.max(prev.notesCount, remote.notes_count ?? 0),
+            favoritesCount: Math.max(prev.favoritesCount, remote.favorites_count ?? 0),
+            dailyVerseCount: Math.max(prev.dailyVerseCount, remote.daily_verse_count ?? 0),
+            completedPlans: Math.max(prev.completedPlans, remote.completed_plans ?? 0),
+            completedBooks: maxArr(prev.completedBooks, remote.completed_books),
+            discipleCompletedBooks: maxArr(prev.discipleCompletedBooks, remote.disciple_completed_books),
+            visitedBooks: maxArr(prev.visitedBooks, remote.visited_books),
+          }));
+        }
       } catch (err) {
         console.warn('[gamification] saveToSupabase error:', err);
       } finally {
@@ -890,7 +934,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     showFloatingPoints(xp, 'bonus_step');
   };
 
- = (bookId: string, isGps: boolean = false) => {
+  const markBookCompleted = (bookId: string, isGps: boolean = false) => {
     const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
     const chapters = bookData?.chapters || 1;
 

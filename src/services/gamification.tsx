@@ -24,21 +24,9 @@ export const AVATARS = [
 ];
 
 export type BadgeId = 
-  | 'semente_fe' 
-  | 'leitor_pentateuco' 
-  | 'fogo_espirito' 
-  | 'pomba_paz' 
-  | 'servo_fiel' 
-  | 'escriba' 
-  | 'coracao_aberto' 
-  | 'madrugador' 
-  | 'peregrino' 
-  | 'doutor_fe'
-  | 'missao_diaria'
-  | 'comunhao_santos'
-  | 'guerreiro_luz'
-  | 'eco_vivo'
-  | 'graca_dia';
+  | 'semente_fe' | 'leitor_pentateuco' | 'fogo_espirito' | 'pomba_paz' | 'servo_fiel' 
+  | 'escriba' | 'coracao_aberto' | 'madrugador' | 'peregrino' | 'doutor_fe'
+  | 'missao_diaria' | 'comunhao_santos' | 'guerreiro_luz' | 'eco_vivo' | 'graca_dia';
 
 export interface Badge {
   id: BadgeId;
@@ -57,11 +45,7 @@ export interface UserProfile {
   joinDate?: string;
   weeklyActivity?: string[];
   points: number;
-  pointsBreakdown?: {
-    freeExploration: number;
-    discipleTrail: number;
-    bonus: number;
-  };
+  pointsBreakdown?: { freeExploration: number; discipleTrail: number; bonus: number; };
   streak: number;
   longestStreak: number;
   lastActiveDate: string;
@@ -352,161 +336,170 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const [weeklyChallenge, setWeeklyChallenge] = useState<WeeklyChallenge>(getStoredChallenge);
 
-  useEffect(() => {
-    const loadSupabaseData = async () => {
-      const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-      if (!hasSupabase) return;
+  // 1. Lógica centralizada e blindada de sincronização com o banco de dados
+  const syncWithSupabase = useCallback(async (isBackgroundSync = false) => {
+    const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!hasSupabase) return;
 
-      try {
-        const sessionResult = await Promise.race([
-          supabase.auth.getSession(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('session timeout')), 5000)),
-        ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>;
+    if (!isBackgroundSync) isLoadingFromSupabase.current = true;
 
-        const session = sessionResult?.data?.session;
-        if (!session?.user) {
-          setSupabaseReady(true);
-          return;
+    try {
+      const sessionResult = await Promise.race([
+        supabase.auth.getSession(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('session timeout')), 5000)),
+      ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>;
+
+      const session = sessionResult?.data?.session;
+      if (!session?.user) {
+        if (!isBackgroundSync) setSupabaseReady(true);
+        return;
+      }
+
+      setUserId(session.user.id);
+      const authEmail = session.user.email || '';
+
+      const { data: profileData } = await Promise.race([
+        supabase.from('profiles').select('*').eq('id', session.user.id).single(),
+        new Promise<{ data: null; error: Error }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: new Error('timeout') }), 6000)
+        ),
+      ]) as any;
+
+      if (profileData) {
+        const localLastSync = safeStorage.getItem('last_sync_time') || '0';
+        const remoteUpdatedAt = profileData.updated_at || profileData.last_active_date || '0';
+        
+        // A MAGIA ACONTECE AQUI: Se a nuvem tem uma data de salvamento maior que o último salvamento local, a nuvem vence e sobrepõe o local.
+        const remoteIsNewer = remoteUpdatedAt > localLastSync;
+
+        setProfile(prev => {
+          // Se for sync de fundo e o celular/PC local já estiver com a versão mais nova, não mexe no estado para não dar "glitch" visual.
+          if (isBackgroundSync && !remoteIsNewer) return prev;
+
+          const syncArrays = (local: string[], remote: string[]) =>
+            remoteIsNewer ? (remote || []) : Array.from(new Set([...(remote || []), ...(local || [])]));
+
+          const syncChapterMaps = (local: Record<string, number[]> = {}, remote: Record<string, number[]> = {}) => {
+            if (remoteIsNewer) return remote || {};
+            const keys = Array.from(new Set([...Object.keys(local || {}), ...Object.keys(remote || {})]));
+            const result: Record<string, number[]> = {};
+            for (const k of keys) result[k] = Array.from(new Set([...(remote?.[k] || []), ...(local?.[k] || [])]));
+            return result;
+          };
+
+          const syncStrings = (local?: string | null, remote?: string | null) => {
+            if (remoteIsNewer) return remote || local || '';
+            if (!local) return remote || '';
+            if (!remote) return local || '';
+            return local > remote ? local : remote;
+          };
+
+          const mergedPoints = remoteIsNewer ? (profileData.points ?? prev.points) : Math.max(prev.points, profileData.points ?? 0);
+          const mergedStreak = remoteIsNewer ? (profileData.streak ?? prev.streak) : Math.max(prev.streak, profileData.streak ?? 0);
+
+          if (remoteIsNewer && profileData.weekly_challenge) {
+            setWeeklyChallenge(profileData.weekly_challenge);
+            safeStorage.setItem('weekly_challenge', JSON.stringify(profileData.weekly_challenge));
+          }
+
+          return {
+            ...prev,
+            name: profileData.name || prev.name,
+            email: profileData.email || authEmail,
+            avatarId: profileData.avatar_id || prev.avatarId,
+            avatarUrl: profileData.avatar_url || prev.avatarUrl,
+            joinDate: profileData.join_date || prev.joinDate,
+            weeklyActivity: profileData.weekly_activity || prev.weeklyActivity || [],
+            lastActiveDate: syncStrings(prev.lastActiveDate, profileData.last_active_date),
+            streak: mergedStreak,
+            points: mergedPoints,
+            title: getTitleByPoints(mergedPoints),
+            notesCount: remoteIsNewer ? (profileData.notes_count ?? prev.notesCount) : Math.max(prev.notesCount, profileData.notes_count ?? 0),
+            favoritesCount: remoteIsNewer ? (profileData.favorites_count ?? prev.favoritesCount) : Math.max(prev.favoritesCount, profileData.favorites_count ?? 0),
+            dailyVerseCount: remoteIsNewer ? (profileData.daily_verse_count ?? prev.dailyVerseCount) : Math.max(prev.dailyVerseCount, profileData.daily_verse_count ?? 0),
+            completedPlans: remoteIsNewer ? (profileData.completed_plans ?? prev.completedPlans) : Math.max(prev.completedPlans, profileData.completed_plans ?? 0),
+            longestStreak: remoteIsNewer ? (profileData.longest_streak ?? prev.longestStreak) : Math.max(prev.longestStreak || 0, profileData.longest_streak ?? 0),
+            streakFreezes: remoteIsNewer ? (profileData.streak_freezes ?? prev.streakFreezes) : (profileData.streak_freezes ?? prev.streakFreezes ?? 1),
+            lastFreezeEarnedWeek: syncStrings(prev.lastFreezeEarnedWeek, profileData.last_freeze_earned_week),
+            lastDailyMissionDate: syncStrings(prev.lastDailyMissionDate, profileData.last_daily_mission_date),
+            dailyMissionStreak: remoteIsNewer ? (profileData.daily_mission_streak ?? prev.dailyMissionStreak) : Math.max(prev.dailyMissionStreak || 0, profileData.daily_mission_streak ?? 0),
+            flashChallengeDone: syncStrings(prev.flashChallengeDone, profileData.flash_challenge_done),
+            saintsEncountered: syncArrays(prev.saintsEncountered || [], profileData.saints_encountered),
+            lastLectioDate: syncStrings(prev.lastLectioDate, profileData.last_lectio_date),
+            lastDailyVerseDate: syncStrings(prev.lastDailyVerseDate, profileData.last_daily_verse_date),
+            completedBooks: syncArrays(prev.completedBooks, profileData.completed_books),
+            discipleCompletedBooks: syncArrays(prev.discipleCompletedBooks, profileData.disciple_completed_books),
+            visitedBooks: syncArrays(prev.visitedBooks || [], profileData.visited_books),
+            readChapters: syncChapterMaps(prev.readChapters, profileData.read_chapters),
+            xpChapters: syncChapterMaps(prev.xpChapters, profileData.xp_chapters),
+            pointsBreakdown: {
+              freeExploration: remoteIsNewer ? (profileData.points_breakdown?.freeExploration ?? 0) : Math.max(prev.pointsBreakdown?.freeExploration ?? 0, profileData.points_breakdown?.freeExploration ?? 0),
+              discipleTrail: remoteIsNewer ? (profileData.points_breakdown?.discipleTrail ?? 0) : Math.max(prev.pointsBreakdown?.discipleTrail ?? 0, profileData.points_breakdown?.discipleTrail ?? 0),
+              bonus: remoteIsNewer ? (profileData.points_breakdown?.bonus ?? 0) : Math.max(prev.pointsBreakdown?.bonus ?? 0, profileData.points_breakdown?.bonus ?? 0),
+            },
+            ecoReactions: remoteIsNewer ? (profileData.eco_reactions || {}) : { ...(profileData.eco_reactions || {}), ...(prev.ecoReactions || {}) },
+            bibleFavorites: remoteIsNewer ? (profileData.bible_favorites || {}) : { ...(profileData.bible_favorites || {}), ...(prev.bibleFavorites || {}) },
+            bibleFavoritesEver: remoteIsNewer ? (profileData.bible_favorites_ever || {}) : { ...(profileData.bible_favorites_ever || {}), ...(prev.bibleFavoritesEver || {}) },
+          };
+        });
+
+        if (remoteIsNewer) {
+          safeStorage.setItem('last_sync_time', remoteUpdatedAt);
         }
+      } else {
+        setProfile(prev => ({ ...prev, email: authEmail }));
+      }
 
-        setUserId(session.user.id);
-        const authEmail = session.user.email || '';
+      const { data: badgesData } = await Promise.race([
+        supabase.from('user_badges').select('*').eq('user_id', session.user.id),
+        new Promise<{ data: null; error: Error }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: new Error('timeout') }), 5000)
+        ),
+      ]) as any;
 
-        isLoadingFromSupabase.current = true;
+      if (badgesData && badgesData.length > 0) {
+        setBadges(badgesData.map((b: any) => ({
+          id: b.badge_id as BadgeId,
+          title: b.title,
+          description: b.description,
+          emoji: b.emoji,
+          unlockedAt: b.unlocked_at
+        })));
+      }
 
-        const { data: profileData } = await Promise.race([
-          supabase.from('profiles').select('*').eq('id', session.user.id).single(),
-          new Promise<{ data: null; error: Error }>((resolve) =>
-            setTimeout(() => resolve({ data: null, error: new Error('timeout') }), 6000)
-          ),
-        ]) as any;
-
-        if (profileData) {
-          setProfile(prev => {
-            const mergeArrays = (local: string[], remote: string[]) =>
-              Array.from(new Set([...remote, ...local]));
-
-            const mergeChapterMaps = (
-              local: Record<string, number[]> = {},
-              remote: Record<string, number[]> = {}
-            ): Record<string, number[]> => {
-              const keys = Array.from(new Set([...Object.keys(local), ...Object.keys(remote)]));
-              const result: Record<string, number[]> = {};
-              for (const k of keys) {
-                result[k] = Array.from(new Set([...(remote[k] || []), ...(local[k] || [])]));
-              }
-              return result;
-            };
-
-            // A SOLUÇÃO BLINDADA PARA O PWA: 
-            // Em vez de depender de quem foi "visto por último", compara a data textualmente. 
-            // Ex: "2026-03-08" é maior que "2026-03-07". Assim o DB desatualizado NUNCA apaga o cache local.
-            const getLatestString = (s1?: string | null, s2?: string | null) => {
-              if (!s1) return s2 || '';
-              if (!s2) return s1 || '';
-              return s1 > s2 ? s1 : s2;
-            };
-
-            const mergedPoints = Math.max(prev.points, profileData.points ?? 0);
-            
-            const remoteLastActive = profileData.last_active_date ? new Date(profileData.last_active_date).getTime() : 0;
-            const localLastActive = prev.lastActiveDate ? new Date(prev.lastActiveDate).getTime() : 0;
-            const remoteIsNewer = remoteLastActive > localLastActive;
-            
-            const mergedLastActiveDate = remoteIsNewer ? profileData.last_active_date : prev.lastActiveDate;
-            const mergedStreak = remoteIsNewer ? (profileData.streak ?? prev.streak) : Math.max(prev.streak, profileData.streak ?? 0);
-
-            if (profileData.weekly_challenge) {
-              setWeeklyChallenge(profileData.weekly_challenge);
-              safeStorage.setItem('weekly_challenge', JSON.stringify(profileData.weekly_challenge));
-            }
-
-            return {
-              ...prev,
-              name:          profileData.name          || prev.name,
-              email:         profileData.email         || authEmail,
-              avatarId:      profileData.avatar_id     || prev.avatarId,
-              avatarUrl:     profileData.avatar_url    || prev.avatarUrl,
-              joinDate:      profileData.join_date     || prev.joinDate,
-              weeklyActivity: profileData.weekly_activity || prev.weeklyActivity || [],
-              lastActiveDate:  mergedLastActiveDate,
-              streak:          mergedStreak,
-              points:          mergedPoints,
-              title:           getTitleByPoints(mergedPoints),
-              notesCount:      Math.max(prev.notesCount,      profileData.notes_count       ?? 0),
-              favoritesCount:  Math.max(prev.favoritesCount,  profileData.favorites_count   ?? 0),
-              dailyVerseCount: Math.max(prev.dailyVerseCount, profileData.daily_verse_count ?? 0),
-              completedPlans:  Math.max(prev.completedPlans,  profileData.completed_plans   ?? 0),
-              longestStreak:   Math.max(prev.longestStreak || 0, profileData.longest_streak ?? 0),
-              streakFreezes:   profileData.streak_freezes ?? prev.streakFreezes ?? 1,
-              lastFreezeEarnedWeek: profileData.last_freeze_earned_week || prev.lastFreezeEarnedWeek,
-              
-              // As strings das tarefas diárias agora estão completamente blindadas contra dessincronização
-              lastDailyMissionDate: getLatestString(prev.lastDailyMissionDate, profileData.last_daily_mission_date),
-              dailyMissionStreak:   Math.max(prev.dailyMissionStreak || 0, profileData.daily_mission_streak ?? 0),
-              flashChallengeDone:   getLatestString(prev.flashChallengeDone, profileData.flash_challenge_done),
-              saintsEncountered:    Array.from(new Set([...(profileData.saints_encountered || []), ...(prev.saintsEncountered || [])])),
-              lastLectioDate:       getLatestString(prev.lastLectioDate, profileData.last_lectio_date),
-              lastDailyVerseDate:   getLatestString(prev.lastDailyVerseDate, profileData.last_daily_verse_date),
-              
-              completedBooks:         mergeArrays(prev.completedBooks,          profileData.completed_books          || []),
-              discipleCompletedBooks: mergeArrays(prev.discipleCompletedBooks,  profileData.disciple_completed_books || []),
-              visitedBooks:           mergeArrays(prev.visitedBooks || [],      profileData.visited_books            || []),
-              readChapters: mergeChapterMaps(prev.readChapters, profileData.read_chapters),
-              xpChapters:   mergeChapterMaps(prev.xpChapters,   profileData.xp_chapters),
-              pointsBreakdown: {
-                freeExploration: Math.max(
-                  prev.pointsBreakdown?.freeExploration ?? 0,
-                  profileData.points_breakdown?.freeExploration ?? 0
-                ),
-                discipleTrail: Math.max(
-                  prev.pointsBreakdown?.discipleTrail ?? 0,
-                  profileData.points_breakdown?.discipleTrail ?? 0
-                ),
-                bonus: Math.max(
-                  prev.pointsBreakdown?.bonus ?? 0,
-                  profileData.points_breakdown?.bonus ?? 0
-                ),
-              },
-              ecoReactions: { ...(profileData.eco_reactions || {}), ...(prev.ecoReactions || {}) },
-              bibleFavorites:     { ...(profileData.bible_favorites     || {}), ...(prev.bibleFavorites     || {}) },
-              bibleFavoritesEver: { ...(profileData.bible_favorites_ever || {}), ...(prev.bibleFavoritesEver || {}) },
-            };
-          });
-        } else {
-          setProfile(prev => ({ ...prev, email: authEmail }));
-        }
-
-        const { data: badgesData } = await Promise.race([
-          supabase.from('user_badges').select('*').eq('user_id', session.user.id),
-          new Promise<{ data: null; error: Error }>((resolve) =>
-            setTimeout(() => resolve({ data: null, error: new Error('timeout') }), 5000)
-          ),
-        ]) as any;
-
-        if (badgesData && badgesData.length > 0) {
-          setBadges(badgesData.map((b: any) => ({
-            id: b.badge_id as BadgeId,
-            title: b.title,
-            description: b.description,
-            emoji: b.emoji,
-            unlockedAt: b.unlocked_at
-          })));
-        }
-
-        setTimeout(() => {
-          isLoadingFromSupabase.current = false;
-          setSupabaseReady(true);
-        }, 500);
-      } catch (e) {
-        console.warn('[gamification] loadSupabaseData error:', e);
+    } catch (e) {
+      console.warn('[gamification] syncWithSupabase error:', e);
+    } finally {
+      if (!isBackgroundSync) {
         isLoadingFromSupabase.current = false;
-        setSupabaseReady(true); 
+        setSupabaseReady(true);
+      }
+    }
+  }, []);
+
+  // 2. Acorda o PWA toda vez que ele vier para primeiro plano (focus ou visibility)
+  useEffect(() => {
+    // Roda a primeira vez ao montar (cold start)
+    syncWithSupabase(false);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncWithSupabase(true);
       }
     };
-    
-    loadSupabaseData();
-  }, []);
+
+    const handleFocus = () => {
+      syncWithSupabase(true);
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [syncWithSupabase]);
 
   const updateProfile = (updates: Partial<UserProfile>) => {
     setProfile(prev => ({ ...prev, ...updates }));
@@ -518,6 +511,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     }
   }, [profile.email, profile.avatarId, profile.avatarUrl, profile.name, userId]);
 
+  // 3. Atualização do processo de salvamento para injetar o updated_at e atualizar a flag de sinc local
   useEffect(() => {
     safeStorage.setItem('user_profile', JSON.stringify(profile));
     safeStorage.setItem('user_badges', JSON.stringify(badges));
@@ -532,6 +526,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     saveDebounceRef.current = setTimeout(async () => {
       if (isSyncing) return;
       setIsSyncing(true);
+      
+      const now = new Date().toISOString();
+      
       try {
         await supabase.from('profiles').upsert({
           id: userId,
@@ -568,8 +565,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           saints_encountered: profile.saintsEncountered || [],
           last_lectio_date: profile.lastLectioDate || null,
           last_daily_verse_date: profile.lastDailyVerseDate || null,
-          updated_at: new Date().toISOString()
+          updated_at: now
         });
+        
+        // Só marcamos que o sync está na data de hoje SE a nuvem aceitar. Evita sobrepor se estiver offline.
+        safeStorage.setItem('last_sync_time', now);
+        
       } catch (err) {
         console.warn('[gamification] saveToSupabase error:', err);
       } finally {

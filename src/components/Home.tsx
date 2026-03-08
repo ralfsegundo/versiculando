@@ -10,11 +10,12 @@ interface HomeProps {
   onDismissWelcome?: () => void;
 }
 
-// ── Constantes estáticas do dia (calculadas uma vez por sessão) ──
+// ── Constantes estáticas do dia — Corrigidas para o fuso local do aparelho ──
 const _now = new Date();
 const _startOfYear = new Date(_now.getFullYear(), 0, 1);
 export const DAY_OF_YEAR = Math.floor((_now.getTime() - _startOfYear.getTime()) / 86400000);
-export const TODAY_STR = _now.toISOString().split('T')[0];
+// Garante que o TODAY_STR representa o dia onde a pessoa está fisicamente, e não UTC.
+export const TODAY_STR = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`;
 const WEEK_OF_YEAR = Math.floor(DAY_OF_YEAR / 7);
 
 // PWA Install Hook
@@ -177,7 +178,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const [saintExpanded, setSaintExpanded] = useState(false);
   const [saintSeen, setSaintSeen] = useState(() => profile.saintsEncountered?.includes(todaySaint.key) ?? false);
   
-  // CORREÇÃO FINAL: Fonte da verdade 100% centralizada via banco de dados
+  // Fonte da verdade 100% centralizada via base de dados
   const lectioDone = profile.lastLectioDate === TODAY_STR;
   const dailyVerseRead = profile.lastDailyVerseDate === TODAY_STR;
 
@@ -197,7 +198,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { isInstallable, install, dismiss, dismissed } = usePWAInstall();
 
-  // CORREÇÃO: Chama o gamification com a string do dia e abandona o cache local
   const handleReadDailyVerse = () => {
     if (!dailyVerseRead) {
       accessDailyVerse(TODAY_STR);

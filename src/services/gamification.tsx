@@ -249,6 +249,7 @@ interface GamificationContextType {
   addEcoReaction: (verseRef: string, emoji: string) => void;
   recordSaintEncounter: (saintKey: string) => void;
   completeFlashChallenge: () => void;
+  completeLectio: (xp: number) => void;
   // Sinal para mostrar o prompt de notificação após uma conquista real
   notificationTrigger: boolean;
   clearNotificationTrigger: () => void;
@@ -802,8 +803,13 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     const pad = (n: number) => String(n).padStart(2, '0');
     const localStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
     const today = localStr(now);
-    if (profile.lastDailyMissionDate === today) return; // já completou hoje
+    if (profile.lastDailyMissionDate === today) return; // guard rápido via closure
+    // Guard via localStorage — prova contra clique duplo e race condition
+    const guardKey = `${userId || 'local'}_mission_xp_${today}`;
+    if (safeStorage.getItem(guardKey)) return;
+    safeStorage.setItem(guardKey, '1');
     setProfile(prev => {
+      if (prev.lastDailyMissionDate === today) return prev; // guard dentro do setProfile
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayStr = localStr(yesterday);
@@ -844,7 +850,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   // Badge: encontrou santo do dia
   const recordSaintEncounter = (saintKey: string) => {
-    const key = 'saints_encountered';
+    const key = `${userId || 'local'}_saints_encountered`;
     const existing: string[] = JSON.parse(safeStorage.getItem(key) || '[]');
     if (!existing.includes(saintKey)) {
       const updated = [...existing, saintKey];
@@ -859,13 +865,32 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   // Badge: desafio relâmpago
   const completeFlashChallenge = () => {
+    // Guard interno: só dá XP uma vez por semana por usuário
+    const _now2 = new Date();
+    const _startOfYear2 = new Date(_now2.getFullYear(), 0, 1);
+    const weekOfYear = Math.floor(Math.floor((_now2.getTime() - _startOfYear2.getTime()) / 86400000) / 7);
+    const guardKey = `${userId || 'local'}_flash_xp_${_now2.getFullYear()}_w${weekOfYear}`;
+    if (safeStorage.getItem(guardKey)) return;
+    safeStorage.setItem(guardKey, '1');
+
     unlockBadge('guerreiro_luz');
     const xp = applyMultiplier(300, profile.streak);
     addPoints(xp, 'Desafio relâmpago concluído', 'bonus');
     showFloatingPoints(xp, 'bonus_trail');
   };
 
-  const markBookCompleted = (bookId: string, isGps: boolean = false) => {
+  const completeLectio = (xp: number) => {
+    // Guard interno: só dá XP uma vez por dia por usuário
+    const _pad = (n: number) => String(n).padStart(2, '0');
+    const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())}`; })();
+    const guardKey = `${userId || 'local'}_lectio_xp_${todayStr}`;
+    if (safeStorage.getItem(guardKey)) return;
+    safeStorage.setItem(guardKey, '1');
+    addPoints(xp, 'Lectio Divina concluída', 'freeExploration');
+    showFloatingPoints(xp, 'bonus_step');
+  };
+
+ = (bookId: string, isGps: boolean = false) => {
     const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
     const chapters = bookData?.chapters || 1;
 
@@ -1115,6 +1140,13 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   };
 
   const accessDailyVerse = () => {
+    // Guard interno: só dá XP uma vez por dia por usuário
+    const _pad = (n: number) => String(n).padStart(2, '0');
+    const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())}`; })();
+    const guardKey = `${userId || 'local'}_daily_verse_xp_${todayStr}`;
+    if (safeStorage.getItem(guardKey)) return;
+    safeStorage.setItem(guardKey, '1');
+
     setProfile(prev => {
       const newProfile = { ...prev, dailyVerseCount: prev.dailyVerseCount + 1 };
       checkBadges(newProfile);
@@ -1170,6 +1202,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       addEcoReaction,
       recordSaintEncounter,
       completeFlashChallenge,
+      completeLectio,
       notificationTrigger,
       clearNotificationTrigger,
       triggerNotificationPrompt: fireNotificationTrigger,

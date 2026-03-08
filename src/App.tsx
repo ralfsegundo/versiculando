@@ -31,10 +31,8 @@ import { Session } from '@supabase/supabase-js';
 import { Trail } from './services/trails';
 import { BEGINNER_PATH, BIBLE_BOOKS } from './constants';
 
-// Email do administrador — só este usuário vê o acesso ao painel admin
 const ADMIN_EMAIL = 'ralfsegundo@gmail.com';
 
-// Registra o Service Worker para modo offline (apenas em produção real)
 const isAIStudio = window.location.hostname.includes('run.app') || window.location.hostname.includes('aistudio');
 if ('serviceWorker' in navigator && !isAIStudio) {
   window.addEventListener('load', () => {
@@ -66,7 +64,6 @@ export default function App() {
     return 'beginners';
   });
 
-  // ── Botão voltar no PWA (Android) ────────────────────────────
   const [showExitToast, setShowExitToast] = useState(false);
   const exitToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -145,15 +142,15 @@ export default function App() {
     };
   }, []);
 
-  // ── Modificações de Autenticação e Onboarding ────────────────────────────
-
-  // Inicia como false. A verdade virá do Supabase.
+  // CORREÇÃO: O estado de onboarding não puxa mais valor cego do localStorage
   const [onboardingDone, setOnboardingDone] = useState(false);
-  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
+  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(
+    () => localStorage.getItem('onboarding_welcome') || null
+  );
 
   const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  // Função isolada para buscar o perfil do banco
+  // Busca a verdade no banco de dados para a aba anônima
   const fetchUserProfile = async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -168,7 +165,6 @@ export default function App() {
     } catch (err) {
       console.warn('[App] Erro ao buscar perfil:', err);
     } finally {
-      // Libera a tela de loading apenas depois de saber se fez o onboarding
       setIsInitializing(false); 
     }
   };
@@ -179,14 +175,12 @@ export default function App() {
       return;
     }
 
-    // 1. Pega a sessão inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       
       if (session?.user) {
         fetchUserProfile(session.user.id);
-
-        // Pre-fetch de background (mantido do original)
+        
         const beginnerBookIds = BEGINNER_PATH.flatMap(step => step.books);
         const beginnerBookNames = beginnerBookIds
           .map(id => BIBLE_BOOKS.find(b => b.id === id)?.name)
@@ -202,13 +196,31 @@ export default function App() {
 
     const timeout = setTimeout(() => setIsInitializing(false), 5000);
 
-    // 2. Ouve mudanças de login
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       
       if (event === 'SIGNED_IN' && session?.user) {
-        setIsInitializing(true); // Bloqueia a tela de novo para buscar os dados
+        setIsInitializing(true);
         fetchUserProfile(session.user.id);
+
+        const savedUserId = localStorage.getItem('current_user_id');
+        localStorage.setItem('current_user_id', session.user.id);
+
+        if (savedUserId !== session.user.id) {
+          localStorage.removeItem('onboarding_done');
+          localStorage.removeItem('onboarding_profile');
+          localStorage.removeItem('onboarding_welcome');
+          localStorage.removeItem('user_profile');
+          localStorage.removeItem('user_badges');
+          localStorage.removeItem('weekly_challenge');
+          localStorage.removeItem('notif_prompt_done_v3');
+          localStorage.removeItem('last_active_day_notif');
+          localStorage.removeItem('feed_last_seen_id');
+          localStorage.removeItem('groups_last_seen_ts');
+          localStorage.removeItem('prayers_last_seen_ts');
+          setWelcomeMessage(null);
+          setShowAdmin(false);
+        }
       } else if (event === 'SIGNED_OUT') {
         setOnboardingDone(false);
         setWelcomeMessage(null);
@@ -225,17 +237,14 @@ export default function App() {
 
   const handleOnboardingComplete = async (profile: OnboardingProfile) => {
     const config = getWelcomeConfig(profile);
-    
-    // Mantemos o localStorage apenas como cache/referência para outras telas
     localStorage.setItem('onboarding_done', 'true');
     localStorage.setItem('onboarding_profile', JSON.stringify(profile));
-    
+    localStorage.setItem('onboarding_welcome', config.message);
     setWelcomeMessage(config.message);
     setHomeViewMode(config.recommendation);
     setOnboardingDone(true);
     navigateToBook(config.startBookId);
 
-    // Salva a verdade no banco
     if (session?.user?.id) {
       await supabase
         .from('profiles')
@@ -322,7 +331,10 @@ export default function App() {
             <Home
               onSelectBook={navigateToBook}
               welcomeMessage={welcomeMessage}
-              onDismissWelcome={() => setWelcomeMessage(null)}
+              onDismissWelcome={() => {
+                setWelcomeMessage(null);
+                localStorage.removeItem('onboarding_welcome');
+              }}
             />
           )}
           {currentTab === 'journey'    && <JourneyMap onSelectBook={navigateToBook} />}

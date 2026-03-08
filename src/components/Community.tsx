@@ -995,11 +995,12 @@ export default function Community() {
       }
 
       // Incrementa contador
-      await supabase.rpc('increment_prayer_count', { prayer_id: id }).catch(async () => {
+      const { error } = await supabase.rpc('increment_prayer_count', { prayer_id: id });
+      if (error) {
         await supabase.from('community_prayers')
           .update({ prayed_count: prayer.prayedCount + 1 })
           .eq('id', id);
-      });
+      }
 
       // XP para quem intercede pelos outros — com multiplicador de streak
       const { applyMultiplier } = await import('../services/gamification');

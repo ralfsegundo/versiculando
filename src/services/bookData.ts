@@ -43,8 +43,8 @@ export interface MainVerse {
   emoji: string;
 }
 
-export interface BookData {
-  mindmap: MindMapData;
+export interface BookData extends Partial<MindMapData> {
+  mindmap?: MindMapData;
   chapters: ChapterSummary[];
   timeline: TimelineEvent[];
   mainVerses: MainVerse[];

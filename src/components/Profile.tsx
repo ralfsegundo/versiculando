@@ -526,8 +526,8 @@ export default function Profile({ isAdmin = false, onOpenAdmin }: { isAdmin?: bo
             const startDate = new Date(today);
             startDate.setDate(today.getDate() - (today.getDay()) - (WEEKS - 1) * 7);
 
-            const activitySet = new Set(
-              (profile.weeklyActivity || []).map(d => d.split('T')[0])
+            const activitySet = new Set<string>(
+              (profile.weeklyActivity || []).map((d: any) => d.split('T')[0])
             );
 
             // Build grid: columns = weeks, rows = days of week

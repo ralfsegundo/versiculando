@@ -62,7 +62,7 @@ function AppContent() {
 
   if (isInitializing) return null;
 
-  if (!session) return <Auth />;
+  if (!session) return <Auth onAuthSuccess={() => {}} />;
 
   if (!profile.onboardingDone) {
     return <Onboarding onComplete={handleOnboardingComplete} />;
@@ -85,16 +85,16 @@ function AppContent() {
       {currentTab === 'profile' && <Profile onLogout={() => supabase.auth.signOut()} />}
 
       {selectedBookId && (
-        <BookDetail 
-          bookId={selectedBookId} 
-          onClose={() => setSelectedBookId(null)} 
+        <BookDetail
+          bookId={selectedBookId}
+          onBack={() => setSelectedBookId(null)}
         />
       )}
 
       {selectedTrail && (
-        <TrailDetail 
-          trail={selectedTrail} 
-          onClose={() => setSelectedTrail(null)} 
+        <TrailDetail
+          trail={selectedTrail}
+          onBack={() => setSelectedTrail(null)}
         />
       )}
 

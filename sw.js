@@ -1,28 +1,27 @@
 // ============================================================
-//  sw.js — Service Worker do Versiculando
-//
-//  Responsabilidades:
-//  1. Cache offline de assets estáticos
-//  2. Agendamento e disparo de notificações de streak
+//  sw.js — Service Worker do Versiculando (Refatorado)
 // ============================================================
 
-// ⚠️ Incrementar este número força TODOS os dispositivos a
-// descartarem o cache antigo e instalarem este SW imediatamente
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 const CACHE_NAME = `versiculando-v${CACHE_VERSION}`;
-const ASSETS_TO_CACHE = ['/', '/index.html', '/manifest.json'];
+const ASSETS_TO_CACHE = [
+  '/', 
+  '/index.html', 
+  '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon.svg'
+];
 
-// ── Instalação: pré-cacheia assets essenciais ─────────────────
+// ── Instalação ────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS_TO_CACHE))
   );
-  // Força este SW a assumir controle imediatamente
-  // sem esperar o usuário fechar e reabrir o app
   self.skipWaiting();
 });
 
-// ── Ativação: remove TODOS os caches antigos e assume controle ──
+// ── Ativação ──────────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -32,39 +31,71 @@ self.addEventListener('activate', (event) => {
       }))
     ).then(() => {
       self.clients.claim();
-      // Força reload em todas as abas abertas para carregar o JS novo
-      self.clients.matchAll({ type: 'window' }).then(clients => {
-        clients.forEach(client => client.navigate(client.url));
-      });
     })
   );
 });
 
-// ── Fetch: network-first para JS/CSS (sempre código novo), cache-first para imagens ──
+// ── Interceptação de Rede (Fetch) ─────────────────────────────
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
+  const { request } = event;
+  const url = new URL(request.url);
 
-  const url = new URL(event.request.url);
-  const isAsset = /\.(js|jsx|ts|tsx|css)(\?.*)?$/.test(url.pathname);
+  // 1. Ignora requisições não-GET, extensões do Chrome e chamadas de API (Supabase)
+  if (
+    request.method !== 'GET' || 
+    !url.protocol.startsWith('http') || 
+    url.hostname.includes('supabase.co')
+  ) {
+    return;
+  }
 
-  if (isAsset) {
-    // Network-first: sempre tenta buscar versão nova na rede
-    // Cache só usado se offline
+  // 2. Roteamento SPA Offline: Se for navegação (ex: url direta para /perfil), serve o index.html
+  if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request)
+      fetch(request).catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
+
+  const isAsset = /\.(js|jsx|ts|tsx|css|json)(\?.*)?$/.test(url.pathname);
+  const isImageOrFont = /\.(png|jpg|jpeg|svg|gif|ico|webp|woff|woff2|ttf)$/.test(url.pathname);
+
+  // 3. Estratégia para Scripts e Estilos: Network-First (com salvamento no cache)
+  if (isAsset) {
+    event.respondWith(
+      fetch(request)
         .then(response => {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
           return response;
         })
-        .catch(() => caches.match(event.request))
+        .catch(() => caches.match(request))
     );
-  } else {
-    // Cache-first para imagens, fontes e outros assets estáticos
-    event.respondWith(
-      caches.match(event.request).then(cached => cached || fetch(event.request))
-    );
+    return;
   }
+
+  // 4. Estratégia para Imagens e Fontes: Cache-First Dinâmico
+  if (isImageOrFont) {
+    event.respondWith(
+      caches.match(request).then(cachedResponse => {
+        if (cachedResponse) return cachedResponse;
+        
+        return fetch(request).then(networkResponse => {
+          const clone = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+          return networkResponse;
+        }).catch(() => {
+          return new Response('', { status: 404, statusText: 'Offline' });
+        });
+      })
+    );
+    return;
+  }
+
+  // Fallback padrão
+  event.respondWith(
+    caches.match(request).then(cached => cached || fetch(request))
+  );
 });
 
 // ── Notificações de streak ────────────────────────────────────
@@ -75,38 +106,28 @@ self.addEventListener('message', (event) => {
   const { type, delayMs, title, body, streak, scheduledFor } = event.data || {};
 
   if (type === 'SCHEDULE_STREAK_NOTIFICATION') {
-    // Cancela qualquer timer anterior antes de criar um novo
     if (streakNotifTimer) {
       clearTimeout(streakNotifTimer);
       streakNotifTimer = null;
     }
 
-    console.log(`[SW] Notificação de streak agendada para ${scheduledFor} (em ${Math.round(delayMs / 60000)} min)`);
+    console.log(`[SW] Tentando agendar notificação para ${scheduledFor} (em ${Math.round(delayMs / 60000)} min)`);
 
     streakNotifTimer = setTimeout(async () => {
-      // Verifica se alguma janela do app está aberta e em foco
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       const appIsOpen = clients.some(c => c.visibilityState === 'visible');
 
-      // Não notifica se o usuário já está no app
-      if (appIsOpen) {
-        console.log('[SW] App aberto — notificação de streak cancelada');
-        return;
-      }
+      if (appIsOpen) return;
 
       self.registration.showNotification(title, {
         body,
-        icon:   '/icons/icon.svg',
-        badge:  '/icons/icon.svg',
-        tag:    'streak-reminder',       // substitui notificação anterior se houver
+        icon:   '/icons/icon-192.png',
+        badge:  '/icons/icon-192.png',
+        tag:    'streak-reminder',
         renotify: false,
         requireInteraction: false,
         data: { streak, url: '/' },
-        actions: [
-          { action: 'open', title: '📖 Abrir agora' },
-          { action: 'dismiss', title: 'Mais tarde' },
-        ],
-        vibrate: [200, 100, 200],        // padrão Android
+        vibrate: [200, 100, 200],
       });
     }, delayMs);
   }
@@ -115,18 +136,14 @@ self.addEventListener('message', (event) => {
     if (streakNotifTimer) {
       clearTimeout(streakNotifTimer);
       streakNotifTimer = null;
-      console.log('[SW] Notificação de streak cancelada — usuário ativo');
     }
   }
 });
 
-// ── Clique na notificação ─────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-
   if (event.action === 'dismiss') return;
 
-  // Foca janela existente ou abre nova
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
       const existing = clients.find(c => c.url.includes(self.location.origin));

@@ -743,7 +743,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
       if (diffDays === 0) {
         if (newStreak === 0) newStreak = 1;
-        const newProfile = { ...prev, streak: newStreak, longestStreak: Math.max(prev.longestStreak || 0, newStreak), streakFreezes: newFreezes, lastFreezeEarnedWeek: weekKey, lastActiveDate: now.toISOString() };
+        const todayIso = now.toISOString();
+        const todayDateStr = now.toDateString();
+        const prevActivity = prev.weeklyActivity || [];
+        const alreadyToday = prevActivity.some(d => new Date(d).toDateString() === todayDateStr);
+        const updatedActivity = alreadyToday ? prevActivity : [...prevActivity, todayIso].slice(-7);
+        const newProfile = { ...prev, streak: newStreak, longestStreak: Math.max(prev.longestStreak || 0, newStreak), streakFreezes: newFreezes, lastFreezeEarnedWeek: weekKey, lastActiveDate: todayIso, weeklyActivity: updatedActivity };
         checkBadges(newProfile);
         return newProfile;
       } else if (diffDays === 1) {
@@ -757,13 +762,23 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         newStreak = 1;
       }
 
+      const todayIso = now.toISOString();
+      // Atualiza weeklyActivity: mantém apenas os últimos 7 dias, sem duplicatas do mesmo dia
+      const todayDateStr = now.toDateString();
+      const prevActivity = prev.weeklyActivity || [];
+      const alreadyToday = prevActivity.some(d => new Date(d).toDateString() === todayDateStr);
+      const updatedActivity = alreadyToday
+        ? prevActivity
+        : [...prevActivity, todayIso].slice(-7); // mantém últimos 7
+
       const newProfile = {
         ...prev,
         streak: newStreak,
         longestStreak: Math.max(prev.longestStreak || 0, newStreak),
         streakFreezes: newFreezes,
         lastFreezeEarnedWeek: weekKey,
-        lastActiveDate: now.toISOString()
+        lastActiveDate: todayIso,
+        weeklyActivity: updatedActivity,
       };
       checkBadges(newProfile);
       return newProfile;

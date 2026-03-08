@@ -69,7 +69,7 @@ function usePWAInstall() {
 
 export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }: HomeProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const { profile, accessDailyVerse, addPoints, showFloatingPoints, userId, useStreakFreeze, completeDailyMission, recordSaintEncounter, completeFlashChallenge } = useGamification();
+  const { profile, accessDailyVerse, addPoints, showFloatingPoints, userId, useStreakFreeze, completeDailyMission, recordSaintEncounter, completeFlashChallenge, completeLectio } = useGamification();
 
   // 1. Versículo do dia rotativo
   const DAILY_VERSES = [
@@ -754,10 +754,10 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                             Ler o trecho →
                           </button>
                           <button onClick={() => {
-                            if (lectioDone) return; // guard duplo
+                            if (lectioDone) return; // guard UI
                             localStorage.setItem(`${userId}_lectio_done_${TODAY_STR}`, 'true');
                             setLectioDone(true);
-                            addPoints(lectioXP, 'Lectio Divina concluída', 'freeExploration');
+                            completeLectio(lectioXP); // guard interno no gamification
                             showFloatingPoints(lectioXP, 'bonus_step');
                           }}
                             className="bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-sm py-3 px-4 rounded-xl active:scale-95 transition-all min-h-[44px]">

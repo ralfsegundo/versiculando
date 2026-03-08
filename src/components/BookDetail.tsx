@@ -151,13 +151,12 @@ export default function BookDetail({ bookId, onBack }: BookDetailProps) {
         if (isMounted) {
           setData(result);
           setLoading(false);
-          // CORREÇÃO BUG 7: guard via localStorage — evita re-award em remontagem do componente
-          // CORREÇÃO BUG 6: aplica multiplicador de streak (consistente com todas as outras ações)
-          const visitKey = `${userId || 'local'}_visited_xp_${book.id}`;
-          if (!hasVisited.current && !localStorage.getItem(visitKey)) {
+          // Guard: só dá XP se o livro não está em visitedBooks (sincronizado com Supabase)
+          // Isso evita re-award ao trocar de dispositivo
+          const alreadyVisited = profile.visitedBooks?.includes(book.id);
+          if (!hasVisited.current && !alreadyVisited) {
             const xp = applyMultiplier(10, profile.streak);
             addPoints(xp, `Visitou ${book.name}`, 'freeExploration');
-            localStorage.setItem(visitKey, '1');
             hasVisited.current = true;
           }
         }

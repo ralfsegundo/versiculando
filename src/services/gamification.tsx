@@ -4,6 +4,7 @@ import confetti from 'canvas-confetti';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
 import { scheduleStreakNotification, cancelStreakNotification, markTodayActive } from './notifications';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // --- Types ---
 
@@ -228,10 +229,10 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const [supabaseReady, setSupabaseReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   
-  // Ref para controlar ciclos de save e fetch e evitar echos
   const isLoadingFromSupabase = useRef(false);
   const skipNextSave = useRef(false);
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncChannel = useRef<RealtimeChannel | null>(null);
   
   const hasCheckedStreak = useRef(false);
   const [notificationTrigger, setNotificationTrigger] = useState(false);
@@ -279,7 +280,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const [weeklyChallenge, setWeeklyChallenge] = useState<WeeklyChallenge>(getStoredChallenge);
 
-  // Função central para buscar dados do Supabase
   const fetchProfileData = useCallback(async (uid: string, sessionEmail?: string) => {
     try {
       const { data: profileData } = await supabase.from('profiles').select('*').eq('id', uid).single();
@@ -290,7 +290,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         const localOnboardingDone = !!localOnboardingStr;
         const finalOnboardingDone = profileData.onboarding_done || localOnboardingDone || false;
 
-        // Sinaliza que o próximo efeito de perfil não deve disparar um save pro banco (evita loop)
         skipNextSave.current = true;
 
         setProfile(prev => ({
@@ -358,7 +357,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Load initial Supabase Data
+  // Inicialização e Auth
   useEffect(() => {
     const loadSupabaseData = async (sessionUser: any) => {
       const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -399,6 +398,27 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchProfileData]);
 
+  // Canal de Broadcast em Tempo Real entre abas/dispositivos
+  useEffect(() => {
+    if (!userId || !supabaseReady) return;
+
+    const channel = supabase.channel(`sync_${userId}`);
+    
+    // Quando outra aba/dispositivo salvar dados e disparar o aviso, recarregamos aqui.
+    channel.on('broadcast', { event: 'profile_updated' }, () => {
+      console.log('[gamification] Sincronização remota detectada. Atualizando dados locais...');
+      fetchProfileData(userId);
+    });
+
+    channel.subscribe();
+    syncChannel.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+      syncChannel.current = null;
+    };
+  }, [userId, supabaseReady, fetchProfileData]);
+
   // Atualização em Background quando a aba ganha foco
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -407,14 +427,10 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       }
     };
     
-    // Suporte Web
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    // Suporte mobile extra
-    window.addEventListener('focus', handleVisibilityChange);
     
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleVisibilityChange);
     };
   }, [userId, supabaseReady, fetchProfileData]);
 
@@ -422,13 +438,14 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!userId || isLoadingFromSupabase.current || !supabaseReady) return;
 
-    // Se o profile foi atualizado pelo fetchProfileData, ignoramos esse save para evitar loop
     if (skipNextSave.current) {
       skipNextSave.current = false;
       return;
     }
 
     if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    
+    // Reduzimos o debounce para 1 segundo para sincronização cross-tab mais rápida
     saveDebounceRef.current = setTimeout(async () => {
       setIsSyncing(true);
       try {
@@ -469,12 +486,21 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           weekly_challenge: weeklyChallenge,
           updated_at: new Date().toISOString()
         });
+
+        // Após salvar com sucesso, avisa as outras abas instantaneamente via Broadcast
+        if (syncChannel.current) {
+          syncChannel.current.send({
+            type: 'broadcast',
+            event: 'profile_updated',
+            payload: { timestamp: Date.now() }
+          });
+        }
       } catch (err) {
         console.warn('[gamification] saveToSupabase error:', err);
       } finally {
         setIsSyncing(false);
       }
-    }, 2000);
+    }, 1000);
 
     return () => {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
@@ -711,7 +737,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       return newProfile;
     });
 
-    // Atualiza progresso do desafio semanal
     setWeeklyChallenge(prev => {
       if (prev.completed) return prev;
       
@@ -787,7 +812,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const accessDailyVerse = (dateStr?: string) => {
     setProfile(prev => {
-      // Ajuste para Timezone local
       const now = new Date();
       const today = dateStr || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       

@@ -88,6 +88,7 @@ export default function Community() {
   const [unreadFeedCount, setUnreadFeedCount] = useState(0);
   const [unreadGroupsCount, setUnreadGroupsCount] = useState(0);
   const [unreadPrayersCount, setUnreadPrayersCount] = useState(0);
+  const prayingIds = useRef<Set<string>>(new Set()); // guard anti-clique duplo
 
   // Toast notifications
   const [toasts, setToasts] = useState<{ id: number; message: string; type: 'success' | 'info' | 'error' }[]>([]);
@@ -366,7 +367,7 @@ export default function Community() {
       const { data: myPrayers } = await supabase
         .from('community_prayer_votes')
         .select('prayer_id')
-        .eq('user_email', profile.email || '');
+        .or(`user_id.eq.${userId || 'null'},user_email.eq.${profile.email || ''}`);
 
       const prayedSet = new Set((myPrayers || []).map((p: any) => p.prayer_id));
 
@@ -942,6 +943,10 @@ export default function Community() {
     // Não pode orar por si mesmo — oração é intercessão pelos outros
     if (prayer.userId === userId) return;
 
+    // Guard anti-clique duplo — evita XP e incremento duplicado
+    if (prayingIds.current.has(id)) return;
+    prayingIds.current.add(id);
+
     const isUndoing = prayer.hasPrayed;
 
     // Atualização otimista
@@ -964,6 +969,7 @@ export default function Community() {
         setMockPrayers(prev => prev.map(p =>
           p.id === id ? { ...p, prayedCount: prayer.prayedCount, hasPrayed: true } : p
         ));
+        prayingIds.current.delete(id);
         return;
       }
 
@@ -975,7 +981,7 @@ export default function Community() {
     } else {
       // Nova oração — registra voto
       const { error: voteError } = await supabase.from('community_prayer_votes').upsert(
-        { prayer_id: id, user_email: profile.email },
+        { prayer_id: id, user_email: profile.email, user_id: userId || null },
         { onConflict: 'prayer_id,user_email' }
       );
 
@@ -984,6 +990,7 @@ export default function Community() {
         setMockPrayers(prev => prev.map(p =>
           p.id === id ? { ...p, prayedCount: prayer.prayedCount, hasPrayed: false } : p
         ));
+        prayingIds.current.delete(id);
         return;
       }
 
@@ -1000,6 +1007,7 @@ export default function Community() {
       addPoints(xp, 'Orou por alguém da comunidade', 'bonus');
       showFloatingPoints(xp, 'bonus_step');
     }
+    prayingIds.current.delete(id);
   };
   useEffect(() => {
     // Carrega sempre — ranking e feed são públicos mesmo sem login

@@ -72,7 +72,22 @@ interface Group {
   members: GroupMember[];
   messages: GroupMessage[];
   materials?: GroupMaterial[];
+  calculatedProgress?: number;
 }
+
+// Helper robusto para lidar com parsing JSON
+const parseJSON = (val: any, fallback: any[] = []) => {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+};
 
 export default function Community() {
   const { profile, addPoints, showFloatingPoints, userId } = useGamification();
@@ -225,9 +240,9 @@ export default function Community() {
         name: data.name,
         targetId: data.target_id,
         targetName: data.target_name,
-        members: data.members || [],
-        messages: data.messages || [],
-        materials: data.materials || [],
+        members: parseJSON(data.members),
+        messages: parseJSON(data.messages),
+        materials: parseJSON(data.materials),
       };
 
       const changes = updater(currentGroup);
@@ -346,12 +361,14 @@ export default function Community() {
       if (error) return;
 
       if (data) {
-        const myGroups = data.filter((g: any) =>
-          Array.isArray(g.members) && g.members.some((m: any) => m.email === profile.email)
-        );
+        const myGroups = data.filter((g: any) => {
+          const m = parseJSON(g.members);
+          return Array.isArray(m) && m.some((user: any) => user.email === profile.email);
+        });
+
         const mapped = myGroups.map((g: any) => ({
           id: g.id, name: g.name, targetId: g.target_id, targetName: g.target_name,
-          members: g.members || [], messages: g.messages || [], materials: g.materials || [],
+          members: parseJSON(g.members), messages: parseJSON(g.messages), materials: parseJSON(g.materials),
         }));
         setMockGroups(mapped);
 
@@ -455,7 +472,7 @@ export default function Community() {
   }, [profile.completedBooks, profile.email]);
 
   const calculateGroupProgress = useCallback((members: GroupMember[], targetId: string): number => {
-    if (members.length === 0) return 0;
+    if (!members || members.length === 0) return 0;
     const values = members.map(m =>
       m.email === profile.email ? calculateMemberProgress(m.email, targetId) : m.progress
     );
@@ -503,9 +520,9 @@ export default function Community() {
         name: data.name,
         targetId: data.target_id,
         targetName: data.target_name,
-        members: data.members,
-        messages: data.messages,
-        materials: data.materials,
+        members: parseJSON(data.members),
+        messages: parseJSON(data.messages),
+        materials: parseJSON(data.materials),
       };
       setMockGroups(prev => [newGroup, ...prev]);
       await addToFeed(`criou o grupo "${newGroupName}"`);
@@ -1061,9 +1078,9 @@ export default function Community() {
             name: d.name,
             targetId: d.target_id,
             targetName: d.target_name,
-            members: d.members || [],
-            messages: d.messages || [],
-            materials: d.materials || [],
+            members: parseJSON(d.members),
+            messages: parseJSON(d.messages),
+            materials: parseJSON(d.materials),
           };
           setActiveGroup(updated);
           setMockGroups(prev => prev.map(g => g.id === updated.id ? updated : g));
@@ -1323,7 +1340,7 @@ export default function Community() {
               <div className="flex gap-1.5 border-b border-stone-100 pb-0">
                 {([
                   { id: 'mural', label: '📋 Mural' },
-                  { id: 'membros', label: `👥 Membros (${activeGroup.members.length})` },
+                  { id: 'membros', label: `👥 Membros (${Array.isArray(activeGroup.members) ? activeGroup.members.length : 0})` },
                   { id: 'materiais', label: `📎 Materiais (${activeGroup.materials?.length || 0})` },
                 ] as { id: 'mural' | 'membros' | 'materiais'; label: string }[]).map(tab => (
                   <button
@@ -1350,7 +1367,7 @@ export default function Community() {
                       <UserPlus size={14} /> Convidar amigo
                     </button>
                   </div>
-                  {activeGroup.members.length === 0 ? (
+                  {(!activeGroup.members || !Array.isArray(activeGroup.members) || activeGroup.members.length === 0) ? (
                     <div className="text-center py-10 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
                       <Users size={28} className="mx-auto text-stone-300 mb-2" />
                       <p className="text-stone-400 text-sm">Nenhum membro ainda.</p>
@@ -1358,26 +1375,26 @@ export default function Community() {
                   ) : (
                     <div className="space-y-2">
                       {[...activeGroup.members].sort((a, b) => {
-                        const pa = a.email === profile.email ? calculateMemberProgress(a.email, activeGroup.targetId) : a.progress;
-                        const pb = b.email === profile.email ? calculateMemberProgress(b.email, activeGroup.targetId) : b.progress;
+                        const pa = Number(a.email === profile.email ? calculateMemberProgress(a.email, activeGroup.targetId) : (a.progress || 0)) || 0;
+                        const pb = Number(b.email === profile.email ? calculateMemberProgress(b.email, activeGroup.targetId) : (b.progress || 0)) || 0;
                         return pb - pa;
                       }).map((member, idx) => {
-                        const prog = member.email === profile.email
+                        const prog = Number(member.email === profile.email
                           ? calculateMemberProgress(member.email, activeGroup.targetId)
-                          : member.progress;
+                          : (member.progress || 0)) || 0;
                         return (
                           <div key={idx} className="flex items-center justify-between px-3 py-2.5 bg-stone-50 rounded-xl border border-stone-100">
                             <div className="flex items-center gap-2.5 flex-1 min-w-0">
                               <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-base border border-stone-200 overflow-hidden shrink-0">
                                 {member.avatarUrl ? (
-                                  <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  <img src={member.avatarUrl} alt={member.name || 'Avatar'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                 ) : (
                                   <span>{AVATARS.find(a => a.id === member.avatarId)?.emoji || '👤'}</span>
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="font-bold text-stone-900 text-sm flex items-center gap-1 leading-none truncate">
-                                  {member.name}
+                                  {member.name || member.email?.split('@')[0] || 'Usuário'}
                                   {member.isLeader && <Crown size={12} className="text-amber-500 shrink-0" title="Admin do Grupo" />}
                                   {member.email === profile.email && <span className="text-[9px] text-indigo-400 font-medium">(você)</span>}
                                 </p>
@@ -1391,7 +1408,7 @@ export default function Community() {
                             </div>
                             {isCurrentUserAdmin && !member.isLeader && (
                               <button 
-                                onClick={() => handleRemoveMember(member.email, member.name)}
+                                onClick={() => handleRemoveMember(member.email, member.name || member.email)}
                                 className="p-1.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors shrink-0 ml-2"
                                 title="Remover membro"
                               >
@@ -2445,9 +2462,9 @@ export default function Community() {
                           name: data.name,
                           targetId: data.target_id,
                           targetName: data.target_name,
-                          members: data.members || [],
-                          messages: data.messages || [],
-                          materials: data.materials || [],
+                          members: parseJSON(data.members),
+                          messages: parseJSON(data.messages),
+                          materials: parseJSON(data.materials),
                         });
                       } else {
                         setActiveGroup(group);
@@ -2497,7 +2514,7 @@ export default function Community() {
                         </div>
                         <div className="min-w-0">
                           <p className="text-xs text-stone-600 font-bold truncate">
-                            {group.members.map(m => m.email === profile.email ? 'Você' : (m.name?.split(' ')[0] || 'Usuário')).join(', ')}
+                            {group.members.map(m => m.email === profile.email ? 'Você' : (m.name?.split(' ')[0] || m.email?.split('@')[0] || 'Usuário')).join(', ')}
                           </p>
                           <p className="text-[10px] text-stone-400 mt-0.5">
                             {group.members.length} {group.members.length === 1 ? 'membro' : 'membros'}

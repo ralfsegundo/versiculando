@@ -5,8 +5,7 @@
 
 -- ──────────────────────────────────────────────
 -- 1. PERFIS DE USUÁRIO
--- ──────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS public.profiles (
+-- ──────────────────────────────────────────CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID REFERENCES auth.users(id) PRIMARY KEY,
   name TEXT,
   email TEXT,
@@ -15,7 +14,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   join_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   weekly_activity JSONB DEFAULT '[]'::jsonb,
   points INTEGER DEFAULT 0,
-  points_breakdown JSONB DEFAULT '{"freeExploration": 0, "discipleTrail": 0, "bonus": 0}'::jsonb,
+  points_breakdown JSONB DEFAULT '{\"freeExploration\": 0, \"discipleTrail\": 0, \"bonus\": 0}'::jsonb,
   streak INTEGER DEFAULT 0,
   last_active_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   title TEXT DEFAULT 'Iniciante',
@@ -27,7 +26,17 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   favorites_count INTEGER DEFAULT 0,
   daily_verse_count INTEGER DEFAULT 0,
   completed_plans INTEGER DEFAULT 0,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  onboarding_done BOOLEAN DEFAULT false,
+  onboarding_profile JSONB,
+  last_daily_verse_date TEXT,
+  last_flash_challenge_week TEXT,
+  last_saint_seen_date TEXT
+);onboarding_done BOOLEAN DEFAULT false,
+  onboarding_profile JSONB,
+  last_daily_verse_date TEXT,
+  last_flash_challenge_week TEXT,
+  last_saint_seen_date TEXT
 );
 
 -- ──────────────────────────────────────────────

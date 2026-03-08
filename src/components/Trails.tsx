@@ -45,14 +45,9 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string>('todos');
   const [activeTab, setActiveTab] = useState<'caminho' | 'tematicas'>('caminho');
-  const [showDeepJourney, setShowDeepJourney] = useState(() => {
-    // Derivado do Supabase: se o usuário completou todos os livros dos primeiros
-    // DISCIPLE_PATH_LENGTH passos, a Jornada do Sábio está desbloqueada
-    // Fallback para localStorage para compatibilidade com dados antigos
-    if (userId && localStorage.getItem(`${userId}_sage_journey_unlocked`) === 'true') return true;
-    const discipleBooks = BEGINNER_PATH.slice(0, DISCIPLE_PATH_LENGTH).flatMap(s => s.books);
-    return discipleBooks.every(id => profile.discipleCompletedBooks?.includes(id) || profile.completedBooks?.includes(id));
-  });
+  const [showDeepJourney, setShowDeepJourney] = useState(
+    () => userId ? localStorage.getItem(`${userId}_sage_journey_unlocked`) === 'true' : false
+  );
   const [completedStepModal, setCompletedStepModal] = useState<number | null>(null);
   const [showGraduationModal, setShowGraduationModal] = useState(false);
 
@@ -64,11 +59,7 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
         const trailsToUse = fetchedTrails.length > 0 ? fetchedTrails : FALLBACK_TRAILS;
         setTrails(trailsToUse);
         if (userId) {
-          const discipleBooks = BEGINNER_PATH.slice(0, DISCIPLE_PATH_LENGTH).flatMap(s => s.books);
-          const graduated = discipleBooks.every(id =>
-            profile.discipleCompletedBooks?.includes(id) || profile.completedBooks?.includes(id)
-          );
-          setShowDeepJourney(graduated || localStorage.getItem(`${userId}_sage_journey_unlocked`) === 'true');
+          setShowDeepJourney(localStorage.getItem(`${userId}_sage_journey_unlocked`) === 'true');
           const prog = await fetchUserProgress(userId);
           setProgress(prog);
         }
@@ -87,24 +78,16 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
     let allStepsCompleted = true;
     BEGINNER_PATH.forEach((step, index) => {
       const isCompleted = step.books.every(id => profile.completedBooks.includes(id));
-      if (!isCompleted) { allStepsCompleted = false; return; }
-
-      // Guard de XP: usa discipleCompletedBooks (Supabase) para evitar re-award ao trocar dispositivo
-      // Um passo está "already awarded" se TODOS os livros dele estão em discipleCompletedBooks
-      const alreadyAwarded = step.books.every(id => profile.discipleCompletedBooks?.includes(id));
-
-      // Fallback: localStorage para passos anteriores ao Supabase (migração)
-      const legacyGuard = localStorage.getItem(`${userId}_step_completed_${index}`);
-
-      if (!alreadyAwarded && !legacyGuard) {
+      const wasCompleted = localStorage.getItem(`${userId}_step_completed_${index}`);
+      if (!isCompleted) allStepsCompleted = false;
+      if (isCompleted && !wasCompleted) {
         localStorage.setItem(`${userId}_step_completed_${index}`, 'true');
         if (index === DISCIPLE_PATH_LENGTH - 1) {
-          const wasGraduated = profile.discipleCompletedBooks &&
-            BEGINNER_PATH.slice(0, DISCIPLE_PATH_LENGTH)
-              .flatMap(s => s.books)
-              .every(id => profile.discipleCompletedBooks!.includes(id));
+          const wasGraduated = localStorage.getItem(`${userId}_disciple_trail_graduated`);
           if (!wasGraduated) {
             localStorage.setItem(`${userId}_disciple_trail_graduated`, 'true');
+            // XP de conclusão gerenciado pelo gamification.tsx (com guard anti-duplicação)
+            // Aqui apenas dispara o confetti e modal de graduação
             setTimeout(() => {
               confetti({ particleCount: 200, spread: 100, origin: { y: 0.5 }, colors: ['#f59e0b', '#10b981', '#3b82f6', '#a855f7', '#ef4444'] });
               setTimeout(() => confetti({ particleCount: 150, spread: 120, origin: { y: 0.6 }, angle: 60, colors: ['#f59e0b', '#fcd34d'] }), 400);
@@ -124,8 +107,10 @@ export default function Trails({ onSelectTrail, onSelectBook }: TrailsProps) {
     const wasTrailCompleted = localStorage.getItem(`${userId}_trail_completed`);
     if (allStepsCompleted && !wasTrailCompleted) {
       localStorage.setItem(`${userId}_trail_completed`, 'true');
+      // XP de conclusão da Trilha gerenciado pelo gamification.tsx (markBookCompleted)
+      // Aqui apenas dispara o confetti e modal de graduação
     }
-  }, [profile.completedBooks, profile.discipleCompletedBooks, activeTab, addPoints, showFloatingPoints, userId]);
+  }, [profile.completedBooks, activeTab, addPoints, showFloatingPoints, userId]);
 
   // ── Thematic trails helpers ──
   const categories = ['todos', ...Array.from(new Set(trails.map(t => t.category)))];

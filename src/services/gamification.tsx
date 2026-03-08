@@ -398,29 +398,29 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               return result;
             };
 
-            const mergedPoints = Math.max(prev.points, profileData.points ?? 0);
+            // A SOLUÇÃO BLINDADA PARA O PWA: 
+            // Em vez de depender de quem foi "visto por último", compara a data textualmente. 
+            // Ex: "2026-03-08" é maior que "2026-03-07". Assim o DB desatualizado NUNCA apaga o cache local.
+            const getLatestString = (s1?: string | null, s2?: string | null) => {
+              if (!s1) return s2 || '';
+              if (!s2) return s1 || '';
+              return s1 > s2 ? s1 : s2;
+            };
 
-            const remoteLastActive = profileData.last_active_date
-              ? new Date(profileData.last_active_date).getTime() : 0;
-            const localLastActive = prev.lastActiveDate
-              ? new Date(prev.lastActiveDate).getTime() : 0;
+            const mergedPoints = Math.max(prev.points, profileData.points ?? 0);
+            
+            const remoteLastActive = profileData.last_active_date ? new Date(profileData.last_active_date).getTime() : 0;
+            const localLastActive = prev.lastActiveDate ? new Date(prev.lastActiveDate).getTime() : 0;
             const remoteIsNewer = remoteLastActive > localLastActive;
             
-            const mergedLastActiveDate = remoteIsNewer 
-              ? profileData.last_active_date 
-              : prev.lastActiveDate;
-
-            const mergedStreak = remoteIsNewer
-              ? (profileData.streak ?? prev.streak)
-              : Math.max(prev.streak, profileData.streak ?? 0);
+            const mergedLastActiveDate = remoteIsNewer ? profileData.last_active_date : prev.lastActiveDate;
+            const mergedStreak = remoteIsNewer ? (profileData.streak ?? prev.streak) : Math.max(prev.streak, profileData.streak ?? 0);
 
             if (profileData.weekly_challenge) {
               setWeeklyChallenge(profileData.weekly_challenge);
               safeStorage.setItem('weekly_challenge', JSON.stringify(profileData.weekly_challenge));
             }
 
-            // CORREÇÃO CRÍTICA PWA: Apenas aceita o dado do servidor se o servidor tiver a sessão mais recente.
-            // Se o telemóvel for mais recente (porque o debounce falhou ao fechar o PWA), o telemóvel ganha e protege a data.
             return {
               ...prev,
               name:          profileData.name          || prev.name,
@@ -441,12 +441,13 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               streakFreezes:   profileData.streak_freezes ?? prev.streakFreezes ?? 1,
               lastFreezeEarnedWeek: profileData.last_freeze_earned_week || prev.lastFreezeEarnedWeek,
               
-              lastDailyMissionDate: remoteIsNewer ? (profileData.last_daily_mission_date || prev.lastDailyMissionDate) : (prev.lastDailyMissionDate || profileData.last_daily_mission_date),
+              // As strings das tarefas diárias agora estão completamente blindadas contra dessincronização
+              lastDailyMissionDate: getLatestString(prev.lastDailyMissionDate, profileData.last_daily_mission_date),
               dailyMissionStreak:   Math.max(prev.dailyMissionStreak || 0, profileData.daily_mission_streak ?? 0),
-              flashChallengeDone:   remoteIsNewer ? (profileData.flash_challenge_done || prev.flashChallengeDone || '') : (prev.flashChallengeDone || profileData.flash_challenge_done || ''),
+              flashChallengeDone:   getLatestString(prev.flashChallengeDone, profileData.flash_challenge_done),
               saintsEncountered:    Array.from(new Set([...(profileData.saints_encountered || []), ...(prev.saintsEncountered || [])])),
-              lastLectioDate:       remoteIsNewer ? (profileData.last_lectio_date || prev.lastLectioDate || '') : (prev.lastLectioDate || profileData.last_lectio_date || ''),
-              lastDailyVerseDate:   remoteIsNewer ? (profileData.last_daily_verse_date || prev.lastDailyVerseDate || '') : (prev.lastDailyVerseDate || profileData.last_daily_verse_date || ''),
+              lastLectioDate:       getLatestString(prev.lastLectioDate, profileData.last_lectio_date),
+              lastDailyVerseDate:   getLatestString(prev.lastDailyVerseDate, profileData.last_daily_verse_date),
               
               completedBooks:         mergeArrays(prev.completedBooks,          profileData.completed_books          || []),
               discipleCompletedBooks: mergeArrays(prev.discipleCompletedBooks,  profileData.disciple_completed_books || []),
@@ -731,12 +732,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const completeDailyMission = (_missionDate?: string) => {
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     if (profile.lastDailyMissionDate === today) return; 
     setProfile(prev => {
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
       const newMissionStreak = (prev.lastDailyMissionDate === yesterdayStr)
         ? prev.dailyMissionStreak + 1
         : 1;

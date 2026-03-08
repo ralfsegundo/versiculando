@@ -40,6 +40,7 @@ function AppContent() {
   const [selectedTrail, setSelectedTrail] = useState<Trail | null>(null);
   const [currentTab, setCurrentTab] = useState<'home' | 'journey' | 'trails' | 'profile' | 'community'>('home');
   const [showAdmin, setShowAdmin] = useState(false);
+  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -55,9 +56,26 @@ function AppContent() {
   }, []);
 
   const handleOnboardingComplete = async (onboardingProfile: OnboardingProfile) => {
+    // Salva localmente as respostas do onboarding
+    localStorage.setItem('onboarding_profile', JSON.stringify(onboardingProfile));
+    
+    // Obtém a configuração customizada baseada nas respostas
     const config = getWelcomeConfig(onboardingProfile);
+    
     updateProfile({ onboardingDone: true });
-    setSelectedBookId(config.startBookId);
+    
+    // Configura a aba inicial
+    setCurrentTab(config.startTab);
+    
+    // Configura a mensagem de boas vindas (apenas se a aba for 'home')
+    if (config.message && config.startTab === 'home') {
+      setWelcomeMessage(config.message);
+    }
+    
+    // Abre o livro recomendado automaticamente (com um leve atraso para a aba renderizar)
+    if (config.startBookId) {
+      setTimeout(() => setSelectedBookId(config.startBookId), 100);
+    }
   };
 
   if (isInitializing) return null;
@@ -76,6 +94,8 @@ function AppContent() {
       {currentTab === 'home' && (
         <Home
           onSelectBook={setSelectedBookId}
+          welcomeMessage={welcomeMessage}
+          onDismissWelcome={() => setWelcomeMessage(null)}
         />
       )}
       {currentTab === 'journey' && <JourneyMap onSelectBook={setSelectedBookId} />}

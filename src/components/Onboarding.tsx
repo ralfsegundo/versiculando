@@ -231,38 +231,43 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   );
 }
 
-// Função auxiliar para gerar mensagem personalizada de boas-vindas
+// Função auxiliar que dita o comportamento pós-onboarding
 export function getWelcomeConfig(profile: OnboardingProfile): {
   message: string;
-  recommendation: 'beginners' | 'canonical';
-  startBookId: string;
+  startBookId: string | null;
+  startTab: 'home' | 'journey' | 'trails' | 'profile' | 'community';
 } {
-  // Sempre recomenda a Trilha do Discípulo para quem nunca leu ou leu pouco
-  const recommendation = profile.experience === 'regular' && profile.goal === 'complete'
-    ? 'canonical'
-    : 'beginners';
+  let startBookId: string | null = '1jn';
+  let startTab: 'home' | 'journey' | 'trails' | 'profile' | 'community' = 'home';
+  let message = '';
 
-  const startBookId = '1jn'; // Sempre começa por 1 João na trilha
-
-  const messages: Record<string, string> = {
-    // Por experiência
-    never: 'Bem-vindo! Preparamos o caminho perfeito para quem está começando do zero.',
-    little: 'Que bom ter você aqui! Vamos consolidar o que você já conhece e ir além.',
-    some: 'Ótimo! Sua experiência vai te ajudar a aprofundar ainda mais na Palavra.',
-    regular: 'Excelente! Que esta jornada renove e aprofunde sua relação com as Escrituras.',
-  };
-
-  // Personaliza por objetivo
-  const goalMessages: Record<string, string> = {
-    faith: 'Começamos pelo coração da fé: a primeira carta de São João.',
-    knowledge: 'Vamos construir uma base sólida, livro por livro, com contexto e clareza.',
-    prayer: 'A Palavra de Deus é o melhor alimento para a oração. Vamos começar.',
-    complete: 'Uma jornada de 73 livros começa com um único passo. Vamos lá!',
-  };
+  // Decisão baseada no objetivo e experiência do usuário
+  if (profile.goal === 'complete') {
+    if (profile.experience === 'regular' || profile.experience === 'some') {
+      message = 'Como você já tem o hábito de ler, explore o Mapa da Jornada e escolha livremente seu próximo livro!';
+      startBookId = null;
+      startTab = 'journey';
+    } else {
+      message = 'Uma jornada de 73 livros começa com um único passo. Vamos iniciar por 1 João para construir o hábito.';
+      startBookId = '1jn';
+    }
+  } else if (profile.goal === 'prayer') {
+    message = 'A Palavra de Deus é o melhor alimento para a oração. Os Salmos são a escola perfeita para conversar com Deus.';
+    startBookId = 'psa'; // Salmos
+  } else if (profile.goal === 'knowledge') {
+    message = 'Para entender a história da salvação e adquirir conhecimento, o melhor lugar para começar é o princípio: Gênesis.';
+    startBookId = 'gen'; // Gênesis
+  } else if (profile.experience === 'never') {
+    message = 'Bem-vindo! Preparamos um começo suave para você: a Primeira Carta de São João foca diretamente no amor de Deus.';
+    startBookId = '1jn'; // 1 João
+  } else {
+    message = 'Que alegria ter você aqui! Vamos aprofundar sua fé através do Evangelho de Lucas.';
+    startBookId = 'luk'; // Lucas
+  }
 
   return {
-    message: goalMessages[profile.goal] || messages[profile.experience],
-    recommendation,
+    message,
     startBookId,
+    startTab,
   };
 }

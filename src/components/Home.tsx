@@ -14,13 +14,7 @@ interface HomeProps {
 const _now = new Date();
 const _startOfYear = new Date(_now.getFullYear(), 0, 1);
 export const DAY_OF_YEAR = Math.floor((_now.getTime() - _startOfYear.getTime()) / 86400000);
-
-// Usa fuso local do dispositivo (evita bug de virada de dia UTC vs Brasil UTC-3)
-const _pad = (n: number) => String(n).padStart(2, '0');
-export const localDateStr = (d: Date = new Date()) =>
-  `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}`;
-export const TODAY_STR = localDateStr();
-
+export const TODAY_STR = _now.toISOString().split('T')[0];
 const WEEK_OF_YEAR = Math.floor(DAY_OF_YEAR / 7);
 
 // PWA Install Hook
@@ -33,7 +27,6 @@ function usePWAInstall() {
   );
 
   useEffect(() => {
-    // Check if already installed
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setIsInstalled(true);
       return;
@@ -69,7 +62,7 @@ function usePWAInstall() {
 
 export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }: HomeProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const { profile, accessDailyVerse, addPoints, showFloatingPoints, userId, useStreakFreeze, completeDailyMission, recordSaintEncounter, completeFlashChallenge, completeLectio } = useGamification();
+  const { profile, accessDailyVerse, completeLectio, showFloatingPoints, userId, useStreakFreeze, completeDailyMission, recordSaintEncounter, completeFlashChallenge } = useGamification();
 
   // 1. Versículo do dia rotativo
   const DAILY_VERSES = [
@@ -175,35 +168,30 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const flashChallenge = FLASH_CHALLENGES[WEEK_OF_YEAR % FLASH_CHALLENGES.length];
   const flashDayOfWeek = DAY_OF_YEAR % 7;
   const showFlashChallenge = flashDayOfWeek < 2;
-  // Bug 2 fix: flashCompleted como state para re-render correto
-  const [flashCompleted, setFlashCompleted] = useState(false);
-  const [flashVisible, setFlashVisible] = useState(false);
+  const flashDismissed = localStorage.getItem(`${userId}_flash_dismissed_${WEEK_OF_YEAR}`) === 'true';
 
-  // Santo do dia — expandido ou não
+  const flashWeekKey = `${WEEK_OF_YEAR}`;
+  const [flashCompleted, setFlashCompleted] = useState(() => profile.flashChallengeDone === flashWeekKey);
+  const [flashVisible, setFlashVisible] = useState(showFlashChallenge && !flashDismissed && !flashCompleted);
+
   const [saintExpanded, setSaintExpanded] = useState(false);
-  // Bug 3 fix: saintSeen como state para re-render correto após clique
-  const [saintSeen, setSaintSeen] = useState(false);
-  // Bug 4 fix: lectioDone como state para evitar XP infinito e re-render correto
-  const [lectioDone, setLectioDone] = useState(false);
+  const [saintSeen, setSaintSeen] = useState(() => profile.saintsEncountered?.includes(todaySaint.key) ?? false);
+  
+  // CORREÇÃO: Fonte da verdade centralizada via Supabase
+  const lectioDone = profile.lastLectioDate === TODAY_STR;
+  const dailyVerseRead = profile.lastDailyVerseDate === TODAY_STR;
 
-  // Streak freeze state
-  const [showFreezeUsed, setShowFreezeUsed] = useState(false);
-  const [dailyVerseRead, setDailyVerseRead] = useState(false);
-
-  // Re-sincroniza estados de obrigações diárias quando userId fica disponível
-  // (userId começa null — lazy initializer rodaria com chave "null_..." e nunca encontraria nada)
   useEffect(() => {
-    if (!userId) return;
-    setSaintSeen(localStorage.getItem(`${userId}_saint_seen_${TODAY_STR}`) === 'true');
-    setLectioDone(localStorage.getItem(`${userId}_lectio_done_${TODAY_STR}`) === 'true');
-    const lastRead = localStorage.getItem(`${userId}_daily_verse_last_read`);
-    setDailyVerseRead(!!lastRead && new Date(lastRead).toDateString() === new Date().toDateString());
-    const done = localStorage.getItem(`${userId}_flash_done_${WEEK_OF_YEAR}`) === 'true';
-    const dismissed = localStorage.getItem(`${userId}_flash_dismissed_${WEEK_OF_YEAR}`) === 'true';
-    setFlashCompleted(done);
-    setFlashVisible(showFlashChallenge && !dismissed && !done);
-  }, [userId]);
+    const isFlashDone = profile.flashChallengeDone === flashWeekKey;
+    setFlashCompleted(isFlashDone);
+    if (isFlashDone) setFlashVisible(false);
+  }, [profile.flashChallengeDone, flashWeekKey]);
 
+  useEffect(() => {
+    setSaintSeen(profile.saintsEncountered?.includes(todaySaint.key) ?? false);
+  }, [profile.saintsEncountered, todaySaint.key]);
+
+  const [showFreezeUsed, setShowFreezeUsed] = useState(false);
   const [animatingBooks, setAnimatingBooks] = useState<string[]>([]);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -211,13 +199,10 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
 
   const handleReadDailyVerse = () => {
     if (!dailyVerseRead) {
-      accessDailyVerse(); // internamente chama addPoints com multiplicador de streak
-      localStorage.setItem(`${userId}_daily_verse_last_read`, new Date().toISOString());
-      setDailyVerseRead(true);
+      accessDailyVerse(TODAY_STR);
     }
   };
 
-  // Check for newly visited books to animate
   useEffect(() => {
     const newlyVisited = profile.visitedBooks?.filter(
       id => !profile.completedBooks.includes(id) && !localStorage.getItem(`${userId}_animated_${id}`)
@@ -241,7 +226,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     normalize(book.group).includes(normalize(searchTerm))
   );
 
-  // Para iniciantes (experience=never/little), mostra NT antes do VT
   const onboardingExperience = (() => {
     try { return JSON.parse(localStorage.getItem('onboarding_profile') || '{}').experience; } catch { return null; }
   })();
@@ -331,7 +315,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   };
 
   const renderBookGrid = (books: typeof BIBLE_BOOKS, showHeaders = false) => {
-    // Group books if headers are requested
     const groupedBooks = showHeaders 
       ? books.reduce((acc, book) => {
           if (!acc[book.group]) acc[book.group] = [];
@@ -611,9 +594,8 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         </button>
                       )}
                       <button onClick={() => {
-                        localStorage.setItem(`${userId}_flash_done_${WEEK_OF_YEAR}`, 'true');
+                        completeFlashChallenge(flashWeekKey);
                         setFlashCompleted(true);
-                        completeFlashChallenge();
                         setFlashVisible(false);
                       }} className="bg-yellow-400 text-stone-900 font-bold text-sm px-5 py-2.5 rounded-full active:scale-95 transition-all min-h-[44px]">
                         Concluí! +{applyMultiplier(300, profile.streak)} XP
@@ -628,7 +610,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
 
         {/* ── Missão do Dia 📋 ──────────────────────────────── */}
         {(() => {
-          const missionDone = profile.lastDailyMissionDate === localDateStr();
+          const missionDone = profile.lastDailyMissionDate === TODAY_STR;
           return (
             <motion.div
               initial={{ opacity: 0, y: 6 }}
@@ -754,11 +736,8 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                             Ler o trecho →
                           </button>
                           <button onClick={() => {
-                            if (lectioDone) return; // guard UI
-                            localStorage.setItem(`${userId}_lectio_done_${TODAY_STR}`, 'true');
-                            setLectioDone(true);
-                            completeLectio(lectioXP); // guard interno no gamification
-                            showFloatingPoints(lectioXP, 'bonus_step');
+                            if (lectioDone) return;
+                            completeLectio(TODAY_STR);
                           }}
                             className="bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-sm py-3 px-4 rounded-xl active:scale-95 transition-all min-h-[44px]">
                             Meditei +{lectioXP} XP
@@ -780,8 +759,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               <button onClick={() => {
                 setSaintExpanded(v => !v);
                 if (!saintSeen) {
-                  localStorage.setItem(`${userId}_saint_seen_${TODAY_STR}`, 'true');
-                  setSaintSeen(true);
                   recordSaintEncounter(todaySaint.key);
                 }
               }}

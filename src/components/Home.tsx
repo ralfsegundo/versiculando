@@ -10,13 +10,30 @@ interface HomeProps {
   onDismissWelcome?: () => void;
 }
 
+// Utilitário seguro para localStorage
+const safeSetLocal = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    // Ignora silenciosamente, previne crash no modo Anônimo
+  }
+};
+
+const safeGetLocal = (key: string, fallback: string | null = null) => {
+  try {
+    return localStorage.getItem(key) || fallback;
+  } catch (e) {
+    return fallback;
+  }
+};
+
 // PWA Install Hook
 function usePWAInstall() {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [dismissed, setDismissed] = useState(() => 
-    localStorage.getItem('pwa_banner_dismissed') === 'true'
+    safeGetLocal('pwa_banner_dismissed') === 'true'
   );
 
   useEffect(() => {
@@ -45,7 +62,7 @@ function usePWAInstall() {
 
   const dismiss = () => {
     setDismissed(true);
-    localStorage.setItem('pwa_banner_dismissed', 'true');
+    safeSetLocal('pwa_banner_dismissed', 'true');
   };
 
   return { isInstallable, isInstalled, install, dismiss, dismissed };
@@ -54,7 +71,6 @@ function usePWAInstall() {
 export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }: HomeProps) {
   const [searchTerm, setSearchTerm] = useState('');
   
-  // ── Constantes Dinâmicas do Dia (Avaliadas na renderização do Componente) ──
   const now = new Date();
   const startOfYear = new Date(now.getFullYear(), 0, 1);
   const DAY_OF_YEAR = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
@@ -71,7 +87,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const dailyVerseRead = profile.lastDailyVerseDate === TODAY_STR;
   const flashCompleted = profile.flashChallengeDone === CURRENT_WEEK_KEY;
 
-  // 1. Versículo do dia rotativo
   const DAILY_VERSES = [
     { text: 'O Senhor é o meu pastor; nada me faltará.', ref: 'Sl 23,1' },
     { text: 'Tudo posso naquele que me fortalece.', ref: 'Fl 4,13' },
@@ -107,7 +122,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   ];
   const todayVerse = DAILY_VERSES[DAY_OF_YEAR % DAILY_VERSES.length];
 
-  // 2. Santo do dia
   const SAINTS = [
     { key: 'joao_batista', name: 'São João Batista', date: '24/06', phrase: 'É preciso que Ele cresça e eu diminua.', emoji: '🌊' },
     { key: 'pedro_paulo', name: 'São Pedro e São Paulo', date: '29/06', phrase: 'Tu és o Cristo, o Filho do Deus vivo.', emoji: '⚓' },
@@ -144,7 +158,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const todaySaint = SAINTS[DAY_OF_YEAR % SAINTS.length];
   const saintSeen = profile.saintsEncountered?.includes(todaySaint.key);
 
-  // 3. Missão diária
   const DAILY_MISSIONS = [
     { id: 'leia_1cap', text: 'Leia 1 capítulo da Bíblia e medite por 1 minuto', bookId: null },
     { id: 'favorita_versiculo', text: 'Favorite um versículo que te tocou hoje', bookId: null },
@@ -163,7 +176,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   ];
   const todayMission = DAILY_MISSIONS[DAY_OF_YEAR % DAILY_MISSIONS.length];
 
-  // 4. Desafio relâmpago
   const FLASH_CHALLENGES = [
     { id: 'salmos_subida', text: 'Leia os Salmos de Subida (120-134) antes de domingo', bookId: 'psa', hours: 48 },
     { id: 'cartas_joao', text: 'Leia as 3 cartas de João hoje', bookId: '1jn', hours: 24 },
@@ -175,7 +187,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   ];
   const flashChallenge = FLASH_CHALLENGES[WEEK_OF_YEAR % FLASH_CHALLENGES.length];
   const showFlashChallenge = (DAY_OF_YEAR % 7) < 2;
-  const flashDismissed = localStorage.getItem(`${userId}_flash_dismissed_${CURRENT_WEEK_KEY}`) === 'true';
+  const flashDismissed = safeGetLocal(`${userId}_flash_dismissed_${CURRENT_WEEK_KEY}`) === 'true';
   const [flashVisible, setFlashVisible] = useState(showFlashChallenge && !flashDismissed && !flashCompleted);
 
   const [saintExpanded, setSaintExpanded] = useState(false);
@@ -185,7 +197,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { isInstallable, install, dismiss, dismissed } = usePWAInstall();
 
-  // Quando o flashCompletd muda via banco (outro device), some aqui também
   useEffect(() => {
     if (flashCompleted) setFlashVisible(false);
   }, [flashCompleted]);
@@ -198,12 +209,12 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
 
   useEffect(() => {
     const newlyVisited = profile.visitedBooks?.filter(
-      id => !profile.completedBooks.includes(id) && !localStorage.getItem(`${userId}_animated_${id}`)
+      id => !profile.completedBooks.includes(id) && safeGetLocal(`${userId}_animated_${id}`) !== 'true'
     ) || [];
     
     if (newlyVisited.length > 0) {
       setAnimatingBooks(newlyVisited);
-      newlyVisited.forEach(id => localStorage.setItem(`${userId}_animated_${id}`, 'true'));
+      newlyVisited.forEach(id => safeSetLocal(`${userId}_animated_${id}`, 'true'));
       
       const timer = setTimeout(() => {
         setAnimatingBooks([]);
@@ -562,7 +573,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               className="max-w-xl mx-auto mb-4">
               <div className="bg-gradient-to-r from-violet-600 to-purple-700 rounded-2xl p-4 shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-                      <button onClick={() => { localStorage.setItem(`${userId}_flash_dismissed_${CURRENT_WEEK_KEY}`, 'true'); setFlashVisible(false); }}
+                      <button onClick={() => { safeSetLocal(`${userId}_flash_dismissed_${CURRENT_WEEK_KEY}`, 'true'); setFlashVisible(false); }}
                         className="absolute top-3 right-3 text-white/50 hover:text-white transition-colors z-10">
                   <X size={16} />
                 </button>

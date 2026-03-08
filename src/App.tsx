@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Home from './components/Home';
 import BookDetail from './components/BookDetail';
 import Profile from './components/Profile';
@@ -13,11 +13,9 @@ import NotificationPrompt from './components/NotificationBanner';
 import Admin from './components/Admin';
 import { GamificationProvider, useGamification } from './services/gamification';
 import { supabase } from './lib/supabase';
-import { prefetchBooks } from './services/bookData';
 import Auth from './components/Auth';
 import { Session } from '@supabase/supabase-js';
 import { Trail } from './services/trails';
-import { BEGINNER_PATH, BIBLE_BOOKS } from './constants';
 
 const ADMIN_EMAIL = 'ralfsegundo@gmail.com';
 
@@ -56,30 +54,21 @@ function AppContent() {
   }, []);
 
   const handleOnboardingComplete = async (onboardingProfile: OnboardingProfile) => {
-    // Salva localmente por precaução, mas a fonte oficial passa a ser o Supabase via updateProfile
-    localStorage.setItem('onboarding_profile', JSON.stringify(onboardingProfile));
-    
-    // Obtém a configuração customizada baseada nas respostas
+    try { localStorage.setItem('onboarding_profile', JSON.stringify(onboardingProfile)); } catch (e) { /* ignore */ }
     const config = getWelcomeConfig(onboardingProfile);
     
-    // Atualiza e sincroniza com o banco!
     updateProfile({ onboardingDone: true, onboardingProfile });
-    
-    // Configura a aba inicial
     setCurrentTab(config.startTab);
     
-    // Configura a mensagem de boas vindas (apenas se a aba for 'home')
     if (config.message && config.startTab === 'home') {
       setWelcomeMessage(config.message);
     }
     
-    // Abre o livro recomendado automaticamente (com um leve atraso para a aba renderizar)
     if (config.startBookId) {
       setTimeout(() => setSelectedBookId(config.startBookId), 100);
     }
   };
 
-  // Só renderiza qualquer coisa da aplicação após ter o perfil real carregado (incluindo o status do Onboarding)
   if (isInitializing || !isReady) return null;
 
   if (!session) return <Auth onAuthSuccess={() => {}} />;
@@ -93,26 +82,29 @@ function AppContent() {
       <OfflineBanner />
       <StreakNotificationBanner />
       
-      {currentTab === 'home' && (
-        <Home
-          onSelectBook={setSelectedBookId}
-          welcomeMessage={welcomeMessage}
-          onDismissWelcome={() => setWelcomeMessage(null)}
-        />
-      )}
-      {currentTab === 'journey' && <JourneyMap onSelectBook={setSelectedBookId} />}
-      {currentTab === 'trails' && <Trails onSelectTrail={setSelectedTrail} onSelectBook={setSelectedBookId} />}
-      {currentTab === 'community' && <Community />}
-      {currentTab === 'profile' && <Profile isAdmin={session.user.email === ADMIN_EMAIL} onOpenAdmin={() => setShowAdmin(true)} />}
+      {/* Esconde as abas principais se um livro, trilha ou painel admin estiver aberto */}
+      <div style={{ display: (selectedBookId || selectedTrail || showAdmin) ? 'none' : 'block' }}>
+        {currentTab === 'home' && (
+          <Home
+            onSelectBook={setSelectedBookId}
+            welcomeMessage={welcomeMessage}
+            onDismissWelcome={() => setWelcomeMessage(null)}
+          />
+        )}
+        {currentTab === 'journey' && <JourneyMap onSelectBook={setSelectedBookId} />}
+        {currentTab === 'trails' && <Trails onSelectTrail={setSelectedTrail} onSelectBook={setSelectedBookId} />}
+        {currentTab === 'community' && <Community />}
+        {currentTab === 'profile' && <Profile isAdmin={session.user.email === ADMIN_EMAIL} onOpenAdmin={() => setShowAdmin(true)} />}
+      </div>
 
-      {selectedBookId && (
+      {selectedBookId && !showAdmin && (
         <BookDetail
           bookId={selectedBookId}
           onBack={() => setSelectedBookId(null)}
         />
       )}
 
-      {selectedTrail && (
+      {selectedTrail && !showAdmin && (
         <TrailDetail
           trail={selectedTrail}
           onBack={() => setSelectedTrail(null)}
@@ -120,12 +112,15 @@ function AppContent() {
       )}
 
       {showAdmin && (
-        <div className="fixed inset-0 z-[100] bg-white">
+        <div className="fixed inset-0 z-[100] bg-white overflow-y-auto">
           <Admin onExit={() => setShowAdmin(false)} />
         </div>
       )}
 
-      <Navigation currentTab={currentTab} onTabChange={setCurrentTab} />
+      {/* Esconde a barra de navegação global se uma tela de detalhe estiver aberta */}
+      {!(selectedBookId || selectedTrail || showAdmin) && (
+        <Navigation currentTab={currentTab} onTabChange={setCurrentTab} />
+      )}
     </div>
   );
 }

@@ -85,6 +85,8 @@ export interface UserProfile {
   bibleFavoritesEver?: Record<string, boolean>;
   flashChallengeDone?: string;
   saintsEncountered?: string[];
+  lastLectioDate?: string;
+  lastDailyVerseDate?: string;
 }
 
 export interface WeeklyChallenge {
@@ -173,6 +175,8 @@ const getLocalProfile = (): UserProfile => {
     if (parsed.longestStreak === undefined) parsed.longestStreak = parsed.streak || 0;
     if (!parsed.flashChallengeDone) parsed.flashChallengeDone = '';
     if (!parsed.saintsEncountered) parsed.saintsEncountered = [];
+    if (!parsed.lastLectioDate) parsed.lastLectioDate = '';
+    if (!parsed.lastDailyVerseDate) parsed.lastDailyVerseDate = '';
     return parsed;
   }
   return {
@@ -204,6 +208,8 @@ const getLocalProfile = (): UserProfile => {
     bibleFavoritesEver: {},
     flashChallengeDone: '',
     saintsEncountered: [],
+    lastLectioDate: '',
+    lastDailyVerseDate: '',
   };
 };
 
@@ -228,7 +234,8 @@ interface GamificationContextType {
   addNote: () => void;
   addFavorite: () => void;
   updateFavorites: (favorites: Record<string, boolean>, favoritesEver: Record<string, boolean>) => void;
-  accessDailyVerse: () => void;
+  accessDailyVerse: (dateStr?: string) => void;
+  completeLectio: (dateStr: string) => void;
   completePlan: () => void;
   checkStreak: () => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
@@ -435,6 +442,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               dailyMissionStreak:   Math.max(prev.dailyMissionStreak || 0, profileData.daily_mission_streak ?? 0),
               flashChallengeDone:   profileData.flash_challenge_done || prev.flashChallengeDone || '',
               saintsEncountered:    profileData.saints_encountered || prev.saintsEncountered || [],
+              lastLectioDate:       profileData.last_lectio_date || prev.lastLectioDate || '',
+              lastDailyVerseDate:   profileData.last_daily_verse_date || prev.lastDailyVerseDate || '',
               completedBooks:         mergeArrays(prev.completedBooks,          profileData.completed_books          || []),
               discipleCompletedBooks: mergeArrays(prev.discipleCompletedBooks,  profileData.disciple_completed_books || []),
               visitedBooks:           mergeArrays(prev.visitedBooks || [],      profileData.visited_books            || []),
@@ -552,6 +561,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           weekly_challenge: weeklyChallenge,
           flash_challenge_done: profile.flashChallengeDone || null,
           saints_encountered: profile.saintsEncountered || [],
+          last_lectio_date: profile.lastLectioDate || null,
+          last_daily_verse_date: profile.lastDailyVerseDate || null,
           updated_at: new Date().toISOString()
         });
       } catch (err) {
@@ -787,6 +798,31 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const completeLectio = (dateStr: string) => {
+    if (profile.lastLectioDate === dateStr) return;
+    setProfile(prev => ({ ...prev, lastLectioDate: dateStr }));
+    const xp = applyMultiplier(20, profile.streak);
+    addPoints(xp, 'Lectio Divina concluída', 'freeExploration');
+    showFloatingPoints(xp, 'bonus_step');
+  };
+
+  const accessDailyVerse = (dateStr?: string) => {
+    if (dateStr && profile.lastDailyVerseDate === dateStr) return;
+    setProfile(prev => {
+      const newProfile = { 
+        ...prev, 
+        dailyVerseCount: prev.dailyVerseCount + 1,
+        lastDailyVerseDate: dateStr || prev.lastDailyVerseDate
+      };
+      checkBadges(newProfile);
+      return newProfile;
+    });
+    const xp = applyMultiplier(15, profile.streak);
+    addPoints(xp, 'Acessou versículo do dia', 'freeExploration');
+    showFloatingPoints(xp, 'free');
+    fireNotificationTrigger();
+  };
+
   const markBookCompleted = (bookId: string, isGps: boolean = false) => {
     const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
     const chapters = bookData?.chapters || 1;
@@ -1016,18 +1052,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const accessDailyVerse = () => {
-    setProfile(prev => {
-      const newProfile = { ...prev, dailyVerseCount: prev.dailyVerseCount + 1 };
-      checkBadges(newProfile);
-      return newProfile;
-    });
-    const xp = applyMultiplier(15, profile.streak);
-    addPoints(xp, 'Acessou versículo do dia', 'freeExploration');
-    showFloatingPoints(xp, 'free');
-    fireNotificationTrigger();
-  };
-
   const completePlan = () => {
     setProfile(prev => {
       const newProfile = { ...prev, completedPlans: prev.completedPlans + 1 };
@@ -1060,6 +1084,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       addFavorite,
       updateFavorites,
       accessDailyVerse,
+      completeLectio,
       completePlan,
       checkStreak,
       updateProfile,

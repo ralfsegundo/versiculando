@@ -10,13 +10,13 @@ interface HomeProps {
   onDismissWelcome?: () => void;
 }
 
-// ── Constantes estáticas do dia — Corrigidas para o fuso local do aparelho ──
+// ── Constantes estáticas do dia ──
 const _now = new Date();
 const _startOfYear = new Date(_now.getFullYear(), 0, 1);
 export const DAY_OF_YEAR = Math.floor((_now.getTime() - _startOfYear.getTime()) / 86400000);
-// Garante que o TODAY_STR representa o dia onde a pessoa está fisicamente, e não UTC.
-export const TODAY_STR = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`;
-const WEEK_OF_YEAR = Math.floor(DAY_OF_YEAR / 7);
+export const TODAY_STR = _now.toISOString().split('T')[0];
+const isoWeek = Math.ceil((DAY_OF_YEAR + _startOfYear.getDay() + 1) / 7);
+const CURRENT_WEEK_KEY = `${_now.getFullYear()}-W${isoWeek}`;
 
 // PWA Install Hook
 function usePWAInstall() {
@@ -32,13 +32,11 @@ function usePWAInstall() {
       setIsInstalled(true);
       return;
     }
-
     const handler = (e: Event) => {
       e.preventDefault();
       setInstallPrompt(e);
       setIsInstallable(true);
     };
-
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
@@ -63,7 +61,14 @@ function usePWAInstall() {
 
 export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }: HomeProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const { profile, accessDailyVerse, completeLectio, showFloatingPoints, userId, useStreakFreeze, completeDailyMission, recordSaintEncounter, completeFlashChallenge } = useGamification();
+  
+  // AQUI: Trouxemos completeLectio para o contexto
+  const { profile, accessDailyVerse, userId, useStreakFreeze, completeDailyMission, recordSaintEncounter, completeFlashChallenge, completeLectio } = useGamification();
+
+  // AQUI A MÁGICA: Estados baseados DIRETAMENTE no profile sincronizado, e não em useState solto
+  const flashCompleted = profile.flashChallengeDone === CURRENT_WEEK_KEY;
+  const lectioDone = profile.lastLectioDate === TODAY_STR;
+  const dailyVerseRead = profile.lastDailyVerseDate === TODAY_STR;
 
   // 1. Versículo do dia rotativo
   const DAILY_VERSES = [
@@ -136,6 +141,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     { key: 'antonio', name: 'Santo Antônio', date: '13/06', phrase: 'Se procuras milagres, olha para a Cruz.', emoji: '🔑' },
   ];
   const todaySaint = SAINTS[DAY_OF_YEAR % SAINTS.length];
+  const saintSeen = profile.saintsEncountered?.includes(todaySaint.key);
 
   // 3. Missão diária
   const DAILY_MISSIONS = [
@@ -156,7 +162,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   ];
   const todayMission = DAILY_MISSIONS[DAY_OF_YEAR % DAILY_MISSIONS.length];
 
-  // 4. Desafio relâmpago (aparece por 48h a cada semana)
+  // 4. Desafio relâmpago
   const FLASH_CHALLENGES = [
     { id: 'salmos_subida', text: 'Leia os Salmos de Subida (120-134) antes de domingo', bookId: 'psa', hours: 48 },
     { id: 'cartas_joao', text: 'Leia as 3 cartas de João hoje', bookId: '1jn', hours: 24 },
@@ -166,32 +172,12 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     { id: 'efesios', text: 'Leia Efésios inteiro antes de amanhã', bookId: 'eph', hours: 36 },
     { id: 'discurso_montanha', text: 'Leia o Sermão da Montanha (Mt 5-7)', bookId: 'mat', hours: 24 },
   ];
-  const flashChallenge = FLASH_CHALLENGES[WEEK_OF_YEAR % FLASH_CHALLENGES.length];
-  const flashDayOfWeek = DAY_OF_YEAR % 7;
-  const showFlashChallenge = flashDayOfWeek < 2;
-  const flashDismissed = localStorage.getItem(`${userId}_flash_dismissed_${WEEK_OF_YEAR}`) === 'true';
-
-  const flashWeekKey = `${WEEK_OF_YEAR}`;
-  const [flashCompleted, setFlashCompleted] = useState(() => profile.flashChallengeDone === flashWeekKey);
+  const flashChallenge = FLASH_CHALLENGES[Math.floor(DAY_OF_YEAR / 7) % FLASH_CHALLENGES.length];
+  const showFlashChallenge = (DAY_OF_YEAR % 7) < 2;
+  const flashDismissed = localStorage.getItem(`${userId}_flash_dismissed_${CURRENT_WEEK_KEY}`) === 'true';
   const [flashVisible, setFlashVisible] = useState(showFlashChallenge && !flashDismissed && !flashCompleted);
 
   const [saintExpanded, setSaintExpanded] = useState(false);
-  const [saintSeen, setSaintSeen] = useState(() => profile.saintsEncountered?.includes(todaySaint.key) ?? false);
-  
-  // Fonte da verdade 100% centralizada via base de dados
-  const lectioDone = profile.lastLectioDate === TODAY_STR;
-  const dailyVerseRead = profile.lastDailyVerseDate === TODAY_STR;
-
-  useEffect(() => {
-    const isFlashDone = profile.flashChallengeDone === flashWeekKey;
-    setFlashCompleted(isFlashDone);
-    if (isFlashDone) setFlashVisible(false);
-  }, [profile.flashChallengeDone, flashWeekKey]);
-
-  useEffect(() => {
-    setSaintSeen(profile.saintsEncountered?.includes(todaySaint.key) ?? false);
-  }, [profile.saintsEncountered, todaySaint.key]);
-
   const [showFreezeUsed, setShowFreezeUsed] = useState(false);
   const [animatingBooks, setAnimatingBooks] = useState<string[]>([]);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
@@ -218,7 +204,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [profile.visitedBooks, profile.completedBooks]);
+  }, [profile.visitedBooks, profile.completedBooks, userId]);
 
   const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
@@ -498,7 +484,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           )}
         </AnimatePresence>
 
-        {/* ── Streak Card — estilo Duolingo ── */}
+        {/* ── Streak Card ── */}
         {profile.streak >= 1 && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
@@ -507,7 +493,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           >
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-400 p-[2px] shadow-lg shadow-orange-200/50">
               <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-400 rounded-[14px] px-4 py-3 flex items-center gap-3">
-                {/* Chama animada */}
                 <motion.div
                   animate={{ rotate: [-5, 5, -5], scale: [1, 1.1, 1] }}
                   transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
@@ -519,7 +504,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                   <p className="text-white font-black text-lg leading-tight">
                     {profile.streak} {profile.streak === 1 ? 'dia' : 'dias'} seguidos!
                   </p>
-                  {/* Mini progress para próximo marco */}
                   {(() => {
                     const next = profile.streak < 3 ? 3 : profile.streak < 7 ? 7 : profile.streak < 14 ? 14 : profile.streak < 30 ? 30 : 60;
                     const prev = profile.streak < 3 ? 0 : profile.streak < 7 ? 3 : profile.streak < 14 ? 7 : profile.streak < 30 ? 14 : 30;
@@ -539,7 +523,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                     );
                   })()}
                 </div>
-                {/* Graças — clicável quando streak quebrou */}
                 <button
                   onClick={() => {
                     if ((profile.streakFreezes ?? 0) > 0) {
@@ -552,7 +535,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                   }}
                   disabled={(profile.streakFreezes ?? 0) === 0}
                   className="flex flex-col items-center bg-white/25 hover:bg-white/35 active:scale-95 transition-all rounded-xl px-2.5 py-1.5 gap-0.5 shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
-                  title={(profile.streakFreezes ?? 0) > 0 ? 'Usar Graça do Dia para proteger o streak' : 'Sem Graças disponíveis'}
                 >
                   <span className="text-base leading-none">🕊️</span>
                   <span className="text-white font-black text-xs leading-none">{profile.streakFreezes ?? 0}</span>
@@ -569,14 +551,14 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           </motion.div>
         )}
 
-        {/* ── Desafio Relâmpago ⚡ (48h, 1x por semana) ──────── */}
+        {/* ── Desafio Relâmpago ⚡ ──────── */}
         <AnimatePresence>
           {flashVisible && !flashCompleted && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
               className="max-w-xl mx-auto mb-4">
               <div className="bg-gradient-to-r from-violet-600 to-purple-700 rounded-2xl p-4 shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-                      <button onClick={() => { localStorage.setItem(`${userId}_flash_dismissed_${WEEK_OF_YEAR}`, 'true'); setFlashVisible(false); }}
+                      <button onClick={() => { localStorage.setItem(`${userId}_flash_dismissed_${CURRENT_WEEK_KEY}`, 'true'); setFlashVisible(false); }}
                         className="absolute top-3 right-3 text-white/50 hover:text-white transition-colors z-10">
                   <X size={16} />
                 </button>
@@ -595,8 +577,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                         </button>
                       )}
                       <button onClick={() => {
-                        completeFlashChallenge(flashWeekKey);
-                        setFlashCompleted(true);
+                        completeFlashChallenge(CURRENT_WEEK_KEY);
                         setFlashVisible(false);
                       }} className="bg-yellow-400 text-stone-900 font-bold text-sm px-5 py-2.5 rounded-full active:scale-95 transition-all min-h-[44px]">
                         Concluí! +{applyMultiplier(300, profile.streak)} XP
@@ -624,7 +605,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                   ? 'bg-emerald-50 border-emerald-200'
                   : 'bg-white border-stone-200 shadow-sm hover:border-amber-200 hover:shadow-md'
               }`}>
-                {/* Top bar colorida */}
                 <div className={`h-1.5 w-full ${missionDone ? 'bg-emerald-400' : 'bg-gradient-to-r from-amber-400 to-yellow-400'}`} />
                 <div className="p-4 flex items-start gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl ${
@@ -815,7 +795,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           );
         })()}
 
-        {/* Card "Por onde começar" — só para usuários sem nenhuma visita */}
+        {/* Card "Por onde começar" */}
         {(profile.visitedBooks?.length || 0) === 0 && profile.completedBooks.length === 0 && (
           <div className="max-w-xl mx-auto mb-6">
             <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-5 text-center shadow-sm">
@@ -837,7 +817,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           const hasAccessedAnyBook = (profile.visitedBooks?.length || 0) > 0 || profile.completedBooks.length > 0;
           if (!hasAccessedAnyBook) return null;
 
-          // Prioridade: último visitado não-concluído → último visitado (mesmo concluído) → primeiro não-lido canônico
           const inProgressBookId =
             profile.visitedBooks?.slice().reverse().find(id => !profile.completedBooks.includes(id)) ??
             profile.visitedBooks?.at(-1) ??
@@ -865,7 +844,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                 onClick={() => onSelectBook(inProgressBook.id)}
                 className="w-full group relative overflow-hidden bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 hover:border-amber-300 rounded-2xl p-4 flex items-center gap-4 shadow-sm hover:shadow-md transition-all text-left active:scale-[0.99]"
               >
-                {/* Decoração */}
                 <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-amber-100/50 to-transparent pointer-events-none" />
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 text-2xl font-bold shadow-sm ${GROUP_COLORS[inProgressBook.group] || 'bg-stone-100'}`}>
                   <BookOpen size={22} className="opacity-60" />
@@ -885,7 +863,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           );
         })()}
 
-        {/* Daily Verse Card — mais visual */}
+        {/* Daily Verse Card */}
         {!dailyVerseRead && (() => {
           return (
             <motion.div
@@ -895,7 +873,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               className="max-w-xl mx-auto mb-4"
             >
               <div className="relative overflow-hidden rounded-2xl bg-stone-900 shadow-lg">
-                {/* Orb decorativo */}
                 <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/10 rounded-full translate-x-8 -translate-y-8 pointer-events-none" />
                 <div className="absolute bottom-0 left-0 w-20 h-20 bg-amber-400/5 rounded-full -translate-x-4 translate-y-4 pointer-events-none" />
                 <div className="relative z-10 p-4 flex items-center gap-3">
@@ -921,7 +898,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           );
         })()}
 
-        {/* Global Progress Bar — mais impactante */}
+        {/* Global Progress Bar */}
         {profile.completedBooks.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 4 }}
@@ -946,7 +923,6 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
                   className="h-full rounded-full relative"
                   style={{ background: 'linear-gradient(90deg, #f59e0b, #fbbf24, #fcd34d)' }}
                 >
-                  {/* Brilho animado */}
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse rounded-full" />
                 </motion.div>
               </div>
@@ -1003,7 +979,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
               </div>
             )}
 
-            {/* Para iniciantes: NT primeiro (mais acessível). Para experientes: ordem canônica VT→NT */}
+            {/* NT / VT */}
             {showNTFirst && ntBooks.length > 0 && (
               <section className="mb-10 md:mb-12">
                 <div className="flex items-center gap-2 mb-1 border-b border-stone-200 pb-2.5">

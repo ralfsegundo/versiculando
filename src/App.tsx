@@ -142,7 +142,6 @@ export default function App() {
     };
   }, []);
 
-  // CORREÇÃO: O estado de onboarding não puxa mais valor cego do localStorage
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [welcomeMessage, setWelcomeMessage] = useState<string | null>(
     () => localStorage.getItem('onboarding_welcome') || null
@@ -150,17 +149,23 @@ export default function App() {
 
   const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  // Busca a verdade no banco de dados para a aba anônima
   const fetchUserProfile = async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('onboarding_done')
+        .select('onboarding_done, onboarding_profile')
         .eq('id', userId)
         .single();
 
       if (!error && data) {
         setOnboardingDone(Boolean(data.onboarding_done));
+        
+        // Sincroniza as preferências da Home
+        if (data.onboarding_profile) {
+          const prof = data.onboarding_profile as any;
+          localStorage.setItem('onboarding_profile', JSON.stringify(prof));
+          setHomeViewMode(prof.experience === 'regular' && prof.goal === 'complete' ? 'canonical' : 'beginners');
+        }
       }
     } catch (err) {
       console.warn('[App] Erro ao buscar perfil:', err);
@@ -245,10 +250,14 @@ export default function App() {
     setOnboardingDone(true);
     navigateToBook(config.startBookId);
 
+    // Salva no banco para persistir entre dispositivos
     if (session?.user?.id) {
       await supabase
         .from('profiles')
-        .update({ onboarding_done: true })
+        .update({ 
+          onboarding_done: true,
+          onboarding_profile: profile 
+        })
         .eq('id', session.user.id);
     }
   };
@@ -266,7 +275,7 @@ export default function App() {
         </div>
         <div className="text-center">
           <p className="font-serif font-bold text-stone-900 text-lg">Versiculando</p>
-          <p className="text-stone-400 text-sm mt-0.5">Preparando sua jornada...</p>
+          <p className="text-stone-400 text-sm mt-0.5">Preparando a sua jornada...</p>
         </div>
         <div className="flex gap-1.5 mt-2">
           {[0, 1, 2].map(i => (

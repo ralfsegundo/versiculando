@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useState, ReactNode, useCallback,
 import { BEGINNER_PATH, BIBLE_BOOKS } from '../constants';
 import confetti from 'canvas-confetti';
 import { motion, AnimatePresence } from 'motion/react';
-import { sharingService } from './sharingService';
 import { supabase } from '../lib/supabase';
 import { scheduleStreakNotification, cancelStreakNotification, markTodayActive } from './notifications';
 
@@ -85,9 +84,10 @@ export interface UserProfile {
   bibleFavoritesEver?: Record<string, boolean>;
   onboardingDone?: boolean;
   lastDailyVerseDate?: string;
-  lastFlashChallengeWeek?: string;
-  lastSaintSeenDate?: string;
+  flashChallengeDone?: string;
+  saintsEncountered?: string[];
   lastLectioDate?: string;
+  onboardingProfile?: any;
 }
 
 export interface WeeklyChallenge {
@@ -183,7 +183,7 @@ const getInitialProfile = (): UserProfile => ({
   bibleFavorites: {},
   bibleFavoritesEver: {},
   onboardingDone: false,
-  lastLectioDate: undefined,
+  saintsEncountered: [],
 });
 
 // --- Context ---
@@ -211,7 +211,7 @@ interface GamificationContextType {
   completeDailyMission: (missionDate?: string) => void;
   addEcoReaction: (verseRef: string, emoji: string) => void;
   recordSaintEncounter: (saintKey: string) => void;
-  completeFlashChallenge: () => void;
+  completeFlashChallenge: (weekKey: string) => void;
   completeLectio: (dateStr: string) => void;
   notificationTrigger: boolean;
   clearNotificationTrigger: () => void;
@@ -292,7 +292,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Impede re-renders e flickers se for o mesmo usuário, mas marca loading para novos logins
       if (userId !== sessionUser.id) {
          setSupabaseReady(false);
       }
@@ -305,7 +304,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         const { data: badgesData } = await supabase.from('user_badges').select('*').eq('user_id', sessionUser.id);
 
         if (profileData) {
-          // Previne exibir o onboarding para usuários antigos que fizeram antes dessa coluna existir
           const localOnboardingStr = localStorage.getItem('onboarding_profile');
           const localOnboardingDone = !!localOnboardingStr;
           const finalOnboardingDone = profileData.onboarding_done || localOnboardingDone || false;
@@ -340,10 +338,25 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             dailyMissionStreak: profileData.daily_mission_streak || 0,
             onboardingDone: finalOnboardingDone,
             lastDailyVerseDate: profileData.last_daily_verse_date,
-            lastFlashChallengeWeek: profileData.last_flash_challenge_week,
-            lastSaintSeenDate: profileData.last_saint_seen_date,
+            flashChallengeDone: profileData.flash_challenge_done,
+            saintsEncountered: profileData.saints_encountered || [],
             lastLectioDate: profileData.last_lectio_date,
+            onboardingProfile: profileData.onboarding_profile,
+            ecoReactions: profileData.eco_reactions || {},
+            bibleFavorites: profileData.bible_favorites || {},
+            bibleFavoritesEver: profileData.bible_favorites_ever || {},
           });
+
+          if (profileData.weekly_challenge) {
+            const challenge = profileData.weekly_challenge as WeeklyChallenge;
+            if (new Date(challenge.deadline).getTime() < Date.now()) {
+              setWeeklyChallenge(getStoredChallenge());
+            } else {
+              setWeeklyChallenge(challenge);
+            }
+          } else {
+            setWeeklyChallenge(getStoredChallenge());
+          }
         }
 
         if (badgesData) {
@@ -364,7 +377,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Puxa a sessão atual ao montar e assina mudanças de estado
     supabase.auth.getSession().then(({ data: { session } }) => {
       loadSupabaseData(session?.user);
     });
@@ -411,9 +423,14 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           daily_mission_streak: profile.dailyMissionStreak,
           onboarding_done: profile.onboardingDone,
           last_daily_verse_date: profile.lastDailyVerseDate,
-          last_flash_challenge_week: profile.lastFlashChallengeWeek,
-          last_saint_seen_date: profile.lastSaintSeenDate,
+          flash_challenge_done: profile.flashChallengeDone,
+          saints_encountered: profile.saintsEncountered,
           last_lectio_date: profile.lastLectioDate,
+          onboarding_profile: profile.onboardingProfile,
+          eco_reactions: profile.ecoReactions,
+          bible_favorites: profile.bibleFavorites,
+          bible_favorites_ever: profile.bibleFavoritesEver,
+          weekly_challenge: weeklyChallenge,
           updated_at: new Date().toISOString()
         });
       } catch (err) {
@@ -426,7 +443,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     return () => {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     };
-  }, [profile, userId, supabaseReady]);
+  }, [profile, weeklyChallenge, userId, supabaseReady]);
 
   const triggerConfetti = () => {
     confetti({
@@ -519,9 +536,23 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         newFreezes = Math.min(2, newFreezes + 1);
       }
 
+      let newActivity = prev.weeklyActivity || [];
+      const todayStr = now.toISOString().split('T')[0];
+      if (!newActivity.some(d => d.startsWith(todayStr))) {
+        newActivity = [...newActivity, now.toISOString()];
+      }
+
       if (diffDays === 0) {
         if (newStreak === 0) newStreak = 1;
-        const newProfile = { ...prev, streak: newStreak, longestStreak: Math.max(prev.longestStreak || 0, newStreak), streakFreezes: newFreezes, lastFreezeEarnedWeek: weekKey, lastActiveDate: now.toISOString() };
+        const newProfile = { 
+          ...prev, 
+          streak: newStreak, 
+          longestStreak: Math.max(prev.longestStreak || 0, newStreak), 
+          streakFreezes: newFreezes, 
+          lastFreezeEarnedWeek: weekKey, 
+          lastActiveDate: now.toISOString(), 
+          weeklyActivity: newActivity 
+        };
         checkBadges(newProfile);
         return newProfile;
       } else if (diffDays === 1) {
@@ -540,7 +571,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         longestStreak: Math.max(prev.longestStreak || 0, newStreak),
         streakFreezes: newFreezes,
         lastFreezeEarnedWeek: weekKey,
-        lastActiveDate: now.toISOString()
+        lastActiveDate: now.toISOString(),
+        weeklyActivity: newActivity
       };
       checkBadges(newProfile);
       return newProfile;
@@ -590,21 +622,25 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   };
 
   const recordSaintEncounter = (saintKey: string) => {
+    if (profile.saintsEncountered?.includes(saintKey)) return;
     setProfile(prev => {
-      const today = new Date().toISOString().split('T')[0];
-      if (prev.lastSaintSeenDate === today) return prev;
-      const xp = applyMultiplier(10, prev.streak);
-      addPoints(xp, `Encontrou ${saintKey}`, 'freeExploration');
-      showFloatingPoints(xp, 'free');
-      return { ...prev, lastSaintSeenDate: today };
+      if (prev.saintsEncountered?.includes(saintKey)) return prev;
+      const newSaints = [...(prev.saintsEncountered || []), saintKey];
+      if (newSaints.length >= 10) unlockBadge('comunhao_santos');
+      return { ...prev, saintsEncountered: newSaints };
     });
+    const xp = applyMultiplier(10, profile.streak);
+    addPoints(xp, `Encontrou um Santo`, 'freeExploration');
+    showFloatingPoints(xp, 'free');
   };
 
-  const completeFlashChallenge = () => {
+  const completeFlashChallenge = (weekKey: string) => {
+    if (profile.flashChallengeDone === weekKey) return;
     unlockBadge('guerreiro_luz');
     const xp = applyMultiplier(300, profile.streak);
     addPoints(xp, 'Desafio relâmpago concluído', 'bonus');
     showFloatingPoints(xp, 'bonus_trail');
+    setProfile(prev => ({ ...prev, flashChallengeDone: weekKey }));
   };
 
   const completeLectio = (dateStr: string) => {
@@ -618,6 +654,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const markBookCompleted = (bookId: string, isGps: boolean = false) => {
     const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
     const chapters = bookData?.chapters || 1;
+    
     setProfile(prev => {
       const alreadyCompleted = prev.completedBooks.includes(bookId);
       if (alreadyCompleted) return prev;
@@ -632,6 +669,30 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       showFloatingPoints(xp, isGps ? 'disciple' : 'free');
       checkBadges(newProfile);
       return newProfile;
+    });
+
+    // Atualiza progresso do desafio semanal
+    setWeeklyChallenge(prev => {
+      if (prev.completed) return prev;
+      
+      let isEligible = true;
+      if (prev.title.includes('NT')) {
+         const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
+         if (bookData?.testament !== 'NT') isEligible = false;
+      }
+      
+      if (isEligible) {
+         const newProgress = prev.progress + 1;
+         if (newProgress >= prev.target) {
+            setTimeout(() => {
+              addPoints(prev.rewardPoints, 'Desafio Semanal', 'bonus');
+              showFloatingPoints(prev.rewardPoints, 'bonus_trail');
+            }, 1000);
+            return { ...prev, progress: newProgress, completed: true };
+         }
+         return { ...prev, progress: newProgress };
+      }
+      return prev;
     });
   };
 

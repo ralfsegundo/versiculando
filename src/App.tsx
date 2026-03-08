@@ -56,13 +56,14 @@ function AppContent() {
   }, []);
 
   const handleOnboardingComplete = async (onboardingProfile: OnboardingProfile) => {
-    // Salva localmente as respostas do onboarding
+    // Salva localmente por precaução, mas a fonte oficial passa a ser o Supabase via updateProfile
     localStorage.setItem('onboarding_profile', JSON.stringify(onboardingProfile));
     
     // Obtém a configuração customizada baseada nas respostas
     const config = getWelcomeConfig(onboardingProfile);
     
-    updateProfile({ onboardingDone: true });
+    // Atualiza e sincroniza com o banco!
+    updateProfile({ onboardingDone: true, onboardingProfile });
     
     // Configura a aba inicial
     setCurrentTab(config.startTab);
@@ -102,7 +103,7 @@ function AppContent() {
       {currentTab === 'journey' && <JourneyMap onSelectBook={setSelectedBookId} />}
       {currentTab === 'trails' && <Trails onSelectTrail={setSelectedTrail} onSelectBook={setSelectedBookId} />}
       {currentTab === 'community' && <Community />}
-      {currentTab === 'profile' && <Profile />}
+      {currentTab === 'profile' && <Profile isAdmin={session.user.email === ADMIN_EMAIL} onOpenAdmin={() => setShowAdmin(true)} />}
 
       {selectedBookId && (
         <BookDetail
@@ -116,6 +117,12 @@ function AppContent() {
           trail={selectedTrail}
           onBack={() => setSelectedTrail(null)}
         />
+      )}
+
+      {showAdmin && (
+        <div className="fixed inset-0 z-[100] bg-white">
+          <Admin onExit={() => setShowAdmin(false)} />
+        </div>
       )}
 
       <Navigation currentTab={currentTab} onTabChange={setCurrentTab} />

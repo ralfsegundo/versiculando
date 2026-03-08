@@ -222,9 +222,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
     normalize(book.group).includes(normalize(searchTerm))
   );
 
-  const onboardingExperience = (() => {
-    try { return JSON.parse(localStorage.getItem('onboarding_profile') || '{}').experience; } catch { return null; }
-  })();
+  const onboardingExperience = profile.onboardingProfile?.experience || null;
   const showNTFirst = onboardingExperience === 'never' || onboardingExperience === 'little';
 
   const vtBooks = filteredBooks.filter(b => b.testament === 'VT');
@@ -834,13 +832,11 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
           if (!inProgressBook) return null;
 
           let continueLabel = 'Continue de onde parou';
-          try {
-            const op = JSON.parse(localStorage.getItem('onboarding_profile') || '{}');
-            if (op.goal === 'prayer') continueLabel = 'Ore com a Palavra hoje';
-            else if (op.goal === 'knowledge') continueLabel = 'Continue aprendendo';
-            else if (op.goal === 'complete') continueLabel = `${profile.completedBooks.length}/73 livros — continue!`;
-            else if (op.goal === 'faith') continueLabel = 'Aprofunde sua fé hoje';
-          } catch { /* ignora */ }
+          const op = profile.onboardingProfile || {};
+          if (op.goal === 'prayer') continueLabel = 'Ore com a Palavra hoje';
+          else if (op.goal === 'knowledge') continueLabel = 'Continue aprendendo';
+          else if (op.goal === 'complete') continueLabel = `${profile.completedBooks.length}/73 livros — continue!`;
+          else if (op.goal === 'faith') continueLabel = 'Aprofunde sua fé hoje';
 
           return (
             <motion.div

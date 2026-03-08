@@ -233,6 +233,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const skipNextSave = useRef(false);
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncChannel = useRef<RealtimeChannel | null>(null);
+  const nativeBroadcast = useRef<BroadcastChannel | null>(null);
   
   const hasCheckedStreak = useRef(false);
   const [notificationTrigger, setNotificationTrigger] = useState(false);
@@ -331,6 +332,11 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           bibleFavoritesEver: profileData.bible_favorites_ever || {},
         }));
 
+        // Limpa a flag após garantir que o render consumiu o skipNextSave
+        setTimeout(() => {
+          skipNextSave.current = false;
+        }, 150);
+
         if (profileData.weekly_challenge) {
           const challenge = profileData.weekly_challenge as WeeklyChallenge;
           if (new Date(challenge.deadline).getTime() < Date.now()) {
@@ -398,43 +404,52 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchProfileData]);
 
-  // Canal de Broadcast em Tempo Real entre abas/dispositivos
+  // Canais de Sincronização em Tempo Real (Supabase & Native)
   useEffect(() => {
     if (!userId || !supabaseReady) return;
 
+    // 1. Supabase Realtime (Cobre abas anônimas e dispositivos diferentes)
     const channel = supabase.channel(`sync_${userId}`);
-    
-    // Quando outra aba/dispositivo salvar dados e disparar o aviso, recarregamos aqui.
     channel.on('broadcast', { event: 'profile_updated' }, () => {
-      console.log('[gamification] Sincronização remota detectada. Atualizando dados locais...');
+      console.log('[gamification] Sync remoto detectado. Atualizando dados...');
       fetchProfileData(userId);
     });
-
     channel.subscribe();
     syncChannel.current = channel;
+
+    // 2. API Nativa BroadcastChannel (Cobre abas normais instantaneamente)
+    const bc = new BroadcastChannel(`native_sync_${userId}`);
+    bc.onmessage = (event) => {
+      if (event.data === 'profile_updated') {
+        console.log('[gamification] Sync nativo detectado. Atualizando dados...');
+        fetchProfileData(userId);
+      }
+    };
+    nativeBroadcast.current = bc;
+
+    // 3. Eventos de Foco de Janela (Garante atualização quando a janela fica ativa, crucial para lado-a-lado)
+    const handleFocus = () => {
+      console.log('[gamification] Aba ganhou foco. Garantindo dados mais recentes...');
+      fetchProfileData(userId);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') handleFocus();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       supabase.removeChannel(channel);
       syncChannel.current = null;
+      bc.close();
+      nativeBroadcast.current = null;
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [userId, supabaseReady, fetchProfileData]);
 
-  // Atualização em Background quando a aba ganha foco
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && userId && supabaseReady) {
-        fetchProfileData(userId);
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [userId, supabaseReady, fetchProfileData]);
-
-  // Save to Supabase (Debounced)
+  // Save to Supabase (Debounced rápido)
   useEffect(() => {
     if (!userId || isLoadingFromSupabase.current || !supabaseReady) return;
 
@@ -445,7 +460,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
     if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     
-    // Reduzimos o debounce para 1 segundo para sincronização cross-tab mais rápida
+    // Reduzido para 400ms para disparar os broadcasts rapidamente sem esmagar o banco
     saveDebounceRef.current = setTimeout(async () => {
       setIsSyncing(true);
       try {
@@ -487,7 +502,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           updated_at: new Date().toISOString()
         });
 
-        // Após salvar com sucesso, avisa as outras abas instantaneamente via Broadcast
+        // Dispara aviso para todas as abas que o dado foi atualizado
         if (syncChannel.current) {
           syncChannel.current.send({
             type: 'broadcast',
@@ -495,12 +510,15 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             payload: { timestamp: Date.now() }
           });
         }
+        if (nativeBroadcast.current) {
+          nativeBroadcast.current.postMessage('profile_updated');
+        }
       } catch (err) {
         console.warn('[gamification] saveToSupabase error:', err);
       } finally {
         setIsSyncing(false);
       }
-    }, 1000);
+    }, 400);
 
     return () => {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);

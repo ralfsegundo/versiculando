@@ -88,6 +88,7 @@ export interface UserProfile {
   lastDailyVerseDate?: string;
   lastFlashChallengeWeek?: string;
   lastSaintSeenDate?: string;
+  lastLectioDate?: string;
 }
 
 export interface WeeklyChallenge {
@@ -183,6 +184,7 @@ const getInitialProfile = (): UserProfile => ({
   bibleFavorites: {},
   bibleFavoritesEver: {},
   onboardingDone: false,
+  lastLectioDate: undefined,
 });
 
 // --- Context ---
@@ -200,7 +202,7 @@ interface GamificationContextType {
   addNote: () => void;
   addFavorite: () => void;
   updateFavorites: (favorites: Record<string, boolean>, favoritesEver: Record<string, boolean>) => void;
-  accessDailyVerse: () => void;
+  accessDailyVerse: (dateStr?: string) => void;
   completePlan: () => void;
   checkStreak: () => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
@@ -210,6 +212,7 @@ interface GamificationContextType {
   addEcoReaction: (verseRef: string, emoji: string) => void;
   recordSaintEncounter: (saintKey: string) => void;
   completeFlashChallenge: () => void;
+  completeLectio: (dateStr: string) => void;
   notificationTrigger: boolean;
   clearNotificationTrigger: () => void;
   triggerNotificationPrompt: () => void;
@@ -324,6 +327,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             lastDailyVerseDate: profileData.last_daily_verse_date,
             lastFlashChallengeWeek: profileData.last_flash_challenge_week,
             lastSaintSeenDate: profileData.last_saint_seen_date,
+            lastLectioDate: profileData.last_lectio_date,
           });
         }
 
@@ -385,6 +389,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           last_daily_verse_date: profile.lastDailyVerseDate,
           last_flash_challenge_week: profile.lastFlashChallengeWeek,
           last_saint_seen_date: profile.lastSaintSeenDate,
+          last_lectio_date: profile.lastLectioDate,
           updated_at: new Date().toISOString()
         });
       } catch (err) {
@@ -578,6 +583,14 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     showFloatingPoints(xp, 'bonus_trail');
   };
 
+  const completeLectio = (dateStr: string) => {
+    if (profile.lastLectioDate === dateStr) return;
+    setProfile(prev => ({ ...prev, lastLectioDate: dateStr }));
+    const xp = applyMultiplier(20, profile.streak);
+    addPoints(xp, 'Lectio Divina', 'freeExploration');
+    showFloatingPoints(xp, 'free');
+  };
+
   const markBookCompleted = (bookId: string, isGps: boolean = false) => {
     const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
     const chapters = bookData?.chapters || 1;
@@ -647,9 +660,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     setProfile(prev => ({ ...prev, bibleFavorites: favorites, bibleFavoritesEver: favoritesEver }));
   };
 
-  const accessDailyVerse = () => {
+  const accessDailyVerse = (dateStr?: string) => {
     setProfile(prev => {
-      const today = new Date().toISOString().split('T')[0];
+      const today = dateStr || new Date().toISOString().split('T')[0];
       if (prev.lastDailyVerseDate === today) return prev;
       const newProfile = { ...prev, dailyVerseCount: prev.dailyVerseCount + 1, lastDailyVerseDate: today };
       const xp = applyMultiplier(15, prev.streak);
@@ -704,6 +717,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       addEcoReaction,
       recordSaintEncounter,
       completeFlashChallenge,
+      completeLectio,
       notificationTrigger,
       clearNotificationTrigger,
       triggerNotificationPrompt: fireNotificationTrigger,

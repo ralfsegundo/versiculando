@@ -355,25 +355,35 @@ export default function Community() {
       const { data, error } = await supabase
         .from('community_groups')
         .select('id, name, target_id, target_name, members, messages, materials')
-        .contains('members', JSON.stringify([{ email: profile.email }]))
+        .contains('members', [{ email: profile.email }])
         .order('created_at', { ascending: false });
 
-      if (error) return;
+      let groupsData = data;
 
-      if (data) {
-        const myGroups = data.filter((g: any) => {
-          const m = parseJSON(g.members);
-          return Array.isArray(m) && m.some((user: any) => user.email === profile.email);
-        });
+      // Fallback robusto caso a query contains falhe por causa de string arrays no banco legado
+      if (error || !data || data.length === 0) {
+        const fallback = await supabase
+          .from('community_groups')
+          .select('id, name, target_id, target_name, members, messages, materials')
+          .order('created_at', { ascending: false });
+          
+        if (fallback.data) {
+          groupsData = fallback.data.filter((g: any) => {
+            const m = parseJSON(g.members);
+            return Array.isArray(m) && m.some((user: any) => user.email === profile.email);
+          });
+        }
+      }
 
-        const mapped = myGroups.map((g: any) => ({
+      if (groupsData) {
+        const mapped = groupsData.map((g: any) => ({
           id: g.id, name: g.name, targetId: g.target_id, targetName: g.target_name,
           members: parseJSON(g.members), messages: parseJSON(g.messages), materials: parseJSON(g.materials),
         }));
         setMockGroups(mapped);
 
         const groupReads = getGroupReadTimestamps();
-        const newMsgs = mapped.reduce((acc, g) => {
+        const newMsgs = mapped.reduce((acc: number, g: any) => {
           const groupLastSeen = groupReads[g.id] || 0;
           return acc + g.messages.filter((m: any) => {
             const ts = new Date(m.timestamp).getTime();
@@ -382,7 +392,7 @@ export default function Community() {
         }, 0);
         setUnreadGroupsCount(newMsgs);
       }
-    } catch (e) { }
+    } catch (e) { console.error('Erro em loadGroups', e); }
   };
 
   const loadGroupInvites = async () => {
@@ -552,9 +562,9 @@ export default function Community() {
   const handleAcceptGroupInvite = async (inviteId: string) => {
     const invite = mockGroupInvites.find(i => i.id === inviteId);
     if (!invite || !profile.email) return;
-    await supabase.from('community_group_invites').update({ status: 'accepted' }).eq('id', inviteId);
     
-    await updateGroupInDB(invite.groupId, (dbGroup) => {
+    // 1. Atualiza o grupo PRIMEIRO. O RLS permite isso enquanto o status do convite ainda é 'pending'
+    const success = await updateGroupInDB(invite.groupId, (dbGroup) => {
       const alreadyMember = dbGroup.members.some(m => m.email === profile.email);
       if (alreadyMember) return {};
       return {
@@ -567,6 +577,9 @@ export default function Community() {
         }]
       };
     });
+
+    // 2. DEPOIS atualiza o status do convite para aceito
+    await supabase.from('community_group_invites').update({ status: 'accepted' }).eq('id', inviteId);
 
     setMockGroupInvites(prev => prev.filter(i => i.id !== inviteId));
     await loadGroups();

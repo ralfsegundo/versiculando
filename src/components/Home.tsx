@@ -14,7 +14,13 @@ interface HomeProps {
 const _now = new Date();
 const _startOfYear = new Date(_now.getFullYear(), 0, 1);
 export const DAY_OF_YEAR = Math.floor((_now.getTime() - _startOfYear.getTime()) / 86400000);
-export const TODAY_STR = _now.toISOString().split('T')[0];
+
+// Usa fuso local do dispositivo (evita bug de virada de dia UTC vs Brasil UTC-3)
+const _pad = (n: number) => String(n).padStart(2, '0');
+export const localDateStr = (d: Date = new Date()) =>
+  `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}`;
+export const TODAY_STR = localDateStr();
+
 const WEEK_OF_YEAR = Math.floor(DAY_OF_YEAR / 7);
 
 // PWA Install Hook
@@ -614,7 +620,7 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
 
         {/* ── Missão do Dia 📋 ──────────────────────────────── */}
         {(() => {
-          const missionDone = profile.lastDailyMissionDate === TODAY_STR;
+          const missionDone = profile.lastDailyMissionDate === localDateStr();
           return (
             <motion.div
               initial={{ opacity: 0, y: 6 }}

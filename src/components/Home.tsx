@@ -175,27 +175,35 @@ export default function Home({ onSelectBook, welcomeMessage, onDismissWelcome }:
   const flashChallenge = FLASH_CHALLENGES[WEEK_OF_YEAR % FLASH_CHALLENGES.length];
   const flashDayOfWeek = DAY_OF_YEAR % 7;
   const showFlashChallenge = flashDayOfWeek < 2;
-  const flashDismissed = localStorage.getItem(`${userId}_flash_dismissed_${WEEK_OF_YEAR}`) === 'true';
   // Bug 2 fix: flashCompleted como state para re-render correto
-  const [flashCompleted, setFlashCompleted] = useState(() => localStorage.getItem(`${userId}_flash_done_${WEEK_OF_YEAR}`) === 'true');
-  const [flashVisible, setFlashVisible] = useState(showFlashChallenge && !flashDismissed && !flashCompleted);
+  const [flashCompleted, setFlashCompleted] = useState(false);
+  const [flashVisible, setFlashVisible] = useState(false);
 
   // Santo do dia — expandido ou não
   const [saintExpanded, setSaintExpanded] = useState(false);
   // Bug 3 fix: saintSeen como state para re-render correto após clique
-  const [saintSeen, setSaintSeen] = useState(() => localStorage.getItem(`${userId}_saint_seen_${TODAY_STR}`) === 'true');
+  const [saintSeen, setSaintSeen] = useState(false);
   // Bug 4 fix: lectioDone como state para evitar XP infinito e re-render correto
-  const [lectioDone, setLectioDone] = useState(() => localStorage.getItem(`${userId}_lectio_done_${TODAY_STR}`) === 'true');
+  const [lectioDone, setLectioDone] = useState(false);
 
   // Streak freeze state
   const [showFreezeUsed, setShowFreezeUsed] = useState(false);
-  const [dailyVerseRead, setDailyVerseRead] = useState<boolean>(() => {
-    // Only "read" if it was already read TODAY
+  const [dailyVerseRead, setDailyVerseRead] = useState(false);
+
+  // Re-sincroniza estados de obrigações diárias quando userId fica disponível
+  // (userId começa null — lazy initializer rodaria com chave "null_..." e nunca encontraria nada)
+  useEffect(() => {
+    if (!userId) return;
+    setSaintSeen(localStorage.getItem(`${userId}_saint_seen_${TODAY_STR}`) === 'true');
+    setLectioDone(localStorage.getItem(`${userId}_lectio_done_${TODAY_STR}`) === 'true');
     const lastRead = localStorage.getItem(`${userId}_daily_verse_last_read`);
-    if (!lastRead) return false;
-    const today = new Date().toDateString();
-    return new Date(lastRead).toDateString() === today;
-  });
+    setDailyVerseRead(!!lastRead && new Date(lastRead).toDateString() === new Date().toDateString());
+    const done = localStorage.getItem(`${userId}_flash_done_${WEEK_OF_YEAR}`) === 'true';
+    const dismissed = localStorage.getItem(`${userId}_flash_dismissed_${WEEK_OF_YEAR}`) === 'true';
+    setFlashCompleted(done);
+    setFlashVisible(showFlashChallenge && !dismissed && !done);
+  }, [userId]);
+
   const [animatingBooks, setAnimatingBooks] = useState<string[]>([]);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);

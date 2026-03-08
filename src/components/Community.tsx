@@ -220,7 +220,7 @@ export default function Community() {
         .from('community_feed')
         .select('id, user_name, user_email, avatar_id, action, created_at')
         .order('created_at', { ascending: false })
-        .limit(30);
+        .limit(15); // Reduzido de 30 para 15 para uma visualização mais limpa
       if (error) { console.warn('[Community] loadFeed error:', error.message); return; }
       if (data) {
         setMockFeed(data.map((r: any) => ({

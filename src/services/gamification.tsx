@@ -163,7 +163,7 @@ const getLocalProfile = (): UserProfile => {
     if (!parsed.discipleCompletedBooks) parsed.discipleCompletedBooks = [];
     if (!parsed.readChapters) parsed.readChapters = {};
     if (!parsed.xpChapters) parsed.xpChapters = {};
-    if (parsed.streakFreezes === undefined) parsed.streakFreezes = 1; 
+    if (parsed.streakFreezes === undefined) parsed.streakFreezes = 1;
     if (parsed.dailyMissionStreak === undefined) parsed.dailyMissionStreak = 0;
     if (!parsed.ecoReactions) parsed.ecoReactions = {};
     if (!parsed.bibleFavorites) parsed.bibleFavorites = {};
@@ -352,7 +352,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
         const session = sessionResult?.data?.session;
         if (!session?.user) {
-          setSupabaseReady(true); 
+          setSupabaseReady(true);
           return;
         }
 
@@ -401,6 +401,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               ? (profileData.streak ?? prev.streak)
               : Math.max(prev.streak, profileData.streak ?? 0);
 
+            // Sincroniza o desafio semanal do banco para o estado local
+            if (profileData.weekly_challenge) {
+              setWeeklyChallenge(profileData.weekly_challenge);
+              safeStorage.setItem('weekly_challenge', JSON.stringify(profileData.weekly_challenge));
+            }
+
             return {
               ...prev,
               name:          profileData.name          || prev.name,
@@ -410,7 +416,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               joinDate:      profileData.join_date     || prev.joinDate,
               weeklyActivity: profileData.weekly_activity || prev.weeklyActivity || [],
               
-              // CORREÇÃO APLICADA AQUI: Protege o streak de regressão no reload da aba anônima
               lastActiveDate:  mergedLastActiveDate,
               streak:          mergedStreak,
               
@@ -539,6 +544,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           last_daily_mission_date: profile.lastDailyMissionDate || null,
           last_freeze_earned_week: profile.lastFreezeEarnedWeek || null,
           daily_mission_streak: profile.dailyMissionStreak || 0,
+          weekly_challenge: weeklyChallenge,
           updated_at: new Date().toISOString()
         });
       } catch (err) {
@@ -551,7 +557,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     return () => {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     };
-  }, [profile, userId]);
+  }, [profile, userId, weeklyChallenge]); // adicionado weeklyChallenge as dependências
 
   const triggerConfetti = () => {
     confetti({
@@ -839,7 +845,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           const completed   = newProgress >= prev.target;
           if (completed) {
             setTimeout(() => {
-              addPoints(prev.rewardPoints, `Desafio semanal concluido: ${prev.title}`, 'bonus');
+              addPoints(prev.rewardPoints, `Desafio semanal concluído: ${prev.title}`, 'bonus');
               showFloatingPoints(prev.rewardPoints, 'bonus_trail');
             }, 300);
           }

@@ -80,7 +80,6 @@ export default function App() {
   useEffect(() => { currentTabRef.current = currentTab; }, [currentTab]);
   useEffect(() => { showExitToastRef.current = showExitToast; }, [showExitToast]);
 
-  // Wrappers de navegação
   const pushNavState = useCallback((state: object) => {
     window.history.pushState(state, '');
   }, []);
@@ -103,11 +102,9 @@ export default function App() {
   }, [pushNavState]);
 
   useEffect(() => {
-    // Remove o listener básico do index.html — React assume o controle agora
     if (typeof (window as any).__removeBackGuard === 'function') {
       (window as any).__removeBackGuard();
     }
-    // O index.html já empurrou 2 entradas guard — não precisa empurrar de novo
 
     const handlePopState = () => {
       if (selectedBookIdRef.current) {
@@ -126,18 +123,14 @@ export default function App() {
         return;
       }
 
-      // Está na home — lógica de "toque duas vezes para sair"
       if (showExitToastRef.current) {
-        // Segunda vez — deixa o app fechar normalmente (não re-empurra)
         return;
       }
 
-      // Primeira vez — mostra toast e re-empurra barreira
       setShowExitToast(true);
       showExitToastRef.current = true;
       window.history.pushState({ type: 'guard' }, '');
 
-      // Esconde o toast após 2.5s
       if (exitToastTimerRef.current) clearTimeout(exitToastTimerRef.current);
       exitToastTimerRef.current = setTimeout(() => {
         setShowExitToast(false);
@@ -151,15 +144,34 @@ export default function App() {
       if (exitToastTimerRef.current) clearTimeout(exitToastTimerRef.current);
     };
   }, []);
-  // ─────────────────────────────────────────────────────────────
-  const [onboardingDone, setOnboardingDone] = useState(
-    () => localStorage.getItem('onboarding_done') === 'true'
-  );
-  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(
-    () => localStorage.getItem('onboarding_welcome') || null
-  );
+
+  // ── Modificações de Autenticação e Onboarding ────────────────────────────
+
+  // Inicia como false. A verdade virá do Supabase.
+  const [onboardingDone, setOnboardingDone] = useState(false);
+  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
 
   const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  // Função isolada para buscar o perfil do banco
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('onboarding_done')
+        .eq('id', userId)
+        .single();
+
+      if (!error && data) {
+        setOnboardingDone(Boolean(data.onboarding_done));
+      }
+    } catch (err) {
+      console.warn('[App] Erro ao buscar perfil:', err);
+    } finally {
+      // Libera a tela de loading apenas depois de saber se fez o onboarding
+      setIsInitializing(false); 
+    }
+  };
 
   useEffect(() => {
     if (!hasSupabase) {
@@ -167,67 +179,41 @@ export default function App() {
       return;
     }
 
+    // 1. Pega a sessão inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setIsInitializing(false);
-
-      // Pré-carrega os livros da Trilha do Discípulo em background
-      // Roda depois que a UI já está visível, sem bloquear nada
+      
       if (session?.user) {
+        fetchUserProfile(session.user.id);
+
+        // Pre-fetch de background (mantido do original)
         const beginnerBookIds = BEGINNER_PATH.flatMap(step => step.books);
         const beginnerBookNames = beginnerBookIds
           .map(id => BIBLE_BOOKS.find(b => b.id === id)?.name)
           .filter(Boolean) as string[];
         setTimeout(() => prefetchBooks(beginnerBookNames), 1500);
+      } else {
+        setIsInitializing(false);
       }
     }).catch((err) => {
       console.warn('[App] Erro ao obter sessão:', err);
       setIsInitializing(false);
     });
 
-    // Timeout de segurança — 4s é suficiente para a maioria das conexões
-    // Garante que o loading nunca trava mesmo em erros silenciosos de rede
-    const timeout = setTimeout(() => setIsInitializing(false), 4000);
+    const timeout = setTimeout(() => setIsInitializing(false), 5000);
 
+    // 2. Ouve mudanças de login
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
+      
       if (event === 'SIGNED_IN' && session?.user) {
-        const savedUserId = localStorage.getItem('current_user_id');
-        localStorage.setItem('current_user_id', session.user.id);
-
-        if (savedUserId !== session.user.id) {
-          // Usuário diferente neste dispositivo — limpa estado local e faz query ao banco
-          localStorage.removeItem('onboarding_done');
-          localStorage.removeItem('onboarding_profile');
-          localStorage.removeItem('onboarding_welcome');
-          localStorage.removeItem('user_profile');
-          localStorage.removeItem('user_badges');
-          localStorage.removeItem('weekly_challenge');
-          // Reseta o prompt de notificação para o novo usuário ver
-          localStorage.removeItem('notif_prompt_done_v3');
-          localStorage.removeItem('last_active_day_notif');
-          // Limpa chaves antigas de Community sem userId (versões anteriores)
-          localStorage.removeItem('feed_last_seen_id');
-          localStorage.removeItem('groups_last_seen_ts');
-          localStorage.removeItem('prayers_last_seen_ts');
-          setOnboardingDone(false);
-          setWelcomeMessage(null);
-          setShowAdmin(false);
-
-          // Verifica se já fez onboarding em outro dispositivo (só quando é usuário novo aqui)
-          try {
-            const { data: profileData } = await supabase
-              .from('profiles')
-              .select('onboarding_done')
-              .eq('id', session.user.id)
-              .single();
-            if (profileData?.onboarding_done) {
-              localStorage.setItem('onboarding_done', 'true');
-              setOnboardingDone(true);
-            }
-          } catch { /* ignora — onboarding local prevalece */ }
-        }
-        // Se savedUserId === session.user.id, usa o estado local (não faz query)
+        setIsInitializing(true); // Bloqueia a tela de novo para buscar os dados
+        fetchUserProfile(session.user.id);
+      } else if (event === 'SIGNED_OUT') {
+        setOnboardingDone(false);
+        setWelcomeMessage(null);
+        setShowAdmin(false);
+        setIsInitializing(false);
       }
     });
 
@@ -239,15 +225,17 @@ export default function App() {
 
   const handleOnboardingComplete = async (profile: OnboardingProfile) => {
     const config = getWelcomeConfig(profile);
+    
+    // Mantemos o localStorage apenas como cache/referência para outras telas
     localStorage.setItem('onboarding_done', 'true');
     localStorage.setItem('onboarding_profile', JSON.stringify(profile));
-    localStorage.setItem('onboarding_welcome', config.message);
+    
     setWelcomeMessage(config.message);
     setHomeViewMode(config.recommendation);
     setOnboardingDone(true);
     navigateToBook(config.startBookId);
 
-    // Salva no banco para persistir entre dispositivos
+    // Salva a verdade no banco
     if (session?.user?.id) {
       await supabase
         .from('profiles')
@@ -265,7 +253,6 @@ export default function App() {
           <div className="w-16 h-16 bg-stone-900 rounded-2xl flex items-center justify-center shadow-xl">
             <span className="text-amber-400 text-2xl">📖</span>
           </div>
-          {/* Anel pulsante */}
           <div className="absolute inset-0 rounded-2xl border-2 border-amber-400/50 animate-ping" />
         </div>
         <div className="text-center">
@@ -293,19 +280,15 @@ export default function App() {
     return <Onboarding onComplete={handleOnboardingComplete} />;
   }
 
-  // Painel admin — só acessível para o email admin
   if (isAdmin && showAdmin) {
     return <Admin onExit={() => setShowAdmin(false)} />;
   }
 
   return (
     <GamificationProvider>
-      {/* Banner de offline — aparece em todas as telas */}
       <OfflineBanner />
-      {/* Banner de permissão de notificação de streak */}
       <StreakNotificationBanner />
 
-      {/* Toast "toque novamente para sair" — estilo Instagram */}
       {showExitToast && (
         <div
           style={{
@@ -339,10 +322,7 @@ export default function App() {
             <Home
               onSelectBook={navigateToBook}
               welcomeMessage={welcomeMessage}
-              onDismissWelcome={() => {
-                setWelcomeMessage(null);
-                localStorage.removeItem('onboarding_welcome');
-              }}
+              onDismissWelcome={() => setWelcomeMessage(null)}
             />
           )}
           {currentTab === 'journey'    && <JourneyMap onSelectBook={navigateToBook} />}

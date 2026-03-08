@@ -419,6 +419,8 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               safeStorage.setItem('weekly_challenge', JSON.stringify(profileData.weekly_challenge));
             }
 
+            // CORREÇÃO CRÍTICA PWA: Apenas aceita o dado do servidor se o servidor tiver a sessão mais recente.
+            // Se o telemóvel for mais recente (porque o debounce falhou ao fechar o PWA), o telemóvel ganha e protege a data.
             return {
               ...prev,
               name:          profileData.name          || prev.name,
@@ -438,12 +440,14 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
               longestStreak:   Math.max(prev.longestStreak || 0, profileData.longest_streak ?? 0),
               streakFreezes:   profileData.streak_freezes ?? prev.streakFreezes ?? 1,
               lastFreezeEarnedWeek: profileData.last_freeze_earned_week || prev.lastFreezeEarnedWeek,
-              lastDailyMissionDate: profileData.last_daily_mission_date || prev.lastDailyMissionDate,
+              
+              lastDailyMissionDate: remoteIsNewer ? (profileData.last_daily_mission_date || prev.lastDailyMissionDate) : (prev.lastDailyMissionDate || profileData.last_daily_mission_date),
               dailyMissionStreak:   Math.max(prev.dailyMissionStreak || 0, profileData.daily_mission_streak ?? 0),
-              flashChallengeDone:   profileData.flash_challenge_done || prev.flashChallengeDone || '',
-              saintsEncountered:    profileData.saints_encountered || prev.saintsEncountered || [],
-              lastLectioDate:       profileData.last_lectio_date || prev.lastLectioDate || '',
-              lastDailyVerseDate:   profileData.last_daily_verse_date || prev.lastDailyVerseDate || '',
+              flashChallengeDone:   remoteIsNewer ? (profileData.flash_challenge_done || prev.flashChallengeDone || '') : (prev.flashChallengeDone || profileData.flash_challenge_done || ''),
+              saintsEncountered:    Array.from(new Set([...(profileData.saints_encountered || []), ...(prev.saintsEncountered || [])])),
+              lastLectioDate:       remoteIsNewer ? (profileData.last_lectio_date || prev.lastLectioDate || '') : (prev.lastLectioDate || profileData.last_lectio_date || ''),
+              lastDailyVerseDate:   remoteIsNewer ? (profileData.last_daily_verse_date || prev.lastDailyVerseDate || '') : (prev.lastDailyVerseDate || profileData.last_daily_verse_date || ''),
+              
               completedBooks:         mergeArrays(prev.completedBooks,          profileData.completed_books          || []),
               discipleCompletedBooks: mergeArrays(prev.discipleCompletedBooks,  profileData.disciple_completed_books || []),
               visitedBooks:           mergeArrays(prev.visitedBooks || [],      profileData.visited_books            || []),

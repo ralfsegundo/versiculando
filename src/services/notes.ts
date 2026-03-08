@@ -16,7 +16,6 @@ export interface Note {
   isShared?: boolean;
 }
 
-// userId é passado pelo componente (vem do GamificationContext) — sem getSession aqui
 export function useNotes(bookId: string, userId: string | null = null) {
   const [notes, setNotes] = useState<Note[]>([]);
 
@@ -35,19 +34,36 @@ export function useNotes(bookId: string, userId: string | null = null) {
             .order('timestamp', { ascending: false });
 
           if (!error && data) {
-            // Carrega o cache local para recuperar chapterTitle (não armazenado no Supabase)
             let localByTimestamp: Record<string, Note> = {};
+            let missingLocalNotes: Note[] = [];
+            
             try {
               const storedNotes = localStorage.getItem(localKey(userId));
               if (storedNotes) {
                 const allLocal: Note[] = JSON.parse(storedNotes);
+                const remoteIds = new Set(data.map(n => n.id));
+                
                 allLocal.filter(n => n.bookId === bookId).forEach(n => {
                   localByTimestamp[n.createdAt] = n;
+                  // Recupera notas feitas offline que ainda não estão no Supabase
+                  if (!remoteIds.has(n.id) && !n.id.includes('-')) {
+                     missingLocalNotes.push(n);
+                     // Faz o upload silencioso da nota offline
+                     supabase.from('bible_notes').insert({
+                        user_id: userId, 
+                        book_id: bookId, 
+                        chapter: n.context?.chapter ? parseInt(n.context.chapter.toString()) : 1, 
+                        verse: 1, 
+                        text: n.text, 
+                        color: n.color, 
+                        timestamp: n.createdAt
+                     }).then();
+                  }
                 });
               }
-            } catch { /* ignora */ }
+            } catch { /* ignora erros de parse local */ }
 
-            setNotes(data.map(n => {
+            const remoteNotesMapped = data.map(n => {
               const localMatch = localByTimestamp[n.timestamp];
               return {
                 id: n.id,
@@ -60,7 +76,11 @@ export function useNotes(bookId: string, userId: string | null = null) {
                   chapterTitle: localMatch?.context?.chapterTitle,
                 },
               };
-            }));
+            });
+
+            // Une as notas remotas com as notas offline resgatadas
+            const mergedNotes = [...missingLocalNotes, ...remoteNotesMapped].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            setNotes(mergedNotes);
             return;
           }
         } catch (e) {
@@ -112,7 +132,6 @@ export function useNotes(bookId: string, userId: string | null = null) {
         console.warn('[notes] addNote error:', err);
       }
     }
-    // Sempre salva no localStorage como backup offline (independente do Supabase)
     const storedNotes = localStorage.getItem(localKey(userId));
     const allNotes: Note[] = storedNotes ? JSON.parse(storedNotes) : [];
     localStorage.setItem(localKey(userId), JSON.stringify([...allNotes, newNote]));

@@ -19,6 +19,8 @@ import { Trail } from './services/trails';
 
 const ADMIN_EMAIL = 'ralfsegundo@gmail.com';
 
+type TabType = 'home' | 'journey' | 'trails' | 'profile' | 'community';
+
 function StreakNotificationBanner() {
   const { profile, notificationTrigger, clearNotificationTrigger } = useGamification();
   return (
@@ -36,9 +38,16 @@ function AppContent() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [selectedTrail, setSelectedTrail] = useState<Trail | null>(null);
-  const [currentTab, setCurrentTab] = useState<'home' | 'journey' | 'trails' | 'profile' | 'community'>('home');
   const [showAdmin, setShowAdmin] = useState(false);
   const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
+
+  // Recupera a aba salva ou usa 'home' como padrão
+  const [currentTab, setCurrentTab] = useState<TabType>(() => {
+    return (localStorage.getItem('last_tab') as TabType) || 'home';
+  });
+
+  // Mantém controle de quais abas já foram visitadas para "Lazy Mounting"
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabType>>(new Set([currentTab]));
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -53,12 +62,18 @@ function AppContent() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const handleTabChange = (tab: TabType) => {
+    setCurrentTab(tab);
+    setVisitedTabs(prev => new Set(prev).add(tab));
+    localStorage.setItem('last_tab', tab);
+  };
+
   const handleOnboardingComplete = async (onboardingProfile: OnboardingProfile) => {
     try { localStorage.setItem('onboarding_profile', JSON.stringify(onboardingProfile)); } catch (e) { /* ignore */ }
     const config = getWelcomeConfig(onboardingProfile);
     
     updateProfile({ onboardingDone: true, onboardingProfile });
-    setCurrentTab(config.startTab);
+    handleTabChange(config.startTab);
     
     if (config.message && config.startTab === 'home') {
       setWelcomeMessage(config.message);
@@ -91,21 +106,14 @@ function AppContent() {
   if (isInitializing || !isReady) {
     return (
       <div className="min-h-screen bg-[#fdfbf7] flex flex-col items-center justify-center relative overflow-hidden">
-        {/* Efeito de luz de fundo */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-amber-400/20 rounded-full blur-[60px] animate-pulse"></div>
-        
-        {/* Logo animado */}
         <div className="relative z-10 mb-6">
           <div className="w-20 h-20 bg-stone-900 rounded-[1.5rem] flex items-center justify-center shadow-2xl animate-bounce" style={{ animationDuration: '2s' }}>
             <span className="text-amber-400 text-3xl font-black">BM</span>
           </div>
         </div>
-        
-        {/* Título e subtítulo */}
         <h1 className="text-3xl font-serif font-bold text-stone-900 relative z-10">Versiculando</h1>
         <p className="text-stone-500 text-sm mt-2 font-medium relative z-10">Preparando sua jornada...</p>
-        
-        {/* Pontinhos de loading */}
         <div className="mt-8 flex gap-1.5 relative z-10">
           <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '0ms', animationDuration: '1s' }}></div>
           <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '150ms', animationDuration: '1s' }}></div>
@@ -126,21 +134,36 @@ function AppContent() {
       <OfflineBanner />
       <StreakNotificationBanner />
       
-      {/* Esconde as abas principais se um livro, trilha ou painel admin estiver aberto */}
-      <div style={{ display: (selectedBookId || selectedTrail || showAdmin) ? 'none' : 'block' }}>
-        {currentTab === 'home' && (
-          <Home
-            onSelectBook={setSelectedBookId}
-            welcomeMessage={welcomeMessage}
-            onDismissWelcome={() => setWelcomeMessage(null)}
-          />
-        )}
-        {currentTab === 'journey' && <JourneyMap onSelectBook={setSelectedBookId} />}
-        {currentTab === 'trails' && <Trails onSelectTrail={setSelectedTrail} onSelectBook={setSelectedBookId} />}
-        {currentTab === 'community' && <Community />}
-        {currentTab === 'profile' && <Profile isAdmin={session.user.email === ADMIN_EMAIL} onOpenAdmin={() => setShowAdmin(true)} />}
+      {/* Container principal das abas com retenção de estado */}
+      <div className={(selectedBookId || selectedTrail || showAdmin) ? 'hidden' : 'block'}>
+        <div className={currentTab === 'home' ? 'block' : 'hidden'}>
+          {visitedTabs.has('home') && (
+            <Home
+              onSelectBook={setSelectedBookId}
+              welcomeMessage={welcomeMessage}
+              onDismissWelcome={() => setWelcomeMessage(null)}
+            />
+          )}
+        </div>
+        
+        <div className={currentTab === 'journey' ? 'block' : 'hidden'}>
+          {visitedTabs.has('journey') && <JourneyMap onSelectBook={setSelectedBookId} />}
+        </div>
+
+        <div className={currentTab === 'trails' ? 'block' : 'hidden'}>
+          {visitedTabs.has('trails') && <Trails onSelectTrail={setSelectedTrail} onSelectBook={setSelectedBookId} />}
+        </div>
+
+        <div className={currentTab === 'community' ? 'block' : 'hidden'}>
+          {visitedTabs.has('community') && <Community />}
+        </div>
+
+        <div className={currentTab === 'profile' ? 'block' : 'hidden'}>
+          {visitedTabs.has('profile') && <Profile isAdmin={session.user.email === ADMIN_EMAIL} onOpenAdmin={() => setShowAdmin(true)} />}
+        </div>
       </div>
 
+      {/* Sobreposições */}
       {selectedBookId && !showAdmin && (
         <BookDetail
           bookId={selectedBookId}
@@ -163,7 +186,7 @@ function AppContent() {
 
       {/* Esconde a barra de navegação global se uma tela de detalhe estiver aberta */}
       {!(selectedBookId || selectedTrail || showAdmin) && (
-        <Navigation currentTab={currentTab} onTabChange={setCurrentTab} />
+        <Navigation currentTab={currentTab} onTabChange={handleTabChange} />
       )}
     </div>
   );

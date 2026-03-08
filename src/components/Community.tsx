@@ -73,6 +73,7 @@ interface Group {
   messages: GroupMessage[];
   materials?: GroupMaterial[];
   calculatedProgress?: number;
+  createdBy?: string;
 }
 
 // Helper robusto para lidar com parsing JSON
@@ -205,6 +206,11 @@ export default function Community() {
 
   const mockRanking = mockRankingData;
 
+  const isCurrentUserAdmin = useMemo(() =>
+    !!(profile.email && activeGroup?.createdBy === profile.email),
+    [profile.email, activeGroup]
+  );
+
   // ── Controle de Leitura por Grupo (Otimização de UX) ──────
   const getGroupReadTimestamps = () => {
     try {
@@ -243,6 +249,7 @@ export default function Community() {
         members: parseJSON(data.members),
         messages: parseJSON(data.messages),
         materials: parseJSON(data.materials),
+        createdBy: data.created_by
       };
 
       const changes = updater(currentGroup);
@@ -354,17 +361,16 @@ export default function Community() {
     try {
       const { data, error } = await supabase
         .from('community_groups')
-        .select('id, name, target_id, target_name, members, messages, materials')
+        .select('id, name, target_id, target_name, members, messages, materials, created_by')
         .contains('members', [{ email: profile.email }])
         .order('created_at', { ascending: false });
 
       let groupsData = data;
 
-      // Fallback robusto caso a query contains falhe por causa de string arrays no banco legado
       if (error || !data || data.length === 0) {
         const fallback = await supabase
           .from('community_groups')
-          .select('id, name, target_id, target_name, members, messages, materials')
+          .select('id, name, target_id, target_name, members, messages, materials, created_by')
           .order('created_at', { ascending: false });
           
         if (fallback.data) {
@@ -379,6 +385,7 @@ export default function Community() {
         const mapped = groupsData.map((g: any) => ({
           id: g.id, name: g.name, targetId: g.target_id, targetName: g.target_name,
           members: parseJSON(g.members), messages: parseJSON(g.messages), materials: parseJSON(g.materials),
+          createdBy: g.created_by
         }));
         setMockGroups(mapped);
 
@@ -518,7 +525,7 @@ export default function Community() {
       name: newGroupName,
       target_id: newGroupTarget,
       target_name: targetName,
-      members: [{ email: profile.email, name: profile.name, avatarId: profile.avatarId, avatarUrl: profile.avatarUrl, progress: 0, isLeader: true }],
+      members: [{ email: profile.email, name: profile.name, avatarId: profile.avatarId, avatarUrl: profile.avatarUrl, progress: 0 }],
       messages: [],
       materials: [],
       created_by: profile.email,
@@ -533,6 +540,7 @@ export default function Community() {
         members: parseJSON(data.members),
         messages: parseJSON(data.messages),
         materials: parseJSON(data.materials),
+        createdBy: data.created_by,
       };
       setMockGroups(prev => [newGroup, ...prev]);
       await addToFeed(`criou o grupo "${newGroupName}"`);
@@ -564,7 +572,7 @@ export default function Community() {
     if (!invite || !profile.email) return;
     
     // 1. Atualiza o grupo PRIMEIRO. O RLS permite isso enquanto o status do convite ainda é 'pending'
-    const success = await updateGroupInDB(invite.groupId, (dbGroup) => {
+    await updateGroupInDB(invite.groupId, (dbGroup) => {
       const alreadyMember = dbGroup.members.some(m => m.email === profile.email);
       if (alreadyMember) return {};
       return {
@@ -592,9 +600,7 @@ export default function Community() {
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !activeGroup) return;
-    const isAdmin = activeGroup.members.find(m => m.email === profile.email)?.isLeader === true;
-    if (!isAdmin) return;
+    if (!newMessage.trim() || !activeGroup || !isCurrentUserAdmin) return;
 
     const newMsg: GroupMessage = {
       id: Date.now(),
@@ -665,7 +671,7 @@ export default function Community() {
   };
 
   const handlePinMessage = async (messageId: number) => {
-    if (!activeGroup) return;
+    if (!activeGroup || !isCurrentUserAdmin) return;
     await updateGroupInDB(activeGroup.id, (dbGroup) => ({
       messages: dbGroup.messages.map(msg => msg.id === messageId ? { ...msg, isPinned: !msg.isPinned } : msg)
     }));
@@ -705,7 +711,7 @@ export default function Community() {
   };
 
   const handleCreatePoll = async () => {
-    if (!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2 || !activeGroup) return;
+    if (!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2 || !activeGroup || !isCurrentUserAdmin) return;
     const validOptions = pollOptions.filter(o => o.trim()).map((opt, idx) => ({
       id: `opt_${Date.now()}_${idx}`,
       text: opt.trim(),
@@ -734,7 +740,7 @@ export default function Community() {
   };
 
   const handleAddMaterial = async () => {
-    if (!materialTitle.trim() || !materialUrl.trim() || !activeGroup) return;
+    if (!materialTitle.trim() || !materialUrl.trim() || !activeGroup || !isCurrentUserAdmin) return;
     let finalUrl = materialUrl.trim();
     if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
       finalUrl = 'https://' + finalUrl;
@@ -777,7 +783,7 @@ export default function Community() {
   };
 
   const handleDeleteMaterial = (materialId: string) => {
-    if (!activeGroup) return;
+    if (!activeGroup || !isCurrentUserAdmin) return;
     setConfirmModal({
       isOpen: true,
       title: 'Excluir Material',
@@ -822,7 +828,7 @@ export default function Community() {
   };
 
   const handleCreateQuestionBox = async () => {
-    if (!questionBoxText.trim() || !activeGroup) return;
+    if (!questionBoxText.trim() || !activeGroup || !isCurrentUserAdmin) return;
     
     const boxMsg: GroupMessage = {
       id: Date.now(),
@@ -909,7 +915,7 @@ export default function Community() {
   };
 
   const handleDeleteGroup = () => {
-    if (!activeGroup) return;
+    if (!activeGroup || !isCurrentUserAdmin) return;
     setConfirmModal({
       isOpen: true,
       title: 'Excluir Grupo',
@@ -926,7 +932,7 @@ export default function Community() {
   };
 
   const handleRemoveMember = (memberEmail: string, memberName: string) => {
-    if (!activeGroup) return;
+    if (!activeGroup || !isCurrentUserAdmin) return;
     setConfirmModal({
       isOpen: true,
       title: 'Remover Membro',
@@ -943,7 +949,7 @@ export default function Community() {
   };
 
   const handleDeleteMessage = (messageId: number) => {
-    if (!activeGroup) return;
+    if (!activeGroup || !isCurrentUserAdmin) return;
     setConfirmModal({
       isOpen: true,
       title: 'Excluir Mensagem',
@@ -1094,6 +1100,7 @@ export default function Community() {
             members: parseJSON(d.members),
             messages: parseJSON(d.messages),
             materials: parseJSON(d.materials),
+            createdBy: d.created_by
           };
           setActiveGroup(updated);
           setMockGroups(prev => prev.map(g => g.id === updated.id ? updated : g));
@@ -1198,11 +1205,6 @@ export default function Community() {
       }
     });
   };
-
-  const isCurrentUserAdmin = useMemo(() =>
-    !!(profile.email && activeGroup?.members.find(m => m.email === profile.email)?.isLeader),
-    [profile.email, activeGroup]
-  );
 
   return (
     <div className="min-h-screen bg-[#fdfbf7] text-stone-900 font-sans pb-28 pt-6 md:pt-12 overflow-x-hidden">
@@ -1310,1578 +1312,1574 @@ export default function Community() {
               <p className="text-sm text-stone-400">Faça login para acessar a comunidade.</p>
             </div>
           ) : (
-          <>{activeGroup ? (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                  <>
-                    <div className="flex items-center gap-3 border-b border-stone-100 pb-4">
-                <button 
-                  onClick={() => { setActiveGroup(null); setGroupSubTab('mural'); setReplyingToId(null); setMemberReplyText(''); }}
-                  className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors flex-shrink-0"
-                >
-                  <ChevronLeft size={24} />
-                </button>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-lg sm:text-2xl font-bold text-stone-900 truncate">{activeGroup.name}</h2>
-                  <p className="text-xs sm:text-sm text-stone-500 flex items-center gap-1">
-                    <BookOpen size={12} /> Estudando: {activeGroup.targetName}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-full shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Ao vivo
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="font-bold text-indigo-900 text-sm flex items-center gap-2">🎯 Progresso Coletivo</h3>
-                  <span className="text-xl font-black text-indigo-600">{calculateGroupProgress(activeGroup.members, activeGroup.targetId)}%</span>
-                </div>
-                <div className="h-3 bg-white rounded-full overflow-hidden border border-indigo-100 shadow-inner">
-                  <div 
-                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-1000 relative" 
-                    style={{ width: `${calculateGroupProgress(activeGroup.members, activeGroup.targetId)}%` }}
-                  >
-                    <div className="absolute inset-0 bg-white/20 rounded-full" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)' }} />
-                  </div>
-                </div>
-                <p className="text-[10px] text-indigo-400 mt-1.5 font-medium">
-                  {activeGroup.members.length} membro{activeGroup.members.length !== 1 ? 's' : ''} · baseado em livros completados
-                </p>
-              </div>
-
-              <div className="flex gap-1.5 border-b border-stone-100 pb-0">
-                {([
-                  { id: 'mural', label: '📋 Mural' },
-                  { id: 'membros', label: `👥 Membros (${Array.isArray(activeGroup.members) ? activeGroup.members.length : 0})` },
-                  { id: 'materiais', label: `📎 Materiais (${activeGroup.materials?.length || 0})` },
-                ] as { id: 'mural' | 'membros' | 'materiais'; label: string }[]).map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setGroupSubTab(tab.id)}
-                    className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all ${
-                      groupSubTab === tab.id
-                        ? 'bg-white border border-b-white border-stone-200 text-indigo-700 -mb-px'
-                        : 'text-stone-400 hover:text-stone-600'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {groupSubTab === 'membros' && (
-                <div>
-                  <div className="flex justify-end mb-3">
+            <>
+              {activeGroup ? (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                  
+                  <div className="flex items-center gap-3 border-b border-stone-100 pb-4">
                     <button 
-                      onClick={() => setShowInviteModal(true)}
-                      className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100"
+                      onClick={() => { setActiveGroup(null); setGroupSubTab('mural'); setReplyingToId(null); setMemberReplyText(''); }}
+                      className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors flex-shrink-0"
                     >
-                      <UserPlus size={14} /> Convidar amigo
+                      <ChevronLeft size={24} />
                     </button>
-                  </div>
-                  {(!activeGroup.members || !Array.isArray(activeGroup.members) || activeGroup.members.length === 0) ? (
-                    <div className="text-center py-10 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
-                      <Users size={28} className="mx-auto text-stone-300 mb-2" />
-                      <p className="text-stone-400 text-sm">Nenhum membro ainda.</p>
+                    <div className="flex-1 min-w-0">
+                      <h2 className="text-lg sm:text-2xl font-bold text-stone-900 truncate">{activeGroup.name}</h2>
+                      <p className="text-xs sm:text-sm text-stone-500 flex items-center gap-1">
+                        <BookOpen size={12} /> Estudando: {activeGroup.targetName}
+                      </p>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {[...activeGroup.members].sort((a, b) => {
-                        const pa = Number(a.email === profile.email ? calculateMemberProgress(a.email, activeGroup.targetId) : (a.progress || 0)) || 0;
-                        const pb = Number(b.email === profile.email ? calculateMemberProgress(b.email, activeGroup.targetId) : (b.progress || 0)) || 0;
-                        return pb - pa;
-                      }).map((member, idx) => {
-                        const prog = Number(member.email === profile.email
-                          ? calculateMemberProgress(member.email, activeGroup.targetId)
-                          : (member.progress || 0)) || 0;
-                        return (
-                          <div key={idx} className="flex items-center justify-between px-3 py-2.5 bg-stone-50 rounded-xl border border-stone-100">
-                            <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-base border border-stone-200 overflow-hidden shrink-0">
-                                {member.avatarUrl ? (
-                                  <img src={member.avatarUrl} alt={member.name || 'Avatar'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                ) : (
-                                  <span>{AVATARS.find(a => a.id === member.avatarId)?.emoji || '👤'}</span>
+                    <div className="flex items-center gap-1.5 text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-full shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Ao vivo
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="font-bold text-indigo-900 text-sm flex items-center gap-2">🎯 Progresso Coletivo</h3>
+                      <span className="text-xl font-black text-indigo-600">{calculateGroupProgress(activeGroup.members, activeGroup.targetId)}%</span>
+                    </div>
+                    <div className="h-3 bg-white rounded-full overflow-hidden border border-indigo-100 shadow-inner">
+                      <div 
+                        className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-1000 relative" 
+                        style={{ width: `${calculateGroupProgress(activeGroup.members, activeGroup.targetId)}%` }}
+                      >
+                        <div className="absolute inset-0 bg-white/20 rounded-full" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)' }} />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-indigo-400 mt-1.5 font-medium">
+                      {activeGroup.members.length} membro{activeGroup.members.length !== 1 ? 's' : ''} · baseado em livros completados
+                    </p>
+                  </div>
+
+                  <div className="flex gap-1.5 border-b border-stone-100 pb-0">
+                    {([
+                      { id: 'mural', label: '📋 Mural' },
+                      { id: 'membros', label: `👥 Membros (${Array.isArray(activeGroup.members) ? activeGroup.members.length : 0})` },
+                      { id: 'materiais', label: `📎 Materiais (${activeGroup.materials?.length || 0})` },
+                    ] as { id: 'mural' | 'membros' | 'materiais'; label: string }[]).map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setGroupSubTab(tab.id)}
+                        className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all ${
+                          groupSubTab === tab.id
+                            ? 'bg-white border border-b-white border-stone-200 text-indigo-700 -mb-px'
+                            : 'text-stone-400 hover:text-stone-600'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {groupSubTab === 'membros' && (
+                    <div>
+                      <div className="flex justify-end mb-3">
+                        <button 
+                          onClick={() => setShowInviteModal(true)}
+                          className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100"
+                        >
+                          <UserPlus size={14} /> Convidar amigo
+                        </button>
+                      </div>
+                      {(!activeGroup.members || !Array.isArray(activeGroup.members) || activeGroup.members.length === 0) ? (
+                        <div className="text-center py-10 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
+                          <Users size={28} className="mx-auto text-stone-300 mb-2" />
+                          <p className="text-stone-400 text-sm">Nenhum membro ainda.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {[...activeGroup.members].sort((a, b) => {
+                            const pa = Number(a.email === profile.email ? calculateMemberProgress(a.email, activeGroup.targetId) : (a.progress || 0)) || 0;
+                            const pb = Number(b.email === profile.email ? calculateMemberProgress(b.email, activeGroup.targetId) : (b.progress || 0)) || 0;
+                            return pb - pa;
+                          }).map((member, idx) => {
+                            const prog = Number(member.email === profile.email
+                              ? calculateMemberProgress(member.email, activeGroup.targetId)
+                              : (member.progress || 0)) || 0;
+                            return (
+                              <div key={idx} className="flex items-center justify-between px-3 py-2.5 bg-stone-50 rounded-xl border border-stone-100">
+                                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                  <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-base border border-stone-200 overflow-hidden shrink-0">
+                                    {member.avatarUrl ? (
+                                      <img src={member.avatarUrl} alt={member.name || 'Avatar'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <span>{AVATARS.find(a => a.id === member.avatarId)?.emoji || '👤'}</span>
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-stone-900 text-sm flex items-center gap-1 leading-none truncate">
+                                      {member.name || member.email?.split('@')[0] || 'Usuário'}
+                                      {member.email === activeGroup.createdBy && <Crown size={12} className="text-amber-500 shrink-0" title="Admin do Grupo" />}
+                                      {member.email === profile.email && <span className="text-[9px] text-indigo-400 font-medium">(você)</span>}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-1.5">
+                                      <div className="flex-1 h-1.5 bg-stone-200 rounded-full overflow-hidden max-w-[80px]">
+                                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${prog}%` }} />
+                                      </div>
+                                      <span className="text-[10px] font-bold text-stone-400">{prog}%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                {isCurrentUserAdmin && member.email !== activeGroup.createdBy && (
+                                  <button 
+                                    onClick={() => handleRemoveMember(member.email, member.name || member.email)}
+                                    className="p-1.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors shrink-0 ml-2"
+                                    title="Remover membro"
+                                  >
+                                    <X size={14} />
+                                  </button>
                                 )}
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="font-bold text-stone-900 text-sm flex items-center gap-1 leading-none truncate">
-                                  {member.name || member.email?.split('@')[0] || 'Usuário'}
-                                  {member.isLeader && <Crown size={12} className="text-amber-500 shrink-0" title="Admin do Grupo" />}
-                                  {member.email === profile.email && <span className="text-[9px] text-indigo-400 font-medium">(você)</span>}
-                                </p>
-                                <div className="flex items-center gap-2 mt-1.5">
-                                  <div className="flex-1 h-1.5 bg-stone-200 rounded-full overflow-hidden max-w-[80px]">
-                                    <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${prog}%` }} />
-                                  </div>
-                                  <span className="text-[10px] font-bold text-stone-400">{prog}%</span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {groupSubTab === 'materiais' && (
+                    <div>
+                      {isCurrentUserAdmin && !isAddingMaterial && (
+                        <div className="flex justify-end mb-3">
+                          <button 
+                            onClick={() => setIsAddingMaterial(true)}
+                            className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100"
+                          >
+                            <Plus size={14} /> Adicionar material
+                          </button>
+                        </div>
+                      )}
+
+                      {isAddingMaterial && (
+                        <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-4">
+                          <div className="flex justify-between items-center mb-3">
+                            <h4 className="font-bold text-indigo-900 text-sm">Novo Material</h4>
+                            <button onClick={() => setIsAddingMaterial(false)} className="text-indigo-400 hover:text-indigo-600">
+                              <X size={16} />
+                            </button>
+                          </div>
+                          <div className="space-y-3">
+                            <input 
+                              type="text" 
+                              placeholder="Título (ex: Planilha de Leitura)"
+                              value={materialTitle}
+                              onChange={(e) => setMaterialTitle(e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                            />
+                            <input 
+                              type="url" 
+                              placeholder="Link (Google Drive, PDF, etc)"
+                              value={materialUrl}
+                              onChange={(e) => setMaterialUrl(e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                            />
+                            <div className="flex justify-end">
+                              <button 
+                                onClick={handleAddMaterial}
+                                disabled={!materialTitle.trim() || !materialUrl.trim()}
+                                className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                              >
+                                Salvar Link
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {(!activeGroup.materials || activeGroup.materials.length === 0) && !isAddingMaterial ? (
+                        <div className="text-center py-10 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
+                          <Paperclip size={28} className="mx-auto text-stone-300 mb-2" />
+                          <p className="text-stone-400 text-sm">Nenhum material adicionado ainda.</p>
+                          {isCurrentUserAdmin && <p className="text-xs text-stone-300 mt-1">Adicione links, PDFs ou vídeos acima.</p>}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {activeGroup.materials?.map(material => (
+                            <div key={material.id} className="flex items-center justify-between p-3 bg-white border border-stone-200 rounded-xl hover:border-indigo-300 hover:shadow-sm transition-all group">
+                              <a href={material.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0">
+                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                                  material.type === 'spreadsheet' ? 'bg-emerald-100 text-emerald-600' :
+                                  material.type === 'document' ? 'bg-blue-100 text-blue-600' :
+                                  material.type === 'pdf' ? 'bg-rose-100 text-rose-700' :
+                                  material.type === 'video' ? 'bg-red-100 text-red-600' :
+                                  'bg-stone-100 text-stone-600'
+                                }`}>
+                                  {material.type === 'spreadsheet' ? <FileSpreadsheet size={20} /> :
+                                   material.type === 'document' ? <FileText size={20} /> :
+                                   material.type === 'pdf' ? <FileText size={20} /> :
+                                   material.type === 'video' ? <Youtube size={20} /> :
+                                   <LinkIcon size={20} />}
                                 </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-bold text-stone-900 text-sm truncate">{material.title}</p>
+                                  <p className="text-xs text-stone-500 truncate flex items-center gap-1">
+                                    <ExternalLink size={10} /> Abrir link
+                                  </p>
+                                </div>
+                              </a>
+                              {isCurrentUserAdmin && (
+                                <button 
+                                  onClick={() => handleDeleteMaterial(material.id)}
+                                  className="p-2 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"
+                                  title="Remover material"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {groupSubTab === 'mural' && (
+                    <div>
+                      <div className="bg-stone-50 rounded-2xl border border-stone-200 flex flex-col overflow-hidden">
+                        <div ref={muralScrollRef} className="overflow-y-auto space-y-4 p-3 pr-2" style={{ maxHeight: 'min(calc(100svh - 420px), 480px)', minHeight: '160px' }}>
+                          {activeGroup.messages.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-14 gap-2 text-center">
+                              <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-1">
+                                <MessageSquare size={24} className="text-indigo-300" />
+                              </div>
+                              <p className="font-bold text-stone-700 text-sm">O mural está vazio</p>
+                              {isCurrentUserAdmin
+                                ? <p className="text-stone-400 text-xs max-w-[200px]">Escreva o primeiro recado, versículo ou meta para o grupo!</p>
+                                : <p className="text-stone-400 text-xs max-w-[200px]">Quando o administrador postar algo, aparecerá aqui. Você pode reagir e responder às mensagens.</p>
+                              }
+                            </div>
+                          ) : (
+                            (() => {
+                              const pinned = activeGroup.messages.filter(m => m.isPinned);
+                              const rest = activeGroup.messages.filter(m => !m.isPinned).sort((a, b) => a.id - b.id);
+                              const sorted = [...pinned, ...rest];
+
+                              return sorted.map(msg => {
+                                const parentMsg = msg.type === 'member_reply' && msg.replyToId
+                                  ? activeGroup.messages.find(m => m.id === msg.replyToId)
+                                  : null;
+
+                                return (
+                                  <div key={msg.id} className={`flex gap-2.5 ${msg.type === 'member_reply' ? 'pl-6' : ''}`}>
+                                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-sm border border-stone-200 shrink-0 overflow-hidden mt-0.5">
+                                      {msg.avatarUrl ? (
+                                        <img src={msg.avatarUrl} alt={msg.user} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <span>{AVATARS.find(a => a.id === msg.avatarId)?.emoji || '👤'}</span>
+                                      )}
+                                    </div>
+
+                                    <div className={`flex-1 min-w-0 px-3 py-2.5 rounded-2xl rounded-tl-none border ${
+                                      msg.isPinned ? 'bg-amber-50 border-amber-200' :
+                                      msg.type === 'verse' ? 'bg-indigo-50 border-indigo-100' :
+                                      msg.type === 'goal' ? 'bg-emerald-50 border-emerald-100' :
+                                      msg.type === 'member_reply' ? 'bg-stone-50 border-stone-200' :
+                                      'bg-white border-stone-100'
+                                    }`}>
+
+                                      {parentMsg && (
+                                        <div className="mb-2 px-2 py-1.5 bg-white border-l-2 border-indigo-300 rounded-r-lg">
+                                          <p className="text-[10px] font-bold text-indigo-500 mb-0.5">{parentMsg.user}</p>
+                                          <p className="text-xs text-stone-500 leading-snug line-clamp-2">
+                                            {parentMsg.type === 'poll' ? `📊 ${parentMsg.poll?.question}` :
+                                             parentMsg.type === 'question_box' ? `❓ ${parentMsg.questionBox?.question}` :
+                                             parentMsg.text}
+                                          </p>
+                                        </div>
+                                      )}
+
+                                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                          <span className="font-bold text-stone-900 text-sm leading-none">{msg.user}</span>
+                                          {msg.type === 'verse' && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-bold">Versículo</span>}
+                                          {msg.type === 'goal' && <span className="text-[10px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full font-bold">Meta</span>}
+                                          {msg.type === 'member_reply' && <span className="text-[10px] bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded-full font-bold">Resposta</span>}
+                                          {msg.isPinned && <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5"><Pin size={9} /> Fixado</span>}
+                                        </div>
+                                        <span className="text-[10px] text-stone-400 shrink-0" title={new Date(msg.timestamp).toLocaleString('pt-BR')}>
+                                          {formatRelativeTime(msg.timestamp)}
+                                        </span>
+                                      </div>
+                                      
+                                      {msg.type === 'poll' && msg.poll ? (
+                                        <div className="mt-2 space-y-2">
+                                          <p className="font-bold text-stone-800 text-sm mb-3">{msg.poll.question}</p>
+                                          {msg.poll.options.map(opt => {
+                                            const totalVotes = msg.poll!.options.reduce((sum, o) => sum + o.votes.length, 0);
+                                            const percentage = totalVotes === 0 ? 0 : Math.round((opt.votes.length / totalVotes) * 100);
+                                            const hasVoted = msg.poll!.options.some(o => o.votes.includes(profile.email || 'me'));
+                                            const votedForThis = opt.votes.includes(profile.email || 'me');
+
+                                            return (
+                                              <div key={opt.id} className="relative">
+                                                <button
+                                                  onClick={() => handleVote(msg.id, opt.id)}
+                                                  title={votedForThis ? 'Clique para remover seu voto' : ''}
+                                                  className={`w-full text-left p-2 rounded-xl border text-sm relative overflow-hidden transition-all z-10 ${
+                                                    votedForThis ? 'border-indigo-500 bg-indigo-50/50' : 'border-stone-200 hover:border-indigo-300 bg-white'
+                                                  }`}
+                                                >
+                                                  <div className="flex justify-between items-center relative z-20 gap-2">
+                                                    <span className={votedForThis ? 'font-bold text-indigo-900' : 'text-stone-700'}>{opt.text}</span>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                      {hasVoted && <span className="text-stone-500 font-medium">{percentage}%</span>}
+                                                      {votedForThis && <span className="text-[10px] text-indigo-400 font-medium hidden sm:inline">(clique para desvotar)</span>}
+                                                    </div>
+                                                  </div>
+                                                  {hasVoted && (
+                                                    <div 
+                                                      className="absolute left-0 top-0 bottom-0 bg-indigo-100/50 z-0 transition-all duration-500"
+                                                      style={{ width: `${percentage}%` }}
+                                                    />
+                                                  )}
+                                                </button>
+                                                {isCurrentUserAdmin && hasVoted && opt.votes.length > 0 && (
+                                                  <div className="text-[10px] text-stone-400 mt-1 ml-2">
+                                                    Votos: {opt.votes.map(email => activeGroup.members.find(m => m.email === email)?.name || email).join(', ')}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                          {isCurrentUserAdmin && (
+                                            <div className="mt-3 pt-3 border-t border-stone-100/50 text-xs text-stone-500">
+                                              <span className="font-bold">Faltam votar: </span>
+                                              {activeGroup.members
+                                                .filter(m => !msg.poll!.options.some(o => o.votes.includes(m.email)))
+                                                .map(m => m.name)
+                                                .join(', ') || 'Todos votaram!'}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : msg.type === 'question_box' && msg.questionBox ? (
+                                        <div className="mt-2 space-y-3">
+                                          <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                                            <p className="font-bold text-indigo-900 text-sm flex items-center gap-2">
+                                              <HelpCircle size={16} className="text-indigo-500" />
+                                              {msg.questionBox.question}
+                                            </p>
+                                            <p className="text-xs text-indigo-400 mt-1.5">
+                                              {msg.questionBox.answers.length === 0
+                                                ? 'Nenhuma resposta ainda — seja o primeiro!'
+                                                : `${msg.questionBox.answers.length} ${msg.questionBox.answers.length === 1 ? 'resposta' : 'respostas'} recebidas`}
+                                            </p>
+                                          </div>
+                                          
+                                          {!msg.questionBox.answers.some(ans => ans.userEmail === (profile.email || 'me')) && (
+                                            <div className="flex gap-2">
+                                              <input 
+                                                type="text" 
+                                                placeholder="Sua resposta..."
+                                                value={questionBoxAnswers[msg.id] || ''}
+                                                onChange={(e) => setQuestionBoxAnswers(prev => ({ ...prev, [msg.id]: e.target.value }))}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleAnswerQuestionBox(msg.id)}
+                                                className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                              />
+                                              <button 
+                                                onClick={() => handleAnswerQuestionBox(msg.id)}
+                                                disabled={!(questionBoxAnswers[msg.id] || '').trim()}
+                                                className="px-3 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                                              >
+                                                <Send size={16} />
+                                              </button>
+                                            </div>
+                                          )}
+
+                                          {msg.questionBox.answers.some(ans => ans.userEmail === (profile.email || 'me')) && !isCurrentUserAdmin && (
+                                            <div className="text-sm text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 p-2 rounded-lg border border-emerald-100">
+                                              <Check size={14} /> Resposta enviada!
+                                            </div>
+                                          )}
+
+                                          {isCurrentUserAdmin && (
+                                            <div className="mt-4 space-y-2">
+                                              <p className="text-xs font-bold text-stone-500 uppercase tracking-wider">Respostas ({msg.questionBox.answers.length})</p>
+                                              {msg.questionBox.answers.length === 0 ? (
+                                                <p className="text-sm text-stone-400 italic">Nenhuma resposta ainda.</p>
+                                              ) : (
+                                                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                                                  {msg.questionBox.answers.map((ans, idx) => (
+                                                    <div key={idx} className="bg-white border border-stone-100 p-2.5 rounded-xl text-sm">
+                                                      <div className="flex items-center gap-1.5 mb-1">
+                                                        <span className="font-bold text-stone-800 text-xs">{ans.userName}</span>
+                                                        <span className="text-[10px] text-stone-400">{formatRelativeTime(ans.timestamp)}</span>
+                                                      </div>
+                                                      <p className="text-stone-600">{ans.text}</p>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <p className={`text-sm ${msg.type === 'verse' ? 'font-serif italic text-indigo-900 text-lg text-center my-4' : msg.type === 'goal' ? 'font-bold text-emerald-800' : 'text-stone-700'}`}>
+                                          {msg.type === 'verse' && '"'}{msg.text}{msg.type === 'verse' && '"'}
+                                        </p>
+                                      )}
+
+                                      <div className="mt-2.5 flex items-center justify-between gap-2">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          {msg.reactions && msg.reactions.map(reaction => {
+                                            const hasReacted = reaction.users.includes(profile.email || 'me');
+                                            return (
+                                              <div key={reaction.emoji} className="relative group/reaction">
+                                                <button
+                                                  onClick={() => handleReact(msg.id, reaction.emoji)}
+                                                  className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs border transition-colors ${
+                                                    hasReacted ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                                                  }`}
+                                                >
+                                                  <span>{reaction.emoji}</span>
+                                                  <span className="font-medium">{reaction.users.length}</span>
+                                                </button>
+                                                {isCurrentUserAdmin && (
+                                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover/reaction:block z-20 w-max max-w-[200px] bg-stone-800 text-white text-[10px] p-2 rounded-lg shadow-xl">
+                                                    <p className="font-bold mb-1 border-b border-stone-600 pb-1">Reagiram com {reaction.emoji}</p>
+                                                    <p>{reaction.users.map(email => activeGroup.members.find(m => m.email === email)?.name || email).join(', ')}</p>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+
+                                          <div className="relative">
+                                            <button
+                                              onClick={() => setShowReactionMenu(showReactionMenu === msg.id ? null : msg.id)}
+                                              className="w-7 h-7 flex items-center justify-center text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors"
+                                            >
+                                              <Smile size={15} />
+                                            </button>
+                                            {showReactionMenu === msg.id && (
+                                              <div className="absolute bottom-full left-0 mb-1 bg-white border border-stone-200 shadow-xl rounded-full px-2 py-1 flex gap-1 z-20">
+                                                {['🙏', '✨', '🔥', '❤️', '👏'].map(emoji => (
+                                                  <button
+                                                    key={emoji}
+                                                    onClick={() => handleReact(msg.id, emoji)}
+                                                    className="w-8 h-8 flex items-center justify-center hover:bg-stone-100 rounded-full text-lg transition-transform hover:scale-110"
+                                                  >
+                                                    {emoji}
+                                                  </button>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          {!isCurrentUserAdmin && msg.type !== 'member_reply' && (
+                                            <button
+                                              onClick={() => {
+                                                setReplyingToId(replyingToId === msg.id ? null : msg.id);
+                                                setMemberReplyText('');
+                                              }}
+                                              className="w-7 h-7 flex items-center justify-center text-stone-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors"
+                                              title="Responder"
+                                            >
+                                              <MessageSquare size={14} />
+                                            </button>
+                                          )}
+                                        </div>
+
+                                        {isCurrentUserAdmin && msg.type !== 'member_reply' && (
+                                          <div className="flex items-center gap-0.5 shrink-0">
+                                            <button
+                                              onClick={() => handlePinMessage(msg.id)}
+                                              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${msg.isPinned ? 'text-amber-500 bg-amber-50' : 'text-stone-300 hover:text-amber-400 hover:bg-stone-100'}`}
+                                              title={msg.isPinned ? 'Desfixar' : 'Fixar'}
+                                            ><Pin size={15} /></button>
+                                            <button
+                                              onClick={() => handleEditMessageClick(msg)}
+                                              className="w-8 h-8 flex items-center justify-center text-stone-300 hover:text-indigo-400 hover:bg-stone-100 rounded-lg transition-colors"
+                                              title="Editar"
+                                            ><Edit2 size={15} /></button>
+                                            <button
+                                              onClick={() => handleDeleteMessage(msg.id)}
+                                              className="w-8 h-8 flex items-center justify-center text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                                              title="Excluir"
+                                            ><Trash2 size={15} /></button>
+                                          </div>
+                                        )}
+                                        {isCurrentUserAdmin && msg.type === 'member_reply' && (
+                                          <button
+                                            onClick={() => handleDeleteMessage(msg.id)}
+                                            className="w-8 h-8 flex items-center justify-center text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                                            title="Excluir resposta"
+                                          ><Trash2 size={15} /></button>
+                                        )}
+                                      </div>
+
+                                      {replyingToId === msg.id && !isCurrentUserAdmin && (
+                                        <div className="mt-2.5 flex gap-2">
+                                          <input
+                                            type="text"
+                                            placeholder="Sua resposta..."
+                                            value={memberReplyText}
+                                            autoFocus
+                                            onChange={(e) => setMemberReplyText(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleMemberReply()}
+                                            className="flex-1 px-3 py-1.5 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                          />
+                                          <button
+                                            onClick={handleMemberReply}
+                                            disabled={!memberReplyText.trim()}
+                                            className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-xs font-bold"
+                                          >
+                                            <Send size={14} />
+                                          </button>
+                                          <button
+                                            onClick={() => { setReplyingToId(null); setMemberReplyText(''); }}
+                                            className="px-2 py-1.5 text-stone-400 hover:text-stone-600 rounded-xl transition-colors"
+                                          >
+                                            <X size={14} />
+                                          </button>
+                                        </div>
+                                      )}
+
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            })()
+                          )}
+                        </div>
+                        
+                        {isCreatingPoll ? (
+                          <div className="bg-white border border-indigo-200 rounded-2xl p-4 shadow-sm">
+                            <div className="flex justify-between items-center mb-3">
+                              <h4 className="font-bold text-indigo-900 text-sm flex items-center gap-2">
+                                <BarChart2 size={16} /> Criar Enquete
+                              </h4>
+                              <button onClick={() => setIsCreatingPoll(false)} className="text-stone-400 hover:text-stone-600">
+                                <X size={16} />
+                              </button>
+                            </div>
+                            <input 
+                              type="text" 
+                              placeholder="Pergunta da enquete..."
+                              value={pollQuestion}
+                              onChange={(e) => setPollQuestion(e.target.value)}
+                              className="w-full px-3 py-2 mb-3 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium"
+                            />
+                            <div className="space-y-2 mb-3">
+                              {pollOptions.map((opt, idx) => (
+                                <div key={idx} className="flex gap-2">
+                                  <input 
+                                    type="text" 
+                                    placeholder={`Opção ${idx + 1}`}
+                                    value={opt}
+                                    onChange={(e) => {
+                                      const newOpts = [...pollOptions];
+                                      newOpts[idx] = e.target.value;
+                                      setPollOptions(newOpts);
+                                    }}
+                                    className="flex-1 px-3 py-1.5 bg-white border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                  />
+                                  {pollOptions.length > 2 && (
+                                    <button 
+                                      onClick={() => setPollOptions(pollOptions.filter((_, i) => i !== idx))}
+                                      className="p-1.5 text-stone-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <button 
+                                onClick={() => setPollOptions([...pollOptions, ''])}
+                                className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
+                              >
+                                <Plus size={12} /> Adicionar Opção
+                              </button>
+                              <button 
+                                onClick={handleCreatePoll}
+                                disabled={!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2}
+                                className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                              >
+                                Publicar
+                              </button>
+                            </div>
+                          </div>
+                        ) : isCreatingQuestionBox ? (
+                          <div className="bg-white border border-indigo-200 rounded-2xl p-4 shadow-sm">
+                            <div className="flex justify-between items-center mb-3">
+                              <h4 className="font-bold text-indigo-900 text-sm flex items-center gap-2">
+                                <HelpCircle size={16} /> Caixinha de Pergunta
+                              </h4>
+                              <button onClick={() => setIsCreatingQuestionBox(false)} className="text-stone-400 hover:text-stone-600">
+                                <X size={16} />
+                              </button>
+                            </div>
+                            <input 
+                              type="text" 
+                              placeholder="Faça uma pergunta ao grupo..."
+                              value={questionBoxText}
+                              onChange={(e) => setQuestionBoxText(e.target.value)}
+                              className="w-full px-3 py-2 mb-3 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium"
+                            />
+                            <div className="flex justify-end">
+                              <button 
+                                onClick={handleCreateQuestionBox}
+                                disabled={!questionBoxText.trim()}
+                                className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                              >
+                                Publicar
+                              </button>
+                            </div>
+                          </div>
+                        ) : isCurrentUserAdmin ? (
+                          <div className="bg-white border-t border-stone-200 rounded-b-2xl overflow-hidden">
+                            {editingMessageId && (
+                              <div className="flex items-center justify-between px-3 py-2 bg-indigo-50 text-indigo-700 text-xs font-bold border-b border-indigo-100">
+                                <span>Editando publicação...</span>
+                                <button onClick={() => { setEditingMessageId(null); setNewMessage(''); setPostType('text'); }} className="hover:text-indigo-900"><X size={14} /></button>
+                              </div>
+                            )}
+
+                            {!editingMessageId && (
+                              <div className="flex border-b border-stone-100">
+                                {[
+                                  { type: 'text', label: 'Recado', icon: MessageSquare, active: 'bg-stone-100 text-stone-900', inactive: 'text-stone-400' },
+                                  { type: 'verse', label: 'Versículo', icon: BookOpen, active: 'bg-indigo-50 text-indigo-700', inactive: 'text-stone-400' },
+                                  { type: 'goal', label: 'Meta', icon: Target, active: 'bg-emerald-50 text-emerald-700', inactive: 'text-stone-400' },
+                                ].map(({ type, label, icon: Icon, active, inactive }) => (
+                                  <button
+                                    key={type}
+                                    onClick={() => setPostType(type as any)}
+                                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-bold transition-colors ${postType === type ? active : inactive + ' hover:bg-stone-50'}`}
+                                  >
+                                    <Icon size={13} />
+                                    <span>{label}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="p-2 space-y-2">
+                              <textarea
+                                rows={2}
+                                placeholder={
+                                  postType === 'verse' ? "Digite o versículo em destaque..." :
+                                  postType === 'goal' ? "Defina a meta da semana para o grupo..." :
+                                  "Escreva um recado para o grupo..."
+                                }
+                                value={newMessage}
+                                onChange={(e) => setNewMessage(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && e.metaKey && handleSendMessage()}
+                                className="w-full px-3 py-2.5 bg-stone-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-none leading-relaxed"
+                              />
+                              <div className="flex items-center justify-between">
+                                {!editingMessageId ? (
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => setIsCreatingPoll(true)}
+                                      className="p-2 text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                      title="Criar Enquete"
+                                    >
+                                      <BarChart2 size={17} />
+                                    </button>
+                                    <button
+                                      onClick={() => setIsCreatingQuestionBox(true)}
+                                      className="p-2 text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                      title="Caixinha de Pergunta"
+                                    >
+                                      <HelpCircle size={17} />
+                                    </button>
+                                  </div>
+                                ) : <div />}
+                                <button
+                                  onClick={handleSendMessage}
+                                  disabled={!newMessage.trim()}
+                                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 disabled:opacity-40 transition-all"
+                                >
+                                  <Send size={14} /> Publicar
+                                </button>
                               </div>
                             </div>
-                            {isCurrentUserAdmin && !member.isLeader && (
+                          </div>
+                        ) : (
+                          <div className="bg-white border-t border-stone-200 rounded-b-2xl px-4 py-3 flex items-center gap-2 text-stone-500">
+                            <div className="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
+                              <MessageSquare size={13} className="text-indigo-500" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-stone-600">
+                                Use o botão <span className="font-bold text-stone-800">↩ Responder</span> em qualquer mensagem para participar.
+                              </p>
+                              {(() => {
+                                const myReplies = activeGroup.messages.filter(m => m.type === 'member_reply' && m.userEmail === (profile.email || 'me')).length;
+                                return myReplies > 0 ? (
+                                  <p className="text-[10px] text-indigo-500 font-medium mt-0.5">Você participou {myReplies} vez{myReplies > 1 ? 'es' : ''} neste grupo.</p>
+                                ) : null;
+                              })()}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex justify-center">
+                    {isCurrentUserAdmin ? (
+                      <button 
+                        onClick={handleDeleteGroup}
+                        className="flex items-center gap-1.5 text-stone-400 hover:text-rose-700 text-xs px-3 py-1.5 hover:bg-rose-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={13} /> Excluir grupo
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={handleLeaveGroup}
+                        className="flex items-center gap-1.5 text-stone-400 hover:text-rose-700 text-xs px-3 py-1.5 hover:bg-rose-50 rounded-lg transition-colors"
+                      >
+                        <LogOut size={13} /> Sair do grupo
+                      </button>
+                    )}
+                  </div>
+
+                  {showInviteModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                      <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
+                        <h3 className="font-bold text-stone-900 text-lg mb-4">Convidar Amigos</h3>
+                        <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
+                          {connections.filter(c => c.status === 'accepted' && !activeGroup?.members.some(m => m.email === c.user.email)).length === 0 ? (
+                            <p className="text-stone-500 text-sm text-center py-4">Todos os seus amigos já estão no grupo.</p>
+                          ) : (
+                            connections.filter(c => c.status === 'accepted' && !activeGroup?.members.some(m => m.email === c.user.email)).map(conn => (
+                              <label key={conn.user.email} className="flex items-center justify-between p-2 hover:bg-stone-50 rounded-xl cursor-pointer">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center overflow-hidden">
+                                    {conn.user.avatarUrl ? (
+                                      <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
+                                    )}
+                                  </div>
+                                  <span className="font-medium text-stone-900">{conn.user.name}</span>
+                                </div>
+                                <input
+                                  type="checkbox"
+                                  className="w-5 h-5 rounded border-stone-300 text-indigo-600 focus:ring-indigo-500"
+                                  checked={inviteModalSelected.includes(conn.user.email)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setInviteModalSelected(prev => [...prev, conn.user.email]);
+                                    } else {
+                                      setInviteModalSelected(prev => prev.filter(em => em !== conn.user.email));
+                                    }
+                                  }}
+                                />
+                              </label>
+                            ))
+                          )}
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => { setShowInviteModal(false); setInviteModalSelected([]); }} className="px-4 py-2 text-stone-500 font-medium">Cancelar</button>
+                          <button
+                            onClick={handleSendGroupInvites}
+                            disabled={inviteModalSelected.length === 0}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50"
+                          >
+                            Enviar {inviteModalSelected.length > 0 ? `(${inviteModalSelected.length})` : ''}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              ) : activeTab === 'feed' ? (
+                <div className="space-y-2">
+                  <h4 className="text-[11px] font-bold text-stone-400 uppercase tracking-wider px-1 mb-3">⚡ Atividades Recentes</h4>
+                  {mockFeed.length === 0 ? (
+                    <div className="text-center py-16 bg-gradient-to-b from-stone-50 to-white rounded-3xl border border-dashed border-stone-200">
+                      <div className="text-4xl mb-3">⚡</div>
+                      <p className="text-stone-600 font-bold">Nenhuma atividade ainda.</p>
+                      <p className="text-sm text-stone-400 mt-1 mb-4">As ações da comunidade aparecerão aqui.</p>
+                    </div>
+                  ) : mockFeed.map((item, idx) => {
+                    const isVerse = item.action.includes('versículo') || item.action.includes('leu');
+                    const isPrayer = item.action.includes('oração') || item.action.includes('orou');
+                    const isTrophy = item.action.includes('pontos') || item.action.includes('conquist');
+                    const dotColor = isPrayer ? 'bg-rose-400' : isTrophy ? 'bg-amber-400' : 'bg-indigo-400';
+                    return (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, x: -12 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.04 }}
+                        className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-stone-100 hover:border-indigo-100 hover:shadow-sm transition-all"
+                      >
+                        <div className="relative shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-stone-50 flex items-center justify-center text-base border border-stone-200 overflow-hidden">
+                            {AVATARS.find(a => a.id === item.avatarId)?.emoji || '👤'}
+                          </div>
+                          <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${dotColor}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-stone-800 text-sm leading-snug">
+                            <span className="font-bold text-stone-900">{item.user}</span>{' '}
+                            <span className="text-stone-600">{item.action}</span>
+                          </p>
+                          <p className="text-[11px] text-stone-400 flex items-center gap-1 mt-0.5">
+                            <Clock size={9} /> {item.time}
+                          </p>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ) : activeTab === 'ranking' ? (
+                (() => {
+                  const weekStr = (() => {
+                    const now = new Date();
+                    const start = new Date(now.getFullYear(), 0, 1);
+                    const week = Math.ceil(((now.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7);
+                    return `${now.getFullYear()}-W${week}`;
+                  })();
+
+                  const userSeed = (profile.email || 'anon').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+                  const leagueNames = ['Liga Ouro ✨', 'Liga Prata 🥈', 'Liga Bronze 🥉', 'Liga Esmeralda 💚', 'Liga Safira 💎'];
+                  const leagueName = leagueNames[userSeed % leagueNames.length];
+
+                  const myPoints = profile.points;
+                  const fakeNames = ['Maria G.','João P.','Ana L.','Carlos M.','Lucia F.','Pedro H.','Teresa A.','Paulo R.','Clara S.','Francisco B.','Beatriz N.','Mateus C.','Rosa O.','André V.','Isabel T.','Lucas D.','Cecília M.','Marcos F.','Helena R.','Gabriel S.'];
+                  const fakeAvatars = ['livro','cruz','peixe','rosario','pomba','estrela','vela','espiga','ancora','chave'];
+
+                  const leagueRival = (idx: number) => {
+                    const seed = (userSeed * 13 + idx * 7 + weekStr.length) % 100;
+                    const spread = Math.floor(myPoints * 0.6);
+                    const pts = Math.max(10, myPoints + Math.floor((seed - 50) / 50 * spread));
+                    return {
+                      id: `rival-${idx}`,
+                      name: fakeNames[(userSeed + idx) % fakeNames.length],
+                      avatarId: fakeAvatars[(userSeed + idx) % fakeAvatars.length],
+                      points: pts,
+                      isMe: false,
+                    };
+                  };
+
+                  const myEntry = { id: 'me', name: profile.name, avatarId: profile.avatarId || 'cruz', avatarUrl: profile.avatarUrl, points: myPoints, isMe: true };
+
+                  const realOthers = mockRanking.filter(u => u.id !== (userId || '') && u.id !== 'me').slice(0, 8).map(u => ({ ...u, isMe: false }));
+                  const fakeCount = Math.max(0, 19 - realOthers.length);
+                  const fakeRivals = Array.from({ length: fakeCount }, (_, i) => leagueRival(i));
+                  const allEntries = [...realOthers, ...fakeRivals, myEntry].sort((a, b) => b.points - a.points).slice(0, 20);
+                  const myPosition = allEntries.findIndex(e => e.isMe) + 1;
+
+                  const now = new Date();
+                  const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
+                  const deadline = new Date(now);
+                  deadline.setDate(now.getDate() + daysUntilSunday);
+                  deadline.setHours(23, 59, 0, 0);
+                  const hoursLeft = Math.floor((deadline.getTime() - now.getTime()) / 3600000);
+
+                  return (
+                    <div className="space-y-4">
+                      <div className="bg-gradient-to-r from-indigo-600 to-purple-700 rounded-2xl p-4 text-white">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <p className="text-indigo-200 text-[10px] font-bold uppercase tracking-widest mb-0.5">Sua Liga esta Semana</p>
+                            <h3 className="font-bold text-lg">{leagueName}</h3>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-indigo-200 text-[10px] font-medium">Encerra em</p>
+                            <p className="font-bold text-sm">{hoursLeft}h</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 bg-white/10 rounded-xl px-3 py-2">
+                          <Trophy size={16} className="text-yellow-300 shrink-0" />
+                          <p className="text-xs text-white/90">
+                            <span className="font-bold">Top 5 sobem de liga</span> · <span className="text-white/70">Últimos 5 descem</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      {allEntries.length >= 3 && (
+                        <div className="flex items-end justify-center gap-2 mb-2">
+                          {[allEntries[1], allEntries[0], allEntries[2]].map((u, i) => {
+                            const podiumPos = [2, 1, 3][i];
+                            const heights = ['h-16', 'h-20', 'h-14'];
+                            const colors = ['bg-stone-200', 'bg-amber-400', 'bg-orange-300'];
+                            return (
+                              <div key={u.id} className="flex flex-col items-center gap-1">
+                                <div className={`w-9 h-9 rounded-full border-2 ${u.isMe ? 'border-indigo-500' : 'border-white'} overflow-hidden bg-stone-100 flex items-center justify-center text-sm`}>
+                                  {(u as any).avatarUrl ? <img src={(u as any).avatarUrl} className="w-full h-full object-cover" /> : AVATARS.find(a => a.id === u.avatarId)?.emoji || '👤'}
+                                </div>
+                                <p className="text-[9px] font-bold text-stone-700 max-w-[56px] text-center truncate">{u.isMe ? 'Você' : u.name.split(' ')[0]}</p>
+                                <div className={`w-14 ${heights[i]} ${colors[i]} rounded-t-lg flex items-start justify-center pt-1`}>
+                                  <span className="font-black text-white text-sm">{podiumPos}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        {allEntries.map((user, idx) => {
+                          const pos = idx + 1;
+                          const isPromotion = pos <= 5;
+                          const isRelegation = pos > 15;
+                          return (
+                            <div key={user.id} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${
+                              user.isMe ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-200' :
+                              isPromotion ? 'bg-emerald-50/50 border-emerald-100' :
+                              isRelegation ? 'bg-red-50/30 border-red-100' :
+                              'bg-white border-stone-100'
+                            }`}>
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                                pos === 1 ? 'bg-amber-400 text-amber-900' :
+                                pos === 2 ? 'bg-stone-300 text-stone-800' :
+                                pos === 3 ? 'bg-orange-300 text-orange-900' :
+                                isPromotion ? 'bg-emerald-100 text-emerald-700' :
+                                isRelegation ? 'bg-red-100 text-red-600' :
+                                'bg-stone-100 text-stone-500'
+                              }`}>{pos}</div>
+                              <div className="w-8 h-8 rounded-full bg-stone-50 flex items-center justify-center text-base border border-stone-100 overflow-hidden shrink-0">
+                                {(user as any).avatarUrl ? <img src={(user as any).avatarUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : AVATARS.find(a => a.id === user.avatarId)?.emoji || '👤'}
+                              </div>
+                              <p className={`flex-1 font-bold text-sm truncate ${user.isMe ? 'text-indigo-700' : 'text-stone-900'}`}>
+                                {user.isMe ? `${user.name} (você)` : user.name}
+                              </p>
+                              {isPromotion && pos > myPosition && <span className="text-[9px] text-emerald-600 font-bold mr-1">↑ sobe</span>}
+                              {isRelegation && <span className="text-[9px] text-red-500 font-bold mr-1">↓</span>}
+                              <div className={`font-mono font-bold text-sm ${user.isMe ? 'text-indigo-600' : 'text-stone-500'}`}>
+                                {user.points} pts
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {myPosition > 5 && (
+                        <p className="text-center text-xs text-stone-500 bg-amber-50 border border-amber-100 rounded-xl py-2.5 px-4">
+                          🎯 Você está na {myPosition}ª posição. Precisa de <strong>{allEntries[4].points - myPoints + 1} pts</strong> para entrar no top 5!
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()
+              ) : activeTab === 'groups' ? (
+                <div className="space-y-4">
+                  {mockGroupInvites.length > 0 && (
+                    <div className="mb-6 space-y-3">
+                      <h4 className="text-sm font-bold text-rose-700 uppercase tracking-wider px-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-rose-700 animate-pulse"></span>
+                        Convites de Grupo
+                      </h4>
+                      {mockGroupInvites.map((invite) => (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 8 }} 
+                          animate={{ opacity: 1, y: 0 }} 
+                          key={invite.id} 
+                          className="relative overflow-hidden rounded-2xl border border-indigo-100 shadow-sm bg-white"
+                        >
+                          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-t-2xl" />
+                          
+                          <div className="p-4 pt-5">
+                            <div className="flex items-center gap-3 mb-4">
+                              <div className="w-11 h-11 rounded-2xl bg-indigo-50 flex items-center justify-center text-2xl border border-indigo-100 flex-shrink-0">
+                                {AVATARS.find(a => a.id === invite.fromAvatarId)?.emoji || '👤'}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs text-stone-400 font-medium mb-0.5">Convite recebido de</p>
+                                <p className="font-bold text-stone-900 text-sm leading-tight">
+                                  {invite.from}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="bg-indigo-50 rounded-xl px-3 py-2.5 flex items-center gap-2.5 mb-4">
+                              <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <Users size={14} className="text-white" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold text-indigo-700 text-sm truncate">{invite.groupName}</p>
+                                <p className="text-xs text-indigo-400 flex items-center gap-1">
+                                  <BookOpen size={10} /> {invite.targetName}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2">
                               <button 
-                                onClick={() => handleRemoveMember(member.email, member.name || member.email)}
-                                className="p-1.5 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors shrink-0 ml-2"
-                                title="Remover membro"
+                                onClick={() => handleAcceptGroupInvite(invite.id)}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 active:scale-95 transition-all text-sm font-bold shadow-sm"
                               >
-                                <X size={14} />
+                                <Check size={16} /> Entrar no grupo
+                              </button>
+                              <button 
+                                onClick={() => handleRejectGroupInvite(invite.id)}
+                                className="px-3.5 py-2.5 bg-stone-100 text-stone-500 rounded-xl hover:bg-stone-200 hover:text-stone-700 active:scale-95 transition-all flex items-center gap-1.5 text-sm font-medium"
+                              >
+                                <X size={15} /> Recusar
+                              </button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center px-2 mb-4">
+                    <h4 className="text-sm font-bold text-stone-700 flex items-center gap-2">
+                      <span>👥</span> Meus Grupos
+                      {mockGroups.length > 0 && <span className="text-xs font-medium text-stone-400">({mockGroups.length})</span>}
+                    </h4>
+                    <button 
+                      onClick={() => setIsCreatingGroup(true)}
+                      className="flex items-center gap-1.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2 rounded-xl shadow-sm active:scale-95 transition-all"
+                    >
+                      <Plus size={15} /> Criar Grupo
+                    </button>
+                  </div>
+                  
+                  {isCreatingGroup && (
+                    <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 mb-4">
+                      <h5 className="font-bold text-indigo-900 mb-3 text-base">Criar Novo Grupo</h5>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-bold text-indigo-900 mb-1">Nome do Grupo</label>
+                          <input 
+                            type="text" 
+                            placeholder="Ex: Jovens Sarados..."
+                            value={newGroupName}
+                            onChange={(e) => setNewGroupName(e.target.value)}
+                            className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white text-sm"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-xs font-bold text-indigo-900 mb-1">O que vão estudar?</label>
+                          <select 
+                            value={newGroupTarget}
+                            onChange={(e) => setNewGroupTarget(e.target.value)}
+                            className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white text-sm"
+                          >
+                            <option value="">Selecione um livro ou trilha...</option>
+                            <optgroup label="Trilhas">
+                              <option value="beginner">Trilha do Discípulo (Iniciantes)</option>
+                            </optgroup>
+                            <optgroup label="Livros da Bíblia">
+                              {BIBLE_BOOKS.map(book => (
+                                <option key={book.id} value={book.id}>{book.name}</option>
+                              ))}
+                            </optgroup>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-indigo-900 mb-1">Convidar Amigos</label>
+                          {connections.filter(c => c.status === 'accepted').length === 0 ? (
+                            <p className="text-xs text-stone-400 italic px-1">Você ainda não tem amigos adicionados.</p>
+                          ) : (
+                            <div className="bg-white border border-indigo-100 rounded-xl p-1.5 max-h-32 overflow-y-auto">
+                              {connections.filter(c => c.status === 'accepted').map(conn => (
+                                <label key={conn.user.email} className="flex items-center justify-between px-2 py-1.5 hover:bg-indigo-50/50 rounded-lg cursor-pointer">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-stone-100 flex items-center justify-center overflow-hidden text-xs">
+                                      {conn.user.avatarUrl ? (
+                                        <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
+                                      )}
+                                    </div>
+                                    <span className="text-sm font-medium text-stone-700">{conn.user.name}</span>
+                                  </div>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={newGroupInvites.includes(conn.user.email)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setNewGroupInvites(prev => [...prev, conn.user.email]);
+                                      } else {
+                                        setNewGroupInvites(prev => prev.filter(email => email !== conn.user.email));
+                                      }
+                                    }}
+                                    className="w-4 h-4 rounded border-stone-300 text-indigo-600 focus:ring-indigo-500" 
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2 pt-1">
+                          <button 
+                            onClick={() => { setIsCreatingGroup(false); setNewGroupName(''); setNewGroupTarget(''); setNewGroupInvites([]); }}
+                            className="px-4 py-2.5 text-stone-500 hover:bg-indigo-100 rounded-xl font-medium transition-colors text-sm"
+                          >
+                            Cancelar
+                          </button>
+                          <button 
+                            onClick={handleCreateGroup}
+                            disabled={!newGroupName.trim() || !newGroupTarget}
+                            className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors text-sm"
+                          >
+                            Criar Grupo
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {mockGroups.length === 0 && !isCreatingGroup && (
+                      <div className="col-span-2 text-center py-16 bg-gradient-to-b from-indigo-50/50 to-white rounded-3xl border border-dashed border-indigo-200">
+                        <div className="text-5xl mb-3">👥</div>
+                        <p className="text-stone-700 font-bold text-base">Nenhum grupo ainda</p>
+                        <p className="text-sm text-stone-400 mt-1 mb-4">Crie um grupo e convide seus amigos para estudar juntos.</p>
+                        <button
+                          onClick={() => setIsCreatingGroup(true)}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 active:scale-95 transition-all shadow-sm"
+                        >
+                          <Plus size={16} /> Criar meu primeiro grupo
+                        </button>
+                      </div>
+                    )}
+                    {groupsWithProgress.map((group, groupIdx) => {
+                      const bgColors = ['from-indigo-500 to-indigo-600', 'from-purple-500 to-purple-600', 'from-emerald-500 to-emerald-600', 'from-rose-500 to-rose-600', 'from-amber-500 to-amber-600'];
+                      const accentColor = bgColors[group.name.charCodeAt(0) % bgColors.length];
+                      
+                      const groupReads = getGroupReadTimestamps();
+                      const groupLastSeen = groupReads[group.id] || 0;
+                      const hasUnread = group.messages.some(m => new Date(m.timestamp).getTime() > groupLastSeen && m.userEmail !== profile.email);
+
+                      return (
+                      <motion.div
+                        key={group.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: groupIdx * 0.05 }}
+                        onClick={async () => {
+                          setReplyingToId(null);
+                          setMemberReplyText('');
+                          setGroupSubTab('mural');
+                          setEditingMessageId(null);
+                          setNewMessage('');
+                          setIsCreatingPoll(false);
+                          setIsCreatingQuestionBox(false);
+                          
+                          markGroupAsRead(group.id);
+
+                          const { data } = await supabase
+                            .from('community_groups')
+                            .select('id, name, target_id, target_name, members, messages, materials, created_by')
+                            .eq('id', group.id)
+                            .single();
+                          if (data) {
+                            setActiveGroup({
+                              id: data.id,
+                              name: data.name,
+                              targetId: data.target_id,
+                              targetName: data.target_name,
+                              members: parseJSON(data.members),
+                              messages: parseJSON(data.messages),
+                              materials: parseJSON(data.materials),
+                              createdBy: data.created_by
+                            });
+                          } else {
+                            setActiveGroup(group);
+                          }
+                        }}
+                        className={`relative overflow-hidden rounded-2xl border transition-all cursor-pointer group bg-white ${hasUnread ? 'border-indigo-300 shadow-md ring-2 ring-indigo-100' : 'border-stone-200 hover:border-indigo-200 hover:shadow-lg'}`}
+                      >
+                        <div className={`h-1.5 bg-gradient-to-r ${accentColor} w-full`} />
+                        <div className="p-4">
+                        <div className="mb-3">
+                          <div className="flex justify-between items-start">
+                            <h3 className="font-bold text-stone-900 text-base leading-tight group-hover:text-indigo-600 transition-colors pr-2">{group.name}</h3>
+                            {hasUnread && <span className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-sm shrink-0" />}
+                          </div>
+                          <p className="text-xs text-indigo-500 font-medium flex items-center gap-1 mt-0.5">
+                            <BookOpen size={11} /> {group.targetName}
+                          </p>
+                        </div>
+
+                        <div className="mb-3">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[10px] text-stone-400 font-medium">Progresso coletivo</span>
+                            <span className="text-[10px] font-bold text-indigo-600">{group.calculatedProgress}%</span>
+                          </div>
+                          <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                            <div className={`h-full bg-gradient-to-r ${accentColor} rounded-full transition-all duration-700`} style={{ width: `${group.calculatedProgress}%` }} />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 mt-4 pt-4 border-t border-stone-100/60">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="flex -space-x-2 shrink-0">
+                              {group.members.slice(0, 3).map((m, i) => (
+                                <div key={i} className="w-8 h-8 rounded-full bg-stone-100 border-2 border-white flex items-center justify-center text-sm overflow-hidden shadow-sm relative" style={{ zIndex: 10 - i }}>
+                                  {m.avatarUrl ? (
+                                    <img src={m.avatarUrl} alt={m.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <span>{AVATARS.find(a => a.id === m.avatarId)?.emoji || '👤'}</span>
+                                  )}
+                                </div>
+                              ))}
+                              {group.members.length > 3 && (
+                                <div className="w-8 h-8 rounded-full bg-stone-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-stone-500 shadow-sm relative z-0">
+                                  +{group.members.length - 3}
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs text-stone-600 font-bold truncate">
+                                {group.members.map(m => m.email === profile.email ? 'Você' : (m.name?.split(' ')[0] || m.email?.split('@')[0] || 'Usuário')).join(', ')}
+                              </p>
+                              <p className="text-[10px] text-stone-400 mt-0.5">
+                                {group.members.length} {group.members.length === 1 ? 'membro' : 'membros'}
+                              </p>
+                            </div>
+                          </div>
+                          <span className={`text-[10px] font-bold px-3 py-1.5 rounded-xl shrink-0 transition-colors ${hasUnread ? 'text-indigo-700 bg-indigo-100' : 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100'}`}>
+                            {hasUnread ? 'Novas mensagens' : 'Entrar →'}
+                          </span>
+                        </div>
+                        </div>
+                      </motion.div>
+                    );
+                    })}
+                  </div>
+                </div>
+              ) : activeTab === 'prayers' ? (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center px-1 mb-3">
+                    <h4 className="text-sm font-bold text-stone-700 flex items-center gap-2">
+                      <span>🙏</span> Pedidos de Oração
+                      {mockPrayers.length > 0 && <span className="text-xs text-stone-400 font-medium">({mockPrayers.length})</span>}
+                    </h4>
+                    <button 
+                      onClick={() => setIsCreatingPrayer(true)}
+                      className="text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 px-3 py-1.5 rounded-xl active:scale-95 transition-all shadow-sm flex items-center gap-1"
+                    >
+                      <Heart size={12} /> Novo Pedido
+                    </button>
+                  </div>
+
+                  {isCreatingPrayer && (
+                    <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="p-4 bg-rose-50 rounded-2xl border border-rose-100 mb-3">
+                      <h5 className="font-bold text-rose-900 mb-2 text-sm flex items-center gap-2">🙏 Novo Pedido de Oração</h5>
+                      <div className="flex flex-col gap-2">
+                        <textarea 
+                          placeholder="Pelo que devemos orar?..."
+                          value={newPrayerRequest}
+                          onChange={(e) => setNewPrayerRequest(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl border border-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-500/20 resize-none h-20 text-sm bg-white"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={() => setIsCreatingPrayer(false)}
+                            className="px-3 py-2 text-stone-500 hover:bg-rose-100 rounded-xl font-medium text-sm"
+                          >
+                            Cancelar
+                          </button>
+                          <button 
+                            onClick={handleCreatePrayer}
+                            className="px-4 py-2 bg-rose-500 text-white rounded-xl font-bold hover:bg-rose-600 text-sm active:scale-95 transition-all"
+                          >
+                            Publicar
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {mockPrayers.length === 0 && !isCreatingPrayer && (
+                    <div className="text-center py-16 bg-gradient-to-b from-rose-50/50 to-white rounded-3xl border border-dashed border-rose-200">
+                      <div className="text-5xl mb-3">🙏</div>
+                      <p className="text-stone-700 font-bold">Nenhum pedido de oração ainda.</p>
+                      <p className="text-sm text-stone-400 mt-1 mb-4">Compartilhe e a comunidade irá orar com você.</p>
+                      <button
+                        onClick={() => setIsCreatingPrayer(true)}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-rose-500 text-white rounded-xl font-bold text-sm hover:bg-rose-600 active:scale-95 transition-all"
+                      >
+                        <Heart size={15} /> Fazer um Pedido
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    {mockPrayers.map((prayer, idx) => (
+                      <motion.div
+                        key={prayer.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.05 }}
+                        className="relative overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm hover:shadow-md transition-all"
+                      >
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-rose-400 to-rose-500 rounded-l-2xl" />
+                        <div className="pl-5 pr-4 pt-4 pb-3">
+                          <div className="flex items-center gap-2.5 mb-2.5">
+                            <div className="w-8 h-8 rounded-full bg-rose-50 flex items-center justify-center text-sm border border-rose-100 shrink-0">
+                              {prayer.avatarUrl ? <img src={prayer.avatarUrl} alt={prayer.user} className="w-full h-full object-cover rounded-full" referrerPolicy="no-referrer" /> : (AVATARS.find(a => a.id === prayer.avatarId)?.emoji || '👤')}
+                            </div>
+                            <p className="font-bold text-stone-900 text-sm">{prayer.user}</p>
+                          </div>
+                          <p className="text-stone-700 text-sm mb-3 leading-relaxed">{prayer.request}</p>
+                          <div className="flex items-center justify-between border-t border-stone-100 pt-2.5">
+                            <span className="text-xs font-medium text-stone-400 flex items-center gap-1">
+                              <Heart size={11} className="text-rose-400" />
+                              {prayer.prayedCount} {prayer.prayedCount === 1 ? 'pessoa orou' : 'pessoas oraram'}
+                            </span>
+                            {prayer.userId === userId ? (
+                              <span className="text-xs text-stone-400 italic px-3 py-2">seu pedido 🙏</span>
+                            ) : (
+                              <button
+                                onClick={() => handlePray(prayer.id)}
+                                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                                  prayer.hasPrayed
+                                    ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                                    : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50 shadow-sm'
+                                }`}
+                              >
+                                <Heart size={13} className={prayer.hasPrayed ? 'fill-rose-500 text-rose-500' : ''} />
+                                {prayer.hasPrayed ? 'Orei 🙏' : 'Vou orar'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              ) : activeTab === 'friends' ? (
+                <>
+                  {/* Search Bar */}
+                  <div className="flex flex-col sm:flex-row gap-2 mb-6">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+                      <input
+                        type="text"
+                        placeholder="Buscar por nome ou email..."
+                        value={searchQuery}
+                        onChange={(e) => handleSearchInputChange(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                        className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
+                      />
+                      {isSearching && (
+                        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-stone-300 border-t-indigo-500 rounded-full animate-spin" />
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleSearch()}
+                      disabled={isSearching || !searchQuery.trim()}
+                      className="px-5 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 text-sm active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      <Search size={16} />
+                      <span>Buscar</span>
+                    </button>
+                  </div>
+
+                  {/* Search Error / Empty */}
+                  {searchError && searchResults.length === 0 && (
+                    <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="mb-6 text-sm text-stone-500 bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 flex items-center gap-2">
+                      <Search size={15} className="text-stone-400 shrink-0" />
+                      {searchError}
+                    </motion.div>
+                  )}
+
+                  {/* Search Results */}
+                  {searchResults.length > 0 && (
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8 space-y-3">
+                      <div className="flex items-center justify-between px-2">
+                        <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider">Resultados ({searchResults.length})</h4>
+                        <button onClick={() => { setSearchResults([]); setSearchQuery(''); setSearchError(''); }} className="text-xs text-stone-400 hover:text-stone-600 transition-colors font-medium">Limpar</button>
+                      </div>
+                      {searchResults.map((user) => {
+                        const existingConn = connections.find(c => c.user.email === user.email);
+                        const requestSent = user._requestSent || (existingConn?.status === 'pending' && existingConn?.isRequester);
+                        const isAlreadyFriend = existingConn?.status === 'accepted';
+                        return (
+                          <div key={user.email} className="flex items-center justify-between p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-2xl border border-indigo-100 overflow-hidden">
+                                {user.avatarUrl ? (
+                                  <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <span>{AVATARS.find(a => a.id === user.avatarId)?.emoji || '👤'}</span>
+                                )}
+                              </div>
+                              <div>
+                                <p className="font-bold text-stone-900 text-base">{user.name || 'Usuário'}</p>
+                                <p className="text-sm text-stone-500">{user.email}</p>
+                              </div>
+                            </div>
+                            {isAlreadyFriend ? (
+                              <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                                <Check size={13} /> Amigos
+                              </span>
+                            ) : requestSent ? (
+                              <span className="flex items-center gap-1.5 text-xs font-bold text-indigo-500 bg-indigo-100 px-3 py-1.5 rounded-xl">
+                                <Clock size={13} /> Enviado
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleRequestConnection(user.email)}
+                                className="flex items-center gap-2 px-4 py-2 bg-white text-indigo-600 rounded-xl border border-indigo-200 hover:bg-indigo-50 transition-colors font-bold text-sm"
+                              >
+                                <UserPlus size={18} />
+                                <span className="hidden sm:inline">Conectar</span>
                               </button>
                             )}
                           </div>
                         );
                       })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {groupSubTab === 'materiais' && (
-                <div>
-                  {isCurrentUserAdmin && !isAddingMaterial && (
-                    <div className="flex justify-end mb-3">
-                      <button 
-                        onClick={() => setIsAddingMaterial(true)}
-                        className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100"
-                      >
-                        <Plus size={14} /> Adicionar material
-                      </button>
-                    </div>
+                    </motion.div>
                   )}
 
-                  {isAddingMaterial && (
-                    <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-4">
-                      <div className="flex justify-between items-center mb-3">
-                        <h4 className="font-bold text-indigo-900 text-sm">Novo Material</h4>
-                        <button onClick={() => setIsAddingMaterial(false)} className="text-indigo-400 hover:text-indigo-600">
-                          <X size={16} />
-                        </button>
-                      </div>
-                      <div className="space-y-3">
-                        <input 
-                          type="text" 
-                          placeholder="Título (ex: Planilha de Leitura)"
-                          value={materialTitle}
-                          onChange={(e) => setMaterialTitle(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                        />
-                        <input 
-                          type="url" 
-                          placeholder="Link (Google Drive, PDF, etc)"
-                          value={materialUrl}
-                          onChange={(e) => setMaterialUrl(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                        />
-                        <div className="flex justify-end">
-                          <button 
-                            onClick={handleAddMaterial}
-                            disabled={!materialTitle.trim() || !materialUrl.trim()}
-                            className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                          >
-                            Salvar Link
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {(!activeGroup.materials || activeGroup.materials.length === 0) && !isAddingMaterial ? (
-                    <div className="text-center py-10 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
-                      <Paperclip size={28} className="mx-auto text-stone-300 mb-2" />
-                      <p className="text-stone-400 text-sm">Nenhum material adicionado ainda.</p>
-                      {isCurrentUserAdmin && <p className="text-xs text-stone-300 mt-1">Adicione links, PDFs ou vídeos acima.</p>}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {activeGroup.materials?.map(material => (
-                        <div key={material.id} className="flex items-center justify-between p-3 bg-white border border-stone-200 rounded-xl hover:border-indigo-300 hover:shadow-sm transition-all group">
-                          <a href={material.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0">
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                              material.type === 'spreadsheet' ? 'bg-emerald-100 text-emerald-600' :
-                              material.type === 'document' ? 'bg-blue-100 text-blue-600' :
-                              material.type === 'pdf' ? 'bg-rose-100 text-rose-700' :
-                              material.type === 'video' ? 'bg-red-100 text-red-600' :
-                              'bg-stone-100 text-stone-600'
-                            }`}>
-                              {material.type === 'spreadsheet' ? <FileSpreadsheet size={20} /> :
-                               material.type === 'document' ? <FileText size={20} /> :
-                               material.type === 'pdf' ? <FileText size={20} /> :
-                               material.type === 'video' ? <Youtube size={20} /> :
-                               <LinkIcon size={20} />}
+                  {/* Convites Recebidos */}
+                  {connections.some(c => c.status === 'pending' && !c.isRequester) && (
+                    <div className="mb-8 space-y-3">
+                      <h4 className="text-sm font-bold text-rose-700 uppercase tracking-wider px-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-rose-700 animate-pulse" />
+                        Convites Recebidos ({connections.filter(c => c.status === 'pending' && !c.isRequester).length})
+                      </h4>
+                      {connections.filter(c => c.status === 'pending' && !c.isRequester).map((conn) => (
+                        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} key={conn.user.email} className="flex items-center justify-between p-4 bg-rose-50/50 rounded-2xl border border-rose-100 shadow-sm">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-2xl shadow-sm border border-rose-100 overflow-hidden">
+                              {conn.user.avatarUrl ? (
+                                <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <span>{AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'}</span>
+                              )}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-bold text-stone-900 text-sm truncate">{material.title}</p>
-                              <p className="text-xs text-stone-500 truncate flex items-center gap-1">
-                                <ExternalLink size={10} /> Abrir link
-                              </p>
+                            <div>
+                              <p className="font-bold text-stone-900 text-base">{conn.user.name || conn.user.email}</p>
+                              <p className="text-sm text-stone-500">quer se conectar com você</p>
                             </div>
-                          </a>
-                          {isCurrentUserAdmin && (
-                            <button 
-                              onClick={() => handleDeleteMaterial(material.id)}
-                              className="p-2 text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"
-                              title="Remover material"
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleRespond(conn.user.email, 'accepted')}
+                              className="p-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors shadow-sm hover:shadow-md"
+                              title="Aceitar"
                             >
-                              <Trash2 size={16} />
+                              <Check size={20} />
                             </button>
-                          )}
+                            <button
+                              onClick={() => handleRespond(conn.user.email, 'rejected')}
+                              className="p-3 bg-white text-stone-400 border border-stone-200 rounded-xl hover:bg-stone-50 hover:text-rose-700 transition-colors"
+                              title="Recusar"
+                            >
+                              <X size={20} />
+                            </button>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Convites Enviados */}
+                  {connections.some(c => c.status === 'pending' && c.isRequester) && (
+                    <div className="mb-8 space-y-3">
+                      <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider px-2">
+                        Aguardando Resposta ({connections.filter(c => c.status === 'pending' && c.isRequester).length})
+                      </h4>
+                      {connections.filter(c => c.status === 'pending' && c.isRequester).map((conn) => (
+                        <div key={conn.user.email} className="flex items-center justify-between p-4 bg-stone-50 rounded-2xl border border-stone-200">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-2xl border border-stone-200 overflow-hidden">
+                              {conn.user.avatarUrl ? (
+                                <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <span>{AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'}</span>
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-bold text-stone-900 text-base">{conn.user.name || conn.user.email}</p>
+                              <p className="text-sm text-stone-400">Convite enviado</p>
+                            </div>
+                          </div>
+                          <span className="flex items-center gap-1.5 text-xs font-bold text-stone-400 bg-white border border-stone-200 px-3 py-1.5 rounded-xl">
+                            <Clock size={13} /> Pendente
+                          </span>
                         </div>
                       ))}
                     </div>
                   )}
-                </div>
-              )}
 
-              {groupSubTab === 'mural' && (
-              <div>
-                <div className="bg-stone-50 rounded-2xl border border-stone-200 flex flex-col overflow-hidden">
-                  <div ref={muralScrollRef} className="overflow-y-auto space-y-4 p-3 pr-2" style={{ maxHeight: 'min(calc(100svh - 420px), 480px)', minHeight: '160px' }}>
-                    {activeGroup.messages.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-14 gap-2 text-center">
-                        <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-1">
-                          <MessageSquare size={24} className="text-indigo-300" />
-                        </div>
-                        <p className="font-bold text-stone-700 text-sm">O mural está vazio</p>
-                        {isCurrentUserAdmin
-                          ? <p className="text-stone-400 text-xs max-w-[200px]">Escreva o primeiro recado, versículo ou meta para o grupo!</p>
-                          : <p className="text-stone-400 text-xs max-w-[200px]">Quando o administrador postar algo, aparecerá aqui. Você pode reagir e responder às mensagens.</p>
-                        }
+                  {/* Lista de Amigos */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between px-2">
+                      <h4 className="text-sm font-bold text-stone-700 flex items-center gap-2">
+                        <span>✨</span> Meus Amigos
+                        {connections.filter(c => c.status === 'accepted').length > 0 && <span className="text-xs text-stone-400 font-medium">({connections.filter(c => c.status === 'accepted').length})</span>}
+                      </h4>
+                      {isLoadingConnections && <span className="w-4 h-4 border-2 border-stone-200 border-t-indigo-500 rounded-full animate-spin" />}
+                    </div>
+                    {connections.filter(c => c.status === 'accepted').length === 0 ? (
+                      <div className="text-center py-14 bg-gradient-to-b from-indigo-50/40 to-white rounded-3xl border border-dashed border-indigo-200">
+                        <div className="text-5xl mb-3">✨</div>
+                        <p className="text-stone-700 font-bold">Nenhum amigo conectado ainda.</p>
+                        <p className="text-sm text-stone-400 mt-1">Busque por nome ou email acima para começar.</p>
                       </div>
                     ) : (
-                      (() => {
-                        const pinned = activeGroup.messages.filter(m => m.isPinned);
-                        const rest = activeGroup.messages.filter(m => !m.isPinned).sort((a, b) => a.id - b.id);
-                        const sorted = [...pinned, ...rest];
-
-                        return sorted.map(msg => {
-                          const parentMsg = msg.type === 'member_reply' && msg.replyToId
-                            ? activeGroup.messages.find(m => m.id === msg.replyToId)
-                            : null;
-
-                        return (
-                        <div key={msg.id} className={`flex gap-2.5 ${msg.type === 'member_reply' ? 'pl-6' : ''}`}>
-                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-sm border border-stone-200 shrink-0 overflow-hidden mt-0.5">
-                            {msg.avatarUrl ? (
-                              <img src={msg.avatarUrl} alt={msg.user} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              <span>{AVATARS.find(a => a.id === msg.avatarId)?.emoji || '👤'}</span>
-                            )}
-                          </div>
-
-                          <div className={`flex-1 min-w-0 px-3 py-2.5 rounded-2xl rounded-tl-none border ${
-                            msg.isPinned ? 'bg-amber-50 border-amber-200' :
-                            msg.type === 'verse' ? 'bg-indigo-50 border-indigo-100' :
-                            msg.type === 'goal' ? 'bg-emerald-50 border-emerald-100' :
-                            msg.type === 'member_reply' ? 'bg-stone-50 border-stone-200' :
-                            'bg-white border-stone-100'
-                          }`}>
-
-                            {parentMsg && (
-                              <div className="mb-2 px-2 py-1.5 bg-white border-l-2 border-indigo-300 rounded-r-lg">
-                                <p className="text-[10px] font-bold text-indigo-500 mb-0.5">{parentMsg.user}</p>
-                                <p className="text-xs text-stone-500 leading-snug line-clamp-2">
-                                  {parentMsg.type === 'poll' ? `📊 ${parentMsg.poll?.question}` :
-                                   parentMsg.type === 'question_box' ? `❓ ${parentMsg.questionBox?.question}` :
-                                   parentMsg.text}
-                                </p>
-                              </div>
-                            )}
-
-                            <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                                <span className="font-bold text-stone-900 text-sm leading-none">{msg.user}</span>
-                                {msg.type === 'verse' && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-bold">Versículo</span>}
-                                {msg.type === 'goal' && <span className="text-[10px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full font-bold">Meta</span>}
-                                {msg.type === 'member_reply' && <span className="text-[10px] bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded-full font-bold">Resposta</span>}
-                                {msg.isPinned && <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5"><Pin size={9} /> Fixado</span>}
-                              </div>
-                              <span className="text-[10px] text-stone-400 shrink-0" title={new Date(msg.timestamp).toLocaleString('pt-BR')}>
-                                {formatRelativeTime(msg.timestamp)}
-                              </span>
-                            </div>
-                            
-                            {msg.type === 'poll' && msg.poll ? (
-                              <div className="mt-2 space-y-2">
-                                <p className="font-bold text-stone-800 text-sm mb-3">{msg.poll.question}</p>
-                                {msg.poll.options.map(opt => {
-                                  const totalVotes = msg.poll!.options.reduce((sum, o) => sum + o.votes.length, 0);
-                                  const percentage = totalVotes === 0 ? 0 : Math.round((opt.votes.length / totalVotes) * 100);
-                                  const hasVoted = msg.poll!.options.some(o => o.votes.includes(profile.email || 'me'));
-                                  const votedForThis = opt.votes.includes(profile.email || 'me');
-
-                                  return (
-                                    <div key={opt.id} className="relative">
-                                      <button
-                                        onClick={() => handleVote(msg.id, opt.id)}
-                                        title={votedForThis ? 'Clique para remover seu voto' : ''}
-                                        className={`w-full text-left p-2 rounded-xl border text-sm relative overflow-hidden transition-all z-10 ${
-                                          votedForThis ? 'border-indigo-500 bg-indigo-50/50' : 'border-stone-200 hover:border-indigo-300 bg-white'
-                                        }`}
-                                      >
-                                        <div className="flex justify-between items-center relative z-20 gap-2">
-                                          <span className={votedForThis ? 'font-bold text-indigo-900' : 'text-stone-700'}>{opt.text}</span>
-                                          <div className="flex items-center gap-1.5 shrink-0">
-                                            {hasVoted && <span className="text-stone-500 font-medium">{percentage}%</span>}
-                                            {votedForThis && <span className="text-[10px] text-indigo-400 font-medium hidden sm:inline">(clique para desvotar)</span>}
-                                          </div>
-                                        </div>
-                                        {hasVoted && (
-                                          <div 
-                                            className="absolute left-0 top-0 bottom-0 bg-indigo-100/50 z-0 transition-all duration-500"
-                                            style={{ width: `${percentage}%` }}
-                                          />
-                                        )}
-                                      </button>
-                                      {isCurrentUserAdmin && hasVoted && opt.votes.length > 0 && (
-                                        <div className="text-[10px] text-stone-400 mt-1 ml-2">
-                                          Votos: {opt.votes.map(email => activeGroup.members.find(m => m.email === email)?.name || email).join(', ')}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                                {isCurrentUserAdmin && (
-                                  <div className="mt-3 pt-3 border-t border-stone-100/50 text-xs text-stone-500">
-                                    <span className="font-bold">Faltam votar: </span>
-                                    {activeGroup.members
-                                      .filter(m => !msg.poll!.options.some(o => o.votes.includes(m.email)))
-                                      .map(m => m.name)
-                                      .join(', ') || 'Todos votaram!'}
-                                  </div>
-                                )}
-                              </div>
-                            ) : msg.type === 'question_box' && msg.questionBox ? (
-                              <div className="mt-2 space-y-3">
-                                <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
-                                  <p className="font-bold text-indigo-900 text-sm flex items-center gap-2">
-                                    <HelpCircle size={16} className="text-indigo-500" />
-                                    {msg.questionBox.question}
-                                  </p>
-                                  <p className="text-xs text-indigo-400 mt-1.5">
-                                    {msg.questionBox.answers.length === 0
-                                      ? 'Nenhuma resposta ainda — seja o primeiro!'
-                                      : `${msg.questionBox.answers.length} ${msg.questionBox.answers.length === 1 ? 'resposta' : 'respostas'} recebidas`}
-                                  </p>
-                                </div>
-                                
-                                {!msg.questionBox.answers.some(ans => ans.userEmail === (profile.email || 'me')) && (
-                                  <div className="flex gap-2">
-                                    <input 
-                                      type="text" 
-                                      placeholder="Sua resposta..."
-                                      value={questionBoxAnswers[msg.id] || ''}
-                                      onChange={(e) => setQuestionBoxAnswers(prev => ({ ...prev, [msg.id]: e.target.value }))}
-                                      onKeyDown={(e) => e.key === 'Enter' && handleAnswerQuestionBox(msg.id)}
-                                      className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                    />
-                                    <button 
-                                      onClick={() => handleAnswerQuestionBox(msg.id)}
-                                      disabled={!(questionBoxAnswers[msg.id] || '').trim()}
-                                      className="px-3 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                                    >
-                                      <Send size={16} />
-                                    </button>
-                                  </div>
-                                )}
-
-                                {msg.questionBox.answers.some(ans => ans.userEmail === (profile.email || 'me')) && !isCurrentUserAdmin && (
-                                  <div className="text-sm text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 p-2 rounded-lg border border-emerald-100">
-                                    <Check size={14} /> Resposta enviada!
-                                  </div>
-                                )}
-
-                                {isCurrentUserAdmin && (
-                                  <div className="mt-4 space-y-2">
-                                    <p className="text-xs font-bold text-stone-500 uppercase tracking-wider">Respostas ({msg.questionBox.answers.length})</p>
-                                    {msg.questionBox.answers.length === 0 ? (
-                                      <p className="text-sm text-stone-400 italic">Nenhuma resposta ainda.</p>
-                                    ) : (
-                                      <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                                        {msg.questionBox.answers.map((ans, idx) => (
-                                          <div key={idx} className="bg-white border border-stone-100 p-2.5 rounded-xl text-sm">
-                                            <div className="flex items-center gap-1.5 mb-1">
-                                              <span className="font-bold text-stone-800 text-xs">{ans.userName}</span>
-                                              <span className="text-[10px] text-stone-400">{formatRelativeTime(ans.timestamp)}</span>
-                                            </div>
-                                            <p className="text-stone-600">{ans.text}</p>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <p className={`text-sm ${msg.type === 'verse' ? 'font-serif italic text-indigo-900 text-lg text-center my-4' : msg.type === 'goal' ? 'font-bold text-emerald-800' : 'text-stone-700'}`}>
-                                {msg.type === 'verse' && '"'}{msg.text}{msg.type === 'verse' && '"'}
-                              </p>
-                            )}
-
-                            <div className="mt-2.5 flex items-center justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {msg.reactions && msg.reactions.map(reaction => {
-                                  const hasReacted = reaction.users.includes(profile.email || 'me');
-                                  return (
-                                    <div key={reaction.emoji} className="relative group/reaction">
-                                      <button
-                                        onClick={() => handleReact(msg.id, reaction.emoji)}
-                                        className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs border transition-colors ${
-                                          hasReacted ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
-                                        }`}
-                                      >
-                                        <span>{reaction.emoji}</span>
-                                        <span className="font-medium">{reaction.users.length}</span>
-                                      </button>
-                                      {isCurrentUserAdmin && (
-                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover/reaction:block z-20 w-max max-w-[200px] bg-stone-800 text-white text-[10px] p-2 rounded-lg shadow-xl">
-                                          <p className="font-bold mb-1 border-b border-stone-600 pb-1">Reagiram com {reaction.emoji}</p>
-                                          <p>{reaction.users.map(email => activeGroup.members.find(m => m.email === email)?.name || email).join(', ')}</p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-
-                                <div className="relative">
-                                  <button
-                                    onClick={() => setShowReactionMenu(showReactionMenu === msg.id ? null : msg.id)}
-                                    className="w-7 h-7 flex items-center justify-center text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors"
-                                  >
-                                    <Smile size={15} />
-                                  </button>
-                                  {showReactionMenu === msg.id && (
-                                    <div className="absolute bottom-full left-0 mb-1 bg-white border border-stone-200 shadow-xl rounded-full px-2 py-1 flex gap-1 z-20">
-                                      {['🙏', '✨', '🔥', '❤️', '👏'].map(emoji => (
-                                        <button
-                                          key={emoji}
-                                          onClick={() => handleReact(msg.id, emoji)}
-                                          className="w-8 h-8 flex items-center justify-center hover:bg-stone-100 rounded-full text-lg transition-transform hover:scale-110"
-                                        >
-                                          {emoji}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-
-                                {!isCurrentUserAdmin && msg.type !== 'member_reply' && (
-                                  <button
-                                    onClick={() => {
-                                      setReplyingToId(replyingToId === msg.id ? null : msg.id);
-                                      setMemberReplyText('');
-                                    }}
-                                    className="w-7 h-7 flex items-center justify-center text-stone-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors"
-                                    title="Responder"
-                                  >
-                                    <MessageSquare size={14} />
-                                  </button>
-                                )}
-                              </div>
-
-                              {isCurrentUserAdmin && msg.type !== 'member_reply' && (
-                                <div className="flex items-center gap-0.5 shrink-0">
-                                  <button
-                                    onClick={() => handlePinMessage(msg.id)}
-                                    className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${msg.isPinned ? 'text-amber-500 bg-amber-50' : 'text-stone-300 hover:text-amber-400 hover:bg-stone-100'}`}
-                                    title={msg.isPinned ? 'Desfixar' : 'Fixar'}
-                                  ><Pin size={15} /></button>
-                                  <button
-                                    onClick={() => handleEditMessageClick(msg)}
-                                    className="w-8 h-8 flex items-center justify-center text-stone-300 hover:text-indigo-400 hover:bg-stone-100 rounded-lg transition-colors"
-                                    title="Editar"
-                                  ><Edit2 size={15} /></button>
-                                  <button
-                                    onClick={() => handleDeleteMessage(msg.id)}
-                                    className="w-8 h-8 flex items-center justify-center text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
-                                    title="Excluir"
-                                  ><Trash2 size={15} /></button>
-                                </div>
-                              )}
-                              {isCurrentUserAdmin && msg.type === 'member_reply' && (
-                                <button
-                                  onClick={() => handleDeleteMessage(msg.id)}
-                                  className="w-8 h-8 flex items-center justify-center text-stone-300 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
-                                  title="Excluir resposta"
-                                ><Trash2 size={15} /></button>
-                              )}
-                            </div>
-
-                            {replyingToId === msg.id && !isCurrentUserAdmin && (
-                              <div className="mt-2.5 flex gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="Sua resposta..."
-                                  value={memberReplyText}
-                                  autoFocus
-                                  onChange={(e) => setMemberReplyText(e.target.value)}
-                                  onKeyDown={(e) => e.key === 'Enter' && handleMemberReply()}
-                                  className="flex-1 px-3 py-1.5 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                />
-                                <button
-                                  onClick={handleMemberReply}
-                                  disabled={!memberReplyText.trim()}
-                                  className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-xs font-bold"
-                                >
-                                  <Send size={14} />
-                                </button>
-                                <button
-                                  onClick={() => { setReplyingToId(null); setMemberReplyText(''); }}
-                                  className="px-2 py-1.5 text-stone-400 hover:text-stone-600 rounded-xl transition-colors"
-                                >
-                                  <X size={14} />
-                                </button>
-                              </div>
-                            )}
-
-                          </div>
-                        </div>
-                        );
-                      });
-                      })()
-                    )}
-                  </div>
-                  
-                  {isCreatingPoll ? (
-                    <div className="bg-white border border-indigo-200 rounded-2xl p-4 shadow-sm">
-                      <div className="flex justify-between items-center mb-3">
-                        <h4 className="font-bold text-indigo-900 text-sm flex items-center gap-2">
-                          <BarChart2 size={16} /> Criar Enquete
-                        </h4>
-                        <button onClick={() => setIsCreatingPoll(false)} className="text-stone-400 hover:text-stone-600">
-                          <X size={16} />
-                        </button>
-                      </div>
-                      <input 
-                        type="text" 
-                        placeholder="Pergunta da enquete..."
-                        value={pollQuestion}
-                        onChange={(e) => setPollQuestion(e.target.value)}
-                        className="w-full px-3 py-2 mb-3 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium"
-                      />
-                      <div className="space-y-2 mb-3">
-                        {pollOptions.map((opt, idx) => (
-                          <div key={idx} className="flex gap-2">
-                            <input 
-                              type="text" 
-                              placeholder={`Opção ${idx + 1}`}
-                              value={opt}
-                              onChange={(e) => {
-                                const newOpts = [...pollOptions];
-                                newOpts[idx] = e.target.value;
-                                setPollOptions(newOpts);
-                              }}
-                              className="flex-1 px-3 py-1.5 bg-white border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                            />
-                            {pollOptions.length > 2 && (
-                              <button 
-                                onClick={() => setPollOptions(pollOptions.filter((_, i) => i !== idx))}
-                                className="p-1.5 text-stone-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
-                              >
-                                <X size={14} />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <button 
-                          onClick={() => setPollOptions([...pollOptions, ''])}
-                          className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
-                        >
-                          <Plus size={12} /> Adicionar Opção
-                        </button>
-                        <button 
-                          onClick={handleCreatePoll}
-                          disabled={!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2}
-                          className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                        >
-                          Publicar
-                        </button>
-                      </div>
-                    </div>
-                  ) : isCreatingQuestionBox ? (
-                    <div className="bg-white border border-indigo-200 rounded-2xl p-4 shadow-sm">
-                      <div className="flex justify-between items-center mb-3">
-                        <h4 className="font-bold text-indigo-900 text-sm flex items-center gap-2">
-                          <HelpCircle size={16} /> Caixinha de Pergunta
-                        </h4>
-                        <button onClick={() => setIsCreatingQuestionBox(false)} className="text-stone-400 hover:text-stone-600">
-                          <X size={16} />
-                        </button>
-                      </div>
-                      <input 
-                        type="text" 
-                        placeholder="Faça uma pergunta ao grupo..."
-                        value={questionBoxText}
-                        onChange={(e) => setQuestionBoxText(e.target.value)}
-                        className="w-full px-3 py-2 mb-3 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium"
-                      />
-                      <div className="flex justify-end">
-                        <button 
-                          onClick={handleCreateQuestionBox}
-                          disabled={!questionBoxText.trim()}
-                          className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                        >
-                          Publicar
-                        </button>
-                      </div>
-                    </div>
-                  ) : isCurrentUserAdmin ? (
-                    <div className="bg-white border-t border-stone-200 rounded-b-2xl overflow-hidden">
-                      {editingMessageId && (
-                        <div className="flex items-center justify-between px-3 py-2 bg-indigo-50 text-indigo-700 text-xs font-bold border-b border-indigo-100">
-                          <span>Editando publicação...</span>
-                          <button onClick={() => { setEditingMessageId(null); setNewMessage(''); setPostType('text'); }} className="hover:text-indigo-900"><X size={14} /></button>
-                        </div>
-                      )}
-
-                      {!editingMessageId && (
-                        <div className="flex border-b border-stone-100">
-                          {[
-                            { type: 'text', label: 'Recado', icon: MessageSquare, active: 'bg-stone-100 text-stone-900', inactive: 'text-stone-400' },
-                            { type: 'verse', label: 'Versículo', icon: BookOpen, active: 'bg-indigo-50 text-indigo-700', inactive: 'text-stone-400' },
-                            { type: 'goal', label: 'Meta', icon: Target, active: 'bg-emerald-50 text-emerald-700', inactive: 'text-stone-400' },
-                          ].map(({ type, label, icon: Icon, active, inactive }) => (
-                            <button
-                              key={type}
-                              onClick={() => setPostType(type as any)}
-                              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-bold transition-colors ${postType === type ? active : inactive + ' hover:bg-stone-50'}`}
-                            >
-                              <Icon size={13} />
-                              <span>{label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="p-2 space-y-2">
-                        <textarea
-                          rows={2}
-                          placeholder={
-                            postType === 'verse' ? "Digite o versículo em destaque..." :
-                            postType === 'goal' ? "Defina a meta da semana para o grupo..." :
-                            "Escreva um recado para o grupo..."
-                          }
-                          value={newMessage}
-                          onChange={(e) => setNewMessage(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && e.metaKey && handleSendMessage()}
-                          className="w-full px-3 py-2.5 bg-stone-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-none leading-relaxed"
-                        />
-                        <div className="flex items-center justify-between">
-                          {!editingMessageId ? (
-                            <div className="flex gap-1">
-                              <button
-                                onClick={() => setIsCreatingPoll(true)}
-                                className="p-2 text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                title="Criar Enquete"
-                              >
-                                <BarChart2 size={17} />
-                              </button>
-                              <button
-                                onClick={() => setIsCreatingQuestionBox(true)}
-                                className="p-2 text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                title="Caixinha de Pergunta"
-                              >
-                                <HelpCircle size={17} />
-                              </button>
-                            </div>
-                          ) : <div />}
-                          <button
-                            onClick={handleSendMessage}
-                            disabled={!newMessage.trim()}
-                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 disabled:opacity-40 transition-all"
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {connections.filter(c => c.status === 'accepted').map((conn, idx) => (
+                          <motion.div
+                            key={conn.user.email}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: idx * 0.05 }}
+                            className="flex items-center justify-between p-4 bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all group"
                           >
-                            <Send size={14} /> Publicar
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-white border-t border-stone-200 rounded-b-2xl px-4 py-3 flex items-center gap-2 text-stone-500">
-                      <div className="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
-                        <MessageSquare size={13} className="text-indigo-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-stone-600">
-                          Use o botão <span className="font-bold text-stone-800">↩ Responder</span> em qualquer mensagem para participar.
-                        </p>
-                        {(() => {
-                          const myReplies = activeGroup.messages.filter(m => m.type === 'member_reply' && m.userEmail === (profile.email || 'me')).length;
-                          return myReplies > 0 ? (
-                            <p className="text-[10px] text-indigo-500 font-medium mt-0.5">Você participou {myReplies} vez{myReplies > 1 ? 'es' : ''} neste grupo.</p>
-                          ) : null;
-                        })()}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              )}
-
-              <div className="pt-2 flex justify-center">
-                {isCurrentUserAdmin ? (
-                  <button 
-                    onClick={handleDeleteGroup}
-                    className="flex items-center gap-1.5 text-stone-400 hover:text-rose-700 text-xs px-3 py-1.5 hover:bg-rose-50 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={13} /> Excluir grupo
-                  </button>
-                ) : (
-                  <button 
-                    onClick={handleLeaveGroup}
-                    className="flex items-center gap-1.5 text-stone-400 hover:text-rose-700 text-xs px-3 py-1.5 hover:bg-rose-50 rounded-lg transition-colors"
-                  >
-                    <LogOut size={13} /> Sair do grupo
-                  </button>
-                )}
-              </div>
-
-              {showInviteModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                  <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
-                    <h3 className="font-bold text-stone-900 text-lg mb-4">Convidar Amigos</h3>
-                    <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
-                      {connections.filter(c => c.status === 'accepted' && !activeGroup?.members.some(m => m.email === c.user.email)).length === 0 ? (
-                        <p className="text-stone-500 text-sm text-center py-4">Todos os seus amigos já estão no grupo.</p>
-                      ) : (
-                        connections.filter(c => c.status === 'accepted' && !activeGroup?.members.some(m => m.email === c.user.email)).map(conn => (
-                          <label key={conn.user.email} className="flex items-center justify-between p-2 hover:bg-stone-50 rounded-xl cursor-pointer">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center overflow-hidden">
+                              <div className="w-11 h-11 rounded-full bg-stone-50 flex items-center justify-center text-xl border border-stone-200 overflow-hidden shrink-0">
                                 {conn.user.avatarUrl ? (
                                   <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                 ) : (
-                                  AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
+                                  <span>{AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'}</span>
                                 )}
                               </div>
-                              <span className="font-medium text-stone-900">{conn.user.name}</span>
-                            </div>
-                            <input
-                              type="checkbox"
-                              className="w-5 h-5 rounded border-stone-300 text-indigo-600 focus:ring-indigo-500"
-                              checked={inviteModalSelected.includes(conn.user.email)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setInviteModalSelected(prev => [...prev, conn.user.email]);
-                                } else {
-                                  setInviteModalSelected(prev => prev.filter(em => em !== conn.user.email));
-                                }
-                              }}
-                            />
-                          </label>
-                        ))
-                      )}
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => { setShowInviteModal(false); setInviteModalSelected([]); }} className="px-4 py-2 text-stone-500 font-medium">Cancelar</button>
-                      <button
-                        onClick={handleSendGroupInvites}
-                        disabled={inviteModalSelected.length === 0}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50"
-                      >
-                        Enviar {inviteModalSelected.length > 0 ? `(${inviteModalSelected.length})` : ''}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-                  </>
-            </motion.div>
-          ) : activeTab === 'feed' && (
-            <div className="space-y-2">
-              <h4 className="text-[11px] font-bold text-stone-400 uppercase tracking-wider px-1 mb-3">⚡ Atividades Recentes</h4>
-              {mockFeed.length === 0 ? (
-                <div className="text-center py-16 bg-gradient-to-b from-stone-50 to-white rounded-3xl border border-dashed border-stone-200">
-                  <div className="text-4xl mb-3">⚡</div>
-                  <p className="text-stone-600 font-bold">Nenhuma atividade ainda.</p>
-                  <p className="text-sm text-stone-400 mt-1 mb-4">As ações da comunidade aparecerão aqui.</p>
-                </div>
-              ) : mockFeed.map((item, idx) => {
-                const isVerse = item.action.includes('versículo') || item.action.includes('leu');
-                const isPrayer = item.action.includes('oração') || item.action.includes('orou');
-                const isTrophy = item.action.includes('pontos') || item.action.includes('conquist');
-                const dotColor = isPrayer ? 'bg-rose-400' : isTrophy ? 'bg-amber-400' : 'bg-indigo-400';
-                return (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, x: -12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.04 }}
-                    className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-stone-100 hover:border-indigo-100 hover:shadow-sm transition-all"
-                  >
-                    <div className="relative shrink-0">
-                      <div className="w-9 h-9 rounded-full bg-stone-50 flex items-center justify-center text-base border border-stone-200 overflow-hidden">
-                        {AVATARS.find(a => a.id === item.avatarId)?.emoji || '👤'}
-                      </div>
-                      <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${dotColor}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-stone-800 text-sm leading-snug">
-                        <span className="font-bold text-stone-900">{item.user}</span>{' '}
-                        <span className="text-stone-600">{item.action}</span>
-                      </p>
-                      <p className="text-[11px] text-stone-400 flex items-center gap-1 mt-0.5">
-                        <Clock size={9} /> {item.time}
-                      </p>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-          )}
-
-          {activeTab === 'ranking' && (() => {
-            const weekStr = (() => {
-              const now = new Date();
-              const start = new Date(now.getFullYear(), 0, 1);
-              const week = Math.ceil(((now.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7);
-              return `${now.getFullYear()}-W${week}`;
-            })();
-
-            const userSeed = (profile.email || 'anon').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-            const leagueNames = ['Liga Ouro ✨', 'Liga Prata 🥈', 'Liga Bronze 🥉', 'Liga Esmeralda 💚', 'Liga Safira 💎'];
-            const leagueName = leagueNames[userSeed % leagueNames.length];
-
-            const myPoints = profile.points;
-            const fakeNames = ['Maria G.','João P.','Ana L.','Carlos M.','Lucia F.','Pedro H.','Teresa A.','Paulo R.','Clara S.','Francisco B.','Beatriz N.','Mateus C.','Rosa O.','André V.','Isabel T.','Lucas D.','Cecília M.','Marcos F.','Helena R.','Gabriel S.'];
-            const fakeAvatars = ['livro','cruz','peixe','rosario','pomba','estrela','vela','espiga','ancora','chave'];
-
-            const leagueRival = (idx: number) => {
-              const seed = (userSeed * 13 + idx * 7 + weekStr.length) % 100;
-              const spread = Math.floor(myPoints * 0.6);
-              const pts = Math.max(10, myPoints + Math.floor((seed - 50) / 50 * spread));
-              return {
-                id: `rival-${idx}`,
-                name: fakeNames[(userSeed + idx) % fakeNames.length],
-                avatarId: fakeAvatars[(userSeed + idx) % fakeAvatars.length],
-                points: pts,
-                isMe: false,
-              };
-            };
-
-            const myEntry = { id: 'me', name: profile.name, avatarId: profile.avatarId || 'cruz', avatarUrl: profile.avatarUrl, points: myPoints, isMe: true };
-
-            const realOthers = mockRanking.filter(u => u.id !== (userId || '') && u.id !== 'me').slice(0, 8).map(u => ({ ...u, isMe: false }));
-            const fakeCount = Math.max(0, 19 - realOthers.length);
-            const fakeRivals = Array.from({ length: fakeCount }, (_, i) => leagueRival(i));
-            const allEntries = [...realOthers, ...fakeRivals, myEntry].sort((a, b) => b.points - a.points).slice(0, 20);
-            const myPosition = allEntries.findIndex(e => e.isMe) + 1;
-
-            const now = new Date();
-            const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
-            const deadline = new Date(now);
-            deadline.setDate(now.getDate() + daysUntilSunday);
-            deadline.setHours(23, 59, 0, 0);
-            const hoursLeft = Math.floor((deadline.getTime() - now.getTime()) / 3600000);
-
-            return (
-              <div className="space-y-4">
-                <div className="bg-gradient-to-r from-indigo-600 to-purple-700 rounded-2xl p-4 text-white">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <p className="text-indigo-200 text-[10px] font-bold uppercase tracking-widest mb-0.5">Sua Liga esta Semana</p>
-                      <h3 className="font-bold text-lg">{leagueName}</h3>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-indigo-200 text-[10px] font-medium">Encerra em</p>
-                      <p className="font-bold text-sm">{hoursLeft}h</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 bg-white/10 rounded-xl px-3 py-2">
-                    <Trophy size={16} className="text-yellow-300 shrink-0" />
-                    <p className="text-xs text-white/90">
-                      <span className="font-bold">Top 5 sobem de liga</span> · <span className="text-white/70">Últimos 5 descem</span>
-                    </p>
-                  </div>
-                </div>
-
-                {allEntries.length >= 3 && (
-                  <div className="flex items-end justify-center gap-2 mb-2">
-                    {[allEntries[1], allEntries[0], allEntries[2]].map((u, i) => {
-                      const podiumPos = [2, 1, 3][i];
-                      const heights = ['h-16', 'h-20', 'h-14'];
-                      const colors = ['bg-stone-200', 'bg-amber-400', 'bg-orange-300'];
-                      return (
-                        <div key={u.id} className="flex flex-col items-center gap-1">
-                          <div className={`w-9 h-9 rounded-full border-2 ${u.isMe ? 'border-indigo-500' : 'border-white'} overflow-hidden bg-stone-100 flex items-center justify-center text-sm`}>
-                            {(u as any).avatarUrl ? <img src={(u as any).avatarUrl} className="w-full h-full object-cover" /> : AVATARS.find(a => a.id === u.avatarId)?.emoji || '👤'}
-                          </div>
-                          <p className="text-[9px] font-bold text-stone-700 max-w-[56px] text-center truncate">{u.isMe ? 'Você' : u.name.split(' ')[0]}</p>
-                          <div className={`w-14 ${heights[i]} ${colors[i]} rounded-t-lg flex items-start justify-center pt-1`}>
-                            <span className="font-black text-white text-sm">{podiumPos}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div className="space-y-1.5">
-                  {allEntries.map((user, idx) => {
-                    const pos = idx + 1;
-                    const isPromotion = pos <= 5;
-                    const isRelegation = pos > 15;
-                    return (
-                      <div key={user.id} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${
-                        user.isMe ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-200' :
-                        isPromotion ? 'bg-emerald-50/50 border-emerald-100' :
-                        isRelegation ? 'bg-red-50/30 border-red-100' :
-                        'bg-white border-stone-100'
-                      }`}>
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
-                          pos === 1 ? 'bg-amber-400 text-amber-900' :
-                          pos === 2 ? 'bg-stone-300 text-stone-800' :
-                          pos === 3 ? 'bg-orange-300 text-orange-900' :
-                          isPromotion ? 'bg-emerald-100 text-emerald-700' :
-                          isRelegation ? 'bg-red-100 text-red-600' :
-                          'bg-stone-100 text-stone-500'
-                        }`}>{pos}</div>
-                        <div className="w-8 h-8 rounded-full bg-stone-50 flex items-center justify-center text-base border border-stone-100 overflow-hidden shrink-0">
-                          {(user as any).avatarUrl ? <img src={(user as any).avatarUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : AVATARS.find(a => a.id === user.avatarId)?.emoji || '👤'}
-                        </div>
-                        <p className={`flex-1 font-bold text-sm truncate ${user.isMe ? 'text-indigo-700' : 'text-stone-900'}`}>
-                          {user.isMe ? `${user.name} (você)` : user.name}
-                        </p>
-                        {isPromotion && pos > myPosition && <span className="text-[9px] text-emerald-600 font-bold mr-1">↑ sobe</span>}
-                        {isRelegation && <span className="text-[9px] text-red-500 font-bold mr-1">↓</span>}
-                        <div className={`font-mono font-bold text-sm ${user.isMe ? 'text-indigo-600' : 'text-stone-500'}`}>
-                          {user.points} pts
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {myPosition > 5 && (
-                  <p className="text-center text-xs text-stone-500 bg-amber-50 border border-amber-100 rounded-xl py-2.5 px-4">
-                    🎯 Você está na {myPosition}ª posição. Precisa de <strong>{allEntries[4].points - myPoints + 1} pts</strong> para entrar no top 5!
-                  </p>
-                )}
-              </div>
-            );
-          })()}
-
-          {activeTab === 'groups' && !activeGroup && (
-            <div className="space-y-4">
-              {mockGroupInvites.length > 0 && (
-                <div className="mb-6 space-y-3">
-                  <h4 className="text-sm font-bold text-rose-700 uppercase tracking-wider px-2 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-rose-700 animate-pulse"></span>
-                    Convites de Grupo
-                  </h4>
-                  {mockGroupInvites.map((invite) => (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 8 }} 
-                      animate={{ opacity: 1, y: 0 }} 
-                      key={invite.id} 
-                      className="relative overflow-hidden rounded-2xl border border-indigo-100 shadow-sm bg-white"
-                    >
-                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-t-2xl" />
-                      
-                      <div className="p-4 pt-5">
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className="w-11 h-11 rounded-2xl bg-indigo-50 flex items-center justify-center text-2xl border border-indigo-100 flex-shrink-0">
-                            {AVATARS.find(a => a.id === invite.fromAvatarId)?.emoji || '👤'}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs text-stone-400 font-medium mb-0.5">Convite recebido de</p>
-                            <p className="font-bold text-stone-900 text-sm leading-tight">
-                              {invite.from}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="bg-indigo-50 rounded-xl px-3 py-2.5 flex items-center gap-2.5 mb-4">
-                          <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <Users size={14} className="text-white" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-bold text-indigo-700 text-sm truncate">{invite.groupName}</p>
-                            <p className="text-xs text-indigo-400 flex items-center gap-1">
-                              <BookOpen size={10} /> {invite.targetName}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => handleAcceptGroupInvite(invite.id)}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 active:scale-95 transition-all text-sm font-bold shadow-sm"
-                          >
-                            <Check size={16} /> Entrar no grupo
-                          </button>
-                          <button 
-                            onClick={() => handleRejectGroupInvite(invite.id)}
-                            className="px-3.5 py-2.5 bg-stone-100 text-stone-500 rounded-xl hover:bg-stone-200 hover:text-stone-700 active:scale-95 transition-all flex items-center gap-1.5 text-sm font-medium"
-                          >
-                            <X size={15} /> Recusar
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex justify-between items-center px-2 mb-4">
-                <h4 className="text-sm font-bold text-stone-700 flex items-center gap-2">
-                  <span>👥</span> Meus Grupos
-                  {mockGroups.length > 0 && <span className="text-xs font-medium text-stone-400">({mockGroups.length})</span>}
-                </h4>
-                <button 
-                  onClick={() => setIsCreatingGroup(true)}
-                  className="flex items-center gap-1.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2 rounded-xl shadow-sm active:scale-95 transition-all"
-                >
-                  <Plus size={15} /> Criar Grupo
-                </button>
-              </div>
-              
-              {isCreatingGroup && (
-                <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 mb-4">
-                  <h5 className="font-bold text-indigo-900 mb-3 text-base">Criar Novo Grupo</h5>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-bold text-indigo-900 mb-1">Nome do Grupo</label>
-                      <input 
-                        type="text" 
-                        placeholder="Ex: Jovens Sarados..."
-                        value={newGroupName}
-                        onChange={(e) => setNewGroupName(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white text-sm"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-xs font-bold text-indigo-900 mb-1">O que vão estudar?</label>
-                      <select 
-                        value={newGroupTarget}
-                        onChange={(e) => setNewGroupTarget(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white text-sm"
-                      >
-                        <option value="">Selecione um livro ou trilha...</option>
-                        <optgroup label="Trilhas">
-                          <option value="beginner">Trilha do Discípulo (Iniciantes)</option>
-                        </optgroup>
-                        <optgroup label="Livros da Bíblia">
-                          {BIBLE_BOOKS.map(book => (
-                            <option key={book.id} value={book.id}>{book.name}</option>
-                          ))}
-                        </optgroup>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-indigo-900 mb-1">Convidar Amigos</label>
-                      {connections.filter(c => c.status === 'accepted').length === 0 ? (
-                        <p className="text-xs text-stone-400 italic px-1">Você ainda não tem amigos adicionados.</p>
-                      ) : (
-                        <div className="bg-white border border-indigo-100 rounded-xl p-1.5 max-h-32 overflow-y-auto">
-                          {connections.filter(c => c.status === 'accepted').map(conn => (
-                            <label key={conn.user.email} className="flex items-center justify-between px-2 py-1.5 hover:bg-indigo-50/50 rounded-lg cursor-pointer">
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-stone-100 flex items-center justify-center overflow-hidden text-xs">
-                                  {conn.user.avatarUrl ? (
-                                    <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                  ) : (
-                                    AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'
-                                  )}
-                                </div>
-                                <span className="text-sm font-medium text-stone-700">{conn.user.name}</span>
+                              <div>
+                                <p className="font-bold text-stone-900">{conn.user.name || conn.user.email}</p>
+                                <p className="text-xs text-stone-400">{conn.user.email}</p>
                               </div>
-                              <input 
-                                type="checkbox" 
-                                checked={newGroupInvites.includes(conn.user.email)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setNewGroupInvites(prev => [...prev, conn.user.email]);
-                                  } else {
-                                    setNewGroupInvites(prev => prev.filter(email => email !== conn.user.email));
-                                  }
-                                }}
-                                className="w-4 h-4 rounded border-stone-300 text-indigo-600 focus:ring-indigo-500" 
-                              />
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex gap-2 pt-1">
-                      <button 
-                        onClick={() => { setIsCreatingGroup(false); setNewGroupName(''); setNewGroupTarget(''); setNewGroupInvites([]); }}
-                        className="px-4 py-2.5 text-stone-500 hover:bg-indigo-100 rounded-xl font-medium transition-colors text-sm"
-                      >
-                        Cancelar
-                      </button>
-                      <button 
-                        onClick={handleCreateGroup}
-                        disabled={!newGroupName.trim() || !newGroupTarget}
-                        className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors text-sm"
-                      >
-                        Criar Grupo
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                {mockGroups.length === 0 && !isCreatingGroup && (
-                  <div className="col-span-2 text-center py-16 bg-gradient-to-b from-indigo-50/50 to-white rounded-3xl border border-dashed border-indigo-200">
-                    <div className="text-5xl mb-3">👥</div>
-                    <p className="text-stone-700 font-bold text-base">Nenhum grupo ainda</p>
-                    <p className="text-sm text-stone-400 mt-1 mb-4">Crie um grupo e convide seus amigos para estudar juntos.</p>
-                    <button
-                      onClick={() => setIsCreatingGroup(true)}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 active:scale-95 transition-all shadow-sm"
-                    >
-                      <Plus size={16} /> Criar meu primeiro grupo
-                    </button>
-                  </div>
-                )}
-                {groupsWithProgress.map((group, groupIdx) => {
-                  const bgColors = ['from-indigo-500 to-indigo-600', 'from-purple-500 to-purple-600', 'from-emerald-500 to-emerald-600', 'from-rose-500 to-rose-600', 'from-amber-500 to-amber-600'];
-                  const accentColor = bgColors[group.name.charCodeAt(0) % bgColors.length];
-                  
-                  const groupReads = getGroupReadTimestamps();
-                  const groupLastSeen = groupReads[group.id] || 0;
-                  const hasUnread = group.messages.some(m => new Date(m.timestamp).getTime() > groupLastSeen && m.userEmail !== profile.email);
-
-                  return (
-                  <motion.div
-                    key={group.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: groupIdx * 0.05 }}
-                    onClick={async () => {
-                      setReplyingToId(null);
-                      setMemberReplyText('');
-                      setGroupSubTab('mural');
-                      setEditingMessageId(null);
-                      setNewMessage('');
-                      setIsCreatingPoll(false);
-                      setIsCreatingQuestionBox(false);
-                      
-                      markGroupAsRead(group.id);
-
-                      const { data } = await supabase
-                        .from('community_groups')
-                        .select('id, name, target_id, target_name, members, messages, materials')
-                        .eq('id', group.id)
-                        .single();
-                      if (data) {
-                        setActiveGroup({
-                          id: data.id,
-                          name: data.name,
-                          targetId: data.target_id,
-                          targetName: data.target_name,
-                          members: parseJSON(data.members),
-                          messages: parseJSON(data.messages),
-                          materials: parseJSON(data.materials),
-                        });
-                      } else {
-                        setActiveGroup(group);
-                      }
-                    }}
-                    className={`relative overflow-hidden rounded-2xl border transition-all cursor-pointer group bg-white ${hasUnread ? 'border-indigo-300 shadow-md ring-2 ring-indigo-100' : 'border-stone-200 hover:border-indigo-200 hover:shadow-lg'}`}
-                  >
-                    <div className={`h-1.5 bg-gradient-to-r ${accentColor} w-full`} />
-                    <div className="p-4">
-                    <div className="mb-3">
-                      <div className="flex justify-between items-start">
-                        <h3 className="font-bold text-stone-900 text-base leading-tight group-hover:text-indigo-600 transition-colors pr-2">{group.name}</h3>
-                        {hasUnread && <span className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-sm shrink-0" />}
-                      </div>
-                      <p className="text-xs text-indigo-500 font-medium flex items-center gap-1 mt-0.5">
-                        <BookOpen size={11} /> {group.targetName}
-                      </p>
-                    </div>
-
-                    <div className="mb-3">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-[10px] text-stone-400 font-medium">Progresso coletivo</span>
-                        <span className="text-[10px] font-bold text-indigo-600">{group.calculatedProgress}%</span>
-                      </div>
-                      <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                        <div className={`h-full bg-gradient-to-r ${accentColor} rounded-full transition-all duration-700`} style={{ width: `${group.calculatedProgress}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3 mt-4 pt-4 border-t border-stone-100/60">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="flex -space-x-2 shrink-0">
-                          {group.members.slice(0, 3).map((m, i) => (
-                            <div key={i} className="w-8 h-8 rounded-full bg-stone-100 border-2 border-white flex items-center justify-center text-sm overflow-hidden shadow-sm relative" style={{ zIndex: 10 - i }}>
-                              {m.avatarUrl ? (
-                                <img src={m.avatarUrl} alt={m.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                              ) : (
-                                <span>{AVATARS.find(a => a.id === m.avatarId)?.emoji || '👤'}</span>
-                              )}
                             </div>
-                          ))}
-                          {group.members.length > 3 && (
-                            <div className="w-8 h-8 rounded-full bg-stone-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-stone-500 shadow-sm relative z-0">
-                              +{group.members.length - 3}
-                            </div>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs text-stone-600 font-bold truncate">
-                            {group.members.map(m => m.email === profile.email ? 'Você' : (m.name?.split(' ')[0] || m.email?.split('@')[0] || 'Usuário')).join(', ')}
-                          </p>
-                          <p className="text-[10px] text-stone-400 mt-0.5">
-                            {group.members.length} {group.members.length === 1 ? 'membro' : 'membros'}
-                          </p>
-                        </div>
+                            <button
+                              onClick={() => handleRemoveFriend(conn.user.email, conn.user.name)}
+                              className="sm:opacity-0 sm:group-hover:opacity-100 p-2 text-stone-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                              title="Remover amigo"
+                            >
+                              <UserMinus size={16} />
+                            </button>
+                          </motion.div>
+                        ))}
                       </div>
-                      <span className={`text-[10px] font-bold px-3 py-1.5 rounded-xl shrink-0 transition-colors ${hasUnread ? 'text-indigo-700 bg-indigo-100' : 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100'}`}>
-                        {hasUnread ? 'Novas mensagens' : 'Entrar →'}
-                      </span>
-                    </div>
-                    </div>
-                  </motion.div>
-                );
-                })}
-              </div>
-            </div>
-          )}
+                    )}
+                  </div>
+                </>
+              ) : null}
 
-          {activeTab === 'prayers' && !activeGroup && (
-            <div className="space-y-3">
-              <div className="flex justify-between items-center px-1 mb-3">
-                <h4 className="text-sm font-bold text-stone-700 flex items-center gap-2">
-                  <span>🙏</span> Pedidos de Oração
-                  {mockPrayers.length > 0 && <span className="text-xs text-stone-400 font-medium">({mockPrayers.length})</span>}
-                </h4>
-                <button 
-                  onClick={() => setIsCreatingPrayer(true)}
-                  className="text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 px-3 py-1.5 rounded-xl active:scale-95 transition-all shadow-sm flex items-center gap-1"
-                >
-                  <Heart size={12} /> Novo Pedido
-                </button>
-              </div>
-
-              {isCreatingPrayer && (
-                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="p-4 bg-rose-50 rounded-2xl border border-rose-100 mb-3">
-                  <h5 className="font-bold text-rose-900 mb-2 text-sm flex items-center gap-2">🙏 Novo Pedido de Oração</h5>
-                  <div className="flex flex-col gap-2">
-                    <textarea 
-                      placeholder="Pelo que devemos orar?..."
-                      value={newPrayerRequest}
-                      onChange={(e) => setNewPrayerRequest(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-500/20 resize-none h-20 text-sm bg-white"
-                    />
+              {/* Generic Confirm Modal */}
+              {confirmModal.isOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
+                    <h3 className="font-bold text-stone-900 text-lg mb-2">{confirmModal.title}</h3>
+                    <p className="text-stone-600 text-sm mb-6">{confirmModal.message}</p>
                     <div className="flex justify-end gap-2">
                       <button 
-                        onClick={() => setIsCreatingPrayer(false)}
-                        className="px-3 py-2 text-stone-500 hover:bg-rose-100 rounded-xl font-medium text-sm"
+                        onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))} 
+                        className="px-4 py-2 text-stone-500 font-medium hover:bg-stone-100 rounded-xl transition-colors"
                       >
                         Cancelar
                       </button>
                       <button 
-                        onClick={handleCreatePrayer}
-                        className="px-4 py-2 bg-rose-500 text-white rounded-xl font-bold hover:bg-rose-600 text-sm active:scale-95 transition-all"
+                        onClick={confirmModal.onConfirm} 
+                        className={`px-4 py-2 text-white rounded-xl font-bold transition-colors ${confirmModal.confirmColor}`}
                       >
-                        Publicar
+                        {confirmModal.confirmText}
                       </button>
                     </div>
                   </div>
-                </motion.div>
-              )}
-
-              {mockPrayers.length === 0 && !isCreatingPrayer && (
-                <div className="text-center py-16 bg-gradient-to-b from-rose-50/50 to-white rounded-3xl border border-dashed border-rose-200">
-                  <div className="text-5xl mb-3">🙏</div>
-                  <p className="text-stone-700 font-bold">Nenhum pedido de oração ainda.</p>
-                  <p className="text-sm text-stone-400 mt-1 mb-4">Compartilhe e a comunidade irá orar com você.</p>
-                  <button
-                    onClick={() => setIsCreatingPrayer(true)}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-rose-500 text-white rounded-xl font-bold text-sm hover:bg-rose-600 active:scale-95 transition-all"
-                  >
-                    <Heart size={15} /> Fazer um Pedido
-                  </button>
                 </div>
               )}
-
-              <div className="space-y-3">
-                {mockPrayers.map((prayer, idx) => (
-                  <motion.div
-                    key={prayer.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="relative overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm hover:shadow-md transition-all"
-                  >
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-rose-400 to-rose-500 rounded-l-2xl" />
-                    <div className="pl-5 pr-4 pt-4 pb-3">
-                      <div className="flex items-center gap-2.5 mb-2.5">
-                        <div className="w-8 h-8 rounded-full bg-rose-50 flex items-center justify-center text-sm border border-rose-100 shrink-0">
-                          {prayer.avatarUrl ? <img src={prayer.avatarUrl} alt={prayer.user} className="w-full h-full object-cover rounded-full" referrerPolicy="no-referrer" /> : (AVATARS.find(a => a.id === prayer.avatarId)?.emoji || '👤')}
-                        </div>
-                        <p className="font-bold text-stone-900 text-sm">{prayer.user}</p>
-                      </div>
-                      <p className="text-stone-700 text-sm mb-3 leading-relaxed">{prayer.request}</p>
-                      <div className="flex items-center justify-between border-t border-stone-100 pt-2.5">
-                        <span className="text-xs font-medium text-stone-400 flex items-center gap-1">
-                          <Heart size={11} className="text-rose-400" />
-                          {prayer.prayedCount} {prayer.prayedCount === 1 ? 'pessoa orou' : 'pessoas oraram'}
-                        </span>
-                        {prayer.userId === userId ? (
-                          <span className="text-xs text-stone-400 italic px-3 py-2">seu pedido 🙏</span>
-                        ) : (
-                          <button
-                            onClick={() => handlePray(prayer.id)}
-                            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
-                              prayer.hasPrayed
-                                ? 'bg-rose-50 text-rose-600 border border-rose-200'
-                                : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50 shadow-sm'
-                            }`}
-                          >
-                            <Heart size={13} className={prayer.hasPrayed ? 'fill-rose-500 text-rose-500' : ''} />
-                            {prayer.hasPrayed ? 'Orei 🙏' : 'Vou orar'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'friends' && !activeGroup && (
-            <>
-              {/* Search Bar */}
-              <div className="flex flex-col sm:flex-row gap-2 mb-6">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
-                  <input
-                    type="text"
-                    placeholder="Buscar por nome ou email..."
-                    value={searchQuery}
-                    onChange={(e) => handleSearchInputChange(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                    className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
-                  />
-                  {isSearching && (
-                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-stone-300 border-t-indigo-500 rounded-full animate-spin" />
-                  )}
-                </div>
-                <button
-                  onClick={() => handleSearch()}
-                  disabled={isSearching || !searchQuery.trim()}
-                  className="px-5 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 text-sm active:scale-95 flex items-center justify-center gap-2"
-                >
-                  <Search size={16} />
-                  <span>Buscar</span>
-                </button>
-              </div>
-
-              {/* Search Error / Empty */}
-              {searchError && searchResults.length === 0 && (
-                <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="mb-6 text-sm text-stone-500 bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 flex items-center gap-2">
-                  <Search size={15} className="text-stone-400 shrink-0" />
-                  {searchError}
-                </motion.div>
-              )}
-
-              {/* Search Results */}
-              {searchResults.length > 0 && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8 space-y-3">
-                  <div className="flex items-center justify-between px-2">
-                    <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider">Resultados ({searchResults.length})</h4>
-                    <button onClick={() => { setSearchResults([]); setSearchQuery(''); setSearchError(''); }} className="text-xs text-stone-400 hover:text-stone-600 transition-colors font-medium">Limpar</button>
-                  </div>
-                  {searchResults.map((user) => {
-                    const existingConn = connections.find(c => c.user.email === user.email);
-                    const requestSent = user._requestSent || (existingConn?.status === 'pending' && existingConn?.isRequester);
-                    const isAlreadyFriend = existingConn?.status === 'accepted';
-                    return (
-                      <div key={user.email} className="flex items-center justify-between p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-2xl border border-indigo-100 overflow-hidden">
-                            {user.avatarUrl ? (
-                              <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              <span>{AVATARS.find(a => a.id === user.avatarId)?.emoji || '👤'}</span>
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-bold text-stone-900 text-base">{user.name || 'Usuário'}</p>
-                            <p className="text-sm text-stone-500">{user.email}</p>
-                          </div>
-                        </div>
-                        {isAlreadyFriend ? (
-                          <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
-                            <Check size={13} /> Amigos
-                          </span>
-                        ) : requestSent ? (
-                          <span className="flex items-center gap-1.5 text-xs font-bold text-indigo-500 bg-indigo-100 px-3 py-1.5 rounded-xl">
-                            <Clock size={13} /> Enviado
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => handleRequestConnection(user.email)}
-                            className="flex items-center gap-2 px-4 py-2 bg-white text-indigo-600 rounded-xl border border-indigo-200 hover:bg-indigo-50 transition-colors font-bold text-sm"
-                          >
-                            <UserPlus size={18} />
-                            <span className="hidden sm:inline">Conectar</span>
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </motion.div>
-              )}
-
-              {/* Convites Recebidos */}
-              {connections.some(c => c.status === 'pending' && !c.isRequester) && (
-                <div className="mb-8 space-y-3">
-                  <h4 className="text-sm font-bold text-rose-700 uppercase tracking-wider px-2 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-rose-700 animate-pulse" />
-                    Convites Recebidos ({connections.filter(c => c.status === 'pending' && !c.isRequester).length})
-                  </h4>
-                  {connections.filter(c => c.status === 'pending' && !c.isRequester).map((conn) => (
-                    <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} key={conn.user.email} className="flex items-center justify-between p-4 bg-rose-50/50 rounded-2xl border border-rose-100 shadow-sm">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-2xl shadow-sm border border-rose-100 overflow-hidden">
-                          {conn.user.avatarUrl ? (
-                            <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <span>{AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'}</span>
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-bold text-stone-900 text-base">{conn.user.name || conn.user.email}</p>
-                          <p className="text-sm text-stone-500">quer se conectar com você</p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleRespond(conn.user.email, 'accepted')}
-                          className="p-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors shadow-sm hover:shadow-md"
-                          title="Aceitar"
-                        >
-                          <Check size={20} />
-                        </button>
-                        <button
-                          onClick={() => handleRespond(conn.user.email, 'rejected')}
-                          className="p-3 bg-white text-stone-400 border border-stone-200 rounded-xl hover:bg-stone-50 hover:text-rose-700 transition-colors"
-                          title="Recusar"
-                        >
-                          <X size={20} />
-                        </button>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-
-              {/* Convites Enviados */}
-              {connections.some(c => c.status === 'pending' && c.isRequester) && (
-                <div className="mb-8 space-y-3">
-                  <h4 className="text-sm font-bold text-stone-400 uppercase tracking-wider px-2">
-                    Aguardando Resposta ({connections.filter(c => c.status === 'pending' && c.isRequester).length})
-                  </h4>
-                  {connections.filter(c => c.status === 'pending' && c.isRequester).map((conn) => (
-                    <div key={conn.user.email} className="flex items-center justify-between p-4 bg-stone-50 rounded-2xl border border-stone-200">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-2xl border border-stone-200 overflow-hidden">
-                          {conn.user.avatarUrl ? (
-                            <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <span>{AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'}</span>
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-bold text-stone-900 text-base">{conn.user.name || conn.user.email}</p>
-                          <p className="text-sm text-stone-400">Convite enviado</p>
-                        </div>
-                      </div>
-                      <span className="flex items-center gap-1.5 text-xs font-bold text-stone-400 bg-white border border-stone-200 px-3 py-1.5 rounded-xl">
-                        <Clock size={13} /> Pendente
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Lista de Amigos */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between px-2">
-                  <h4 className="text-sm font-bold text-stone-700 flex items-center gap-2">
-                    <span>✨</span> Meus Amigos
-                    {connections.filter(c => c.status === 'accepted').length > 0 && <span className="text-xs text-stone-400 font-medium">({connections.filter(c => c.status === 'accepted').length})</span>}
-                  </h4>
-                  {isLoadingConnections && <span className="w-4 h-4 border-2 border-stone-200 border-t-indigo-500 rounded-full animate-spin" />}
-                </div>
-                {connections.filter(c => c.status === 'accepted').length === 0 ? (
-                  <div className="text-center py-14 bg-gradient-to-b from-indigo-50/40 to-white rounded-3xl border border-dashed border-indigo-200">
-                    <div className="text-5xl mb-3">✨</div>
-                    <p className="text-stone-700 font-bold">Nenhum amigo conectado ainda.</p>
-                    <p className="text-sm text-stone-400 mt-1">Busque por nome ou email acima para começar.</p>
-                  </div>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {connections.filter(c => c.status === 'accepted').map((conn, idx) => (
-                      <motion.div
-                        key={conn.user.email}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.05 }}
-                        className="flex items-center justify-between p-4 bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-11 h-11 rounded-full bg-stone-50 flex items-center justify-center text-xl border border-stone-200 overflow-hidden shrink-0">
-                            {conn.user.avatarUrl ? (
-                              <img src={conn.user.avatarUrl} alt={conn.user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              <span>{AVATARS.find(a => a.id === conn.user.avatarId)?.emoji || '👤'}</span>
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-bold text-stone-900">{conn.user.name || conn.user.email}</p>
-                            <p className="text-xs text-stone-400">{conn.user.email}</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleRemoveFriend(conn.user.email, conn.user.name)}
-                          className="sm:opacity-0 sm:group-hover:opacity-100 p-2 text-stone-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                          title="Remover amigo"
-                        >
-                          <UserMinus size={16} />
-                        </button>
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </>
-          )}
-          {/* Generic Confirm Modal */}
-          {confirmModal.isOpen && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
-                <h3 className="font-bold text-stone-900 text-lg mb-2">{confirmModal.title}</h3>
-                <p className="text-stone-600 text-sm mb-6">{confirmModal.message}</p>
-                <div className="flex justify-end gap-2">
-                  <button 
-                    onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))} 
-                    className="px-4 py-2 text-stone-500 font-medium hover:bg-stone-100 rounded-xl transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button 
-                    onClick={confirmModal.onConfirm} 
-                    className={`px-4 py-2 text-white rounded-xl font-bold transition-colors ${confirmModal.confirmColor}`}
-                  >
-                    {confirmModal.confirmText}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-          </>
           )}
 
         </div>

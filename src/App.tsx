@@ -33,7 +33,7 @@ function StreakNotificationBanner() {
 }
 
 function AppContent() {
-  const { profile, updateProfile } = useGamification();
+  const { profile, updateProfile, isReady } = useGamification();
   const [session, setSession] = useState<Session | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
@@ -78,7 +78,8 @@ function AppContent() {
     }
   };
 
-  if (isInitializing) return null;
+  // Só renderiza qualquer coisa da aplicação após ter o perfil real carregado (incluindo o status do Onboarding)
+  if (isInitializing || !isReady) return null;
 
   if (!session) return <Auth onAuthSuccess={() => {}} />;
 

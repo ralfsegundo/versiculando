@@ -83,7 +83,6 @@ export interface UserProfile {
   ecoReactions?: Record<string, string>;
   bibleFavorites?: Record<string, boolean>;
   bibleFavoritesEver?: Record<string, boolean>;
-  // Novos campos para persistência remota
   onboardingDone?: boolean;
   lastDailyVerseDate?: string;
   lastFlashChallengeWeek?: string;
@@ -194,6 +193,7 @@ interface GamificationContextType {
   userId: string | null;
   badges: Badge[];
   weeklyChallenge: WeeklyChallenge;
+  isReady: boolean;
   addPoints: (amount: number, reason: string, category?: 'freeExploration' | 'discipleTrail' | 'bonus') => void;
   markBookCompleted: (bookId: string, isGps?: boolean) => void;
   markBookVisited: (bookId: string) => void;
@@ -275,31 +275,46 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const [weeklyChallenge, setWeeklyChallenge] = useState<WeeklyChallenge>(getStoredChallenge);
 
-  // Load from Supabase on mount/auth change
+  // Load from Supabase on auth change
   useEffect(() => {
-    const loadSupabaseData = async () => {
+    const loadSupabaseData = async (sessionUser: any) => {
       const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-      if (!hasSupabase) return;
+      if (!hasSupabase) {
+        setSupabaseReady(true);
+        return;
+      }
+
+      if (!sessionUser) {
+        setProfile(getInitialProfile());
+        setBadges([]);
+        setUserId(null);
+        setSupabaseReady(true);
+        return;
+      }
+
+      // Impede re-renders e flickers se for o mesmo usuário, mas marca loading para novos logins
+      if (userId !== sessionUser.id) {
+         setSupabaseReady(false);
+      }
+
+      setUserId(sessionUser.id);
+      isLoadingFromSupabase.current = true;
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user) {
-          setSupabaseReady(true);
-          return;
-        }
-
-        setUserId(session.user.id);
-        isLoadingFromSupabase.current = true;
-
-        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-        const { data: badgesData } = await supabase.from('user_badges').select('*').eq('user_id', session.user.id);
+        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', sessionUser.id).single();
+        const { data: badgesData } = await supabase.from('user_badges').select('*').eq('user_id', sessionUser.id);
 
         if (profileData) {
+          // Previne exibir o onboarding para usuários antigos que fizeram antes dessa coluna existir
+          const localOnboardingStr = localStorage.getItem('onboarding_profile');
+          const localOnboardingDone = !!localOnboardingStr;
+          const finalOnboardingDone = profileData.onboarding_done || localOnboardingDone || false;
+
           setProfile({
             ...getInitialProfile(),
-            id: session.user.id,
+            id: sessionUser.id,
             name: profileData.name || 'Peregrino',
-            email: session.user.email || '',
+            email: sessionUser.email || '',
             avatarId: profileData.avatar_id || 'cruz',
             avatarUrl: profileData.avatar_url,
             joinDate: profileData.join_date,
@@ -323,7 +338,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
             lastFreezeEarnedWeek: profileData.last_freeze_earned_week,
             lastDailyMissionDate: profileData.last_daily_mission_date,
             dailyMissionStreak: profileData.daily_mission_streak || 0,
-            onboardingDone: profileData.onboarding_done || false,
+            onboardingDone: finalOnboardingDone,
             lastDailyVerseDate: profileData.last_daily_verse_date,
             lastFlashChallengeWeek: profileData.last_flash_challenge_week,
             lastSaintSeenDate: profileData.last_saint_seen_date,
@@ -341,15 +356,24 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           })));
         }
 
-        setSupabaseReady(true);
-        isLoadingFromSupabase.current = false;
       } catch (err) {
         console.error('[gamification] loadSupabaseData error:', err);
+      } finally {
         setSupabaseReady(true);
+        isLoadingFromSupabase.current = false;
       }
     };
 
-    loadSupabaseData();
+    // Puxa a sessão atual ao montar e assina mudanças de estado
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      loadSupabaseData(session?.user);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      loadSupabaseData(session?.user);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   // Save to Supabase (Debounced)
@@ -699,6 +723,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       userId,
       badges,
       weeklyChallenge,
+      isReady: supabaseReady,
       addPoints,
       markBookCompleted,
       markBookVisited,

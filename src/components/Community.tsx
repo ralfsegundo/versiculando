@@ -19,12 +19,12 @@ interface GroupMember {
 interface PollOption {
   id: string;
   text: string;
-  votes: string[]; // user emails
+  votes: string[];
 }
 
 interface Reaction {
   emoji: string;
-  users: string[]; // user emails
+  users: string[];
 }
 
 interface QuestionBoxAnswer {
@@ -42,7 +42,7 @@ interface GroupMessage {
   avatarId: string;
   avatarUrl?: string;
   text: string;
-  timestamp: string;     // ISO 8601
+  timestamp: string;
   type?: 'text' | 'poll' | 'verse' | 'goal' | 'question_box' | 'member_reply';
   poll?: {
     question: string;
@@ -52,7 +52,7 @@ interface GroupMessage {
     question: string;
     answers: QuestionBoxAnswer[];
   };
-  replyToId?: number;    // id da mensagem que está respondendo
+  replyToId?: number;
   isPinned?: boolean;
   reactions?: Reaction[];
 }
@@ -67,7 +67,7 @@ interface GroupMaterial {
 interface Group {
   id: string;
   name: string;
-  targetId: string; // book.id or path.id
+  targetId: string;
   targetName: string;
   members: GroupMember[];
   messages: GroupMessage[];
@@ -85,6 +85,7 @@ export default function Community() {
   const [activeTab, setActiveTab] = useState<'feed' | 'ranking' | 'groups' | 'prayers' | 'friends'>('groups');
   const tabsScrollRef = useRef<HTMLDivElement>(null);
   const [tabsScroll, setTabsScroll] = useState({ left: false, right: true });
+  
   const [unreadFeedCount, setUnreadFeedCount] = useState(0);
   const [unreadGroupsCount, setUnreadGroupsCount] = useState(0);
   const [unreadPrayersCount, setUnreadPrayersCount] = useState(0);
@@ -98,7 +99,6 @@ export default function Community() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
   };
 
-  // Debounced search (com cleanup para evitar memory leaks)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   useEffect(() => {
@@ -133,7 +133,6 @@ export default function Community() {
   const [postType, setPostType] = useState<'text' | 'verse' | 'goal'>('text');
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [showReactionMenu, setShowReactionMenu] = useState<number | null>(null);
-  const [showReactionDetails, setShowReactionDetails] = useState<{ messageId: number, emoji: string } | null>(null);
 
   // Member reply state
   const [replyingToId, setReplyingToId] = useState<number | null>(null);
@@ -191,6 +190,31 @@ export default function Community() {
 
   const mockRanking = mockRankingData;
 
+  // ── Controle de Leitura por Grupo (Otimização de UX) ──────
+  const getGroupReadTimestamps = () => {
+    try {
+      return JSON.parse(localStorage.getItem(`${userId}_group_reads`) || '{}');
+    } catch {
+      return {};
+    }
+  };
+
+  const markGroupAsRead = (groupId: string) => {
+    const reads = getGroupReadTimestamps();
+    reads[groupId] = Date.now();
+    localStorage.setItem(`${userId}_group_reads`, JSON.stringify(reads));
+    
+    // Recalcula o total de não lidos após ler um grupo
+    const newUnreadTotal = mockGroups.reduce((acc, g) => {
+      if (g.id === groupId) return acc; // ignora o que acabamos de ler
+      const groupLastSeen = reads[g.id] || 0;
+      const unreadInGroup = g.messages.filter(m => new Date(m.timestamp).getTime() > groupLastSeen && m.userEmail !== profile.email).length;
+      return acc + unreadInGroup;
+    }, 0);
+    
+    setUnreadGroupsCount(newUnreadTotal);
+  };
+
   // ── Carregamento de dados ─────────────────────────────────
   const loadCommunityData = async () => {
     setIsLoadingCommunity(true);
@@ -220,7 +244,7 @@ export default function Community() {
         .from('community_feed')
         .select('id, user_name, user_email, avatar_id, action, created_at')
         .order('created_at', { ascending: false })
-        .limit(15); // Reduzido de 30 para 15 para uma visualização mais limpa
+        .limit(15);
       if (error) { console.warn('[Community] loadFeed error:', error.message); return; }
       if (data) {
         setMockFeed(data.map((r: any) => ({
@@ -286,21 +310,7 @@ export default function Community() {
         .contains('members', JSON.stringify([{ email: profile.email }]))
         .order('created_at', { ascending: false });
 
-      if (error) {
-        const { data: allData, error: allError } = await supabase
-          .from('community_groups')
-          .select('id, name, target_id, target_name, members, messages, materials')
-          .order('created_at', { ascending: false });
-        if (allError) { console.warn('[Community] loadGroups error:', allError.message); return; }
-        const myGroups = (allData || []).filter((g: any) =>
-          Array.isArray(g.members) && g.members.some((m: any) => m.email === profile.email)
-        );
-        setMockGroups(myGroups.map((g: any) => ({
-          id: g.id, name: g.name, targetId: g.target_id, targetName: g.target_name,
-          members: g.members || [], messages: g.messages || [], materials: g.materials || [],
-        })));
-        return;
-      }
+      if (error) return;
 
       if (data) {
         const myGroups = data.filter((g: any) =>
@@ -312,11 +322,13 @@ export default function Community() {
         }));
         setMockGroups(mapped);
 
-        const lastSeenTs = parseInt(localStorage.getItem(`${userId}_groups_last_seen_ts`) || '0', 10);
+        // Otimização: Cálculo correto de mensagens não lidas baseado no dicionário por grupo
+        const groupReads = getGroupReadTimestamps();
         const newMsgs = mapped.reduce((acc, g) => {
+          const groupLastSeen = groupReads[g.id] || 0;
           return acc + g.messages.filter((m: any) => {
             const ts = new Date(m.timestamp).getTime();
-            return ts > lastSeenTs && m.userEmail !== profile.email;
+            return ts > groupLastSeen && m.userEmail !== profile.email;
           }).length;
         }, 0);
         setUnreadGroupsCount(newMsgs);
@@ -382,11 +394,10 @@ export default function Community() {
     } catch (e) { console.warn('[Community] loadPrayers exception:', e); }
   };
 
-  // Melhorada para lidar com falhas de parse de datas e evitar `NaN`
   const formatRelativeTime = (isoString: string) => {
     if (!isoString) return '';
     const dateVal = new Date(isoString).getTime();
-    if (isNaN(dateVal)) return ''; // Falha ao formatar, retorna string vazia com segurança
+    if (isNaN(dateVal)) return ''; 
     const diff = Date.now() - dateVal;
     if (diff < 0) return 'Agora mesmo';
     const m = Math.floor(diff / 60000);
@@ -421,6 +432,14 @@ export default function Community() {
     return Math.round(activeValues.reduce((a, b) => a + b, 0) / activeValues.length);
   }, [calculateMemberProgress, profile.email]);
 
+  // Memoização do progresso dos grupos para evitar lag ao digitar
+  const groupsWithProgress = useMemo(() => {
+    return mockGroups.map(g => ({
+      ...g,
+      calculatedProgress: calculateGroupProgress(g.members, g.targetId)
+    }));
+  }, [mockGroups, calculateGroupProgress]);
+
   const addToFeed = async (action: string) => {
     if (!profile.email) return;
     await supabase.from('community_feed').insert({
@@ -432,15 +451,61 @@ export default function Community() {
     await loadFeed();
   };
 
+  // ── Mitigação da Condição de Corrida (Race Condition) ──────
   const persistGroup = async (group: Group) => {
-    await supabase
-      .from('community_groups')
-      .update({
-        members: group.members,
-        messages: group.messages,
-        materials: group.materials || [],
-      })
-      .eq('id', group.id);
+    try {
+      // 1. Busca o array mais atualizado do banco frações de segundo antes de salvar
+      const { data, error } = await supabase
+        .from('community_groups')
+        .select('messages, materials, members')
+        .eq('id', group.id)
+        .single();
+      
+      if (!error && data) {
+        // 2. Fundo inteligente: Garante que as mensagens enviadas por outros 
+        // entre meu último render e agora não sejam deletadas.
+        // Simplificado: Pega todas as mensagens do BD e adiciona as minhas mensagens novas
+        // baseadas no ID (que é um timestamp na criação).
+        
+        const dbMessages = (data.messages as GroupMessage[]) || [];
+        const localMessages = group.messages;
+        
+        // Mapeia IDs para facilitar o merge
+        const mergedMessagesMap = new Map();
+        
+        // Primeiro adiciona as do banco
+        dbMessages.forEach(msg => mergedMessagesMap.set(msg.id, msg));
+        
+        // Depois sobrescreve/adiciona as locais (minhas edições e envios recentes)
+        localMessages.forEach(msg => mergedMessagesMap.set(msg.id, msg));
+        
+        // Converte de volta para array e ordena por ID (tempo)
+        const finalMessages = Array.from(mergedMessagesMap.values())
+          .sort((a, b) => a.id - b.id);
+
+        await supabase
+          .from('community_groups')
+          .update({
+            members: group.members, // Membros é menos sujeito a race condition contínua
+            messages: finalMessages,
+            materials: group.materials || [],
+          })
+          .eq('id', group.id);
+          
+      } else {
+        // Fallback para o update simples se falhar a busca
+        await supabase
+          .from('community_groups')
+          .update({
+            members: group.members,
+            messages: group.messages,
+            materials: group.materials || [],
+          })
+          .eq('id', group.id);
+      }
+    } catch (e) {
+      console.error('Error persisting group:', e);
+    }
   };
 
   const handleCreateGroup = async () => {
@@ -732,8 +797,8 @@ export default function Community() {
         const updatedOptions = msg.poll.options.map(opt => {
           if (opt.id === optionId) {
             return alreadyVotedThis
-              ? { ...opt, votes: opt.votes.filter(v => v !== userEmail) } // unvote
-              : { ...opt, votes: [...opt.votes.filter(v => v !== userEmail), userEmail] }; // vote
+              ? { ...opt, votes: opt.votes.filter(v => v !== userEmail) }
+              : { ...opt, votes: [...opt.votes.filter(v => v !== userEmail), userEmail] };
           }
           return { ...opt, votes: opt.votes.filter(v => v !== userEmail) };
         });
@@ -992,7 +1057,6 @@ export default function Community() {
       });
       return removeListener;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.email]);
 
   useEffect(() => {
@@ -1128,10 +1192,6 @@ export default function Community() {
     });
   };
 
-  const getLastOnline = (_email: string) => {
-    return 'recentemente';
-  };
-
   const isCurrentUserAdmin = useMemo(() =>
     !!(profile.email && activeGroup?.members.find(m => m.email === profile.email)?.isLeader),
     [profile.email, activeGroup]
@@ -1187,10 +1247,6 @@ export default function Community() {
                           localStorage.setItem(`${userId}_feed_last_seen_id`, String(maxId));
                         }
                         setUnreadFeedCount(0);
-                      }
-                      if (tab.id === 'groups') {
-                        localStorage.setItem(`${userId}_groups_last_seen_ts`, String(Date.now()));
-                        setUnreadGroupsCount(0);
                       }
                       if (tab.id === 'prayers') {
                         localStorage.setItem(`${userId}_prayers_last_seen_ts`, String(Date.now()));
@@ -2376,10 +2432,15 @@ export default function Community() {
                     </button>
                   </div>
                 )}
-                {mockGroups.map((group, groupIdx) => {
-                  const groupProgress = calculateGroupProgress(group.members, group.targetId);
+                {groupsWithProgress.map((group, groupIdx) => {
                   const bgColors = ['from-indigo-500 to-indigo-600', 'from-purple-500 to-purple-600', 'from-emerald-500 to-emerald-600', 'from-rose-500 to-rose-600', 'from-amber-500 to-amber-600'];
                   const accentColor = bgColors[group.name.charCodeAt(0) % bgColors.length];
+                  
+                  // Verifica se tem notificações não lidas
+                  const groupReads = getGroupReadTimestamps();
+                  const groupLastSeen = groupReads[group.id] || 0;
+                  const hasUnread = group.messages.some(m => new Date(m.timestamp).getTime() > groupLastSeen && m.userEmail !== profile.email);
+
                   return (
                   <motion.div
                     key={group.id}
@@ -2394,6 +2455,10 @@ export default function Community() {
                       setNewMessage('');
                       setIsCreatingPoll(false);
                       setIsCreatingQuestionBox(false);
+                      
+                      // Marca como lido localmente
+                      markGroupAsRead(group.id);
+
                       const { data } = await supabase
                         .from('community_groups')
                         .select('id, name, target_id, target_name, members, messages, materials')
@@ -2413,12 +2478,15 @@ export default function Community() {
                         setActiveGroup(group);
                       }
                     }}
-                    className="relative overflow-hidden rounded-2xl border border-stone-200 hover:border-indigo-200 hover:shadow-lg transition-all cursor-pointer group bg-white"
+                    className={`relative overflow-hidden rounded-2xl border transition-all cursor-pointer group bg-white ${hasUnread ? 'border-indigo-300 shadow-md ring-2 ring-indigo-100' : 'border-stone-200 hover:border-indigo-200 hover:shadow-lg'}`}
                   >
                     <div className={`h-1.5 bg-gradient-to-r ${accentColor} w-full`} />
                     <div className="p-4">
                     <div className="mb-3">
-                      <h3 className="font-bold text-stone-900 text-base leading-tight group-hover:text-indigo-600 transition-colors">{group.name}</h3>
+                      <div className="flex justify-between items-start">
+                        <h3 className="font-bold text-stone-900 text-base leading-tight group-hover:text-indigo-600 transition-colors pr-2">{group.name}</h3>
+                        {hasUnread && <span className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-sm shrink-0" />}
+                      </div>
                       <p className="text-xs text-indigo-500 font-medium flex items-center gap-1 mt-0.5">
                         <BookOpen size={11} /> {group.targetName}
                       </p>
@@ -2427,10 +2495,10 @@ export default function Community() {
                     <div className="mb-3">
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-[10px] text-stone-400 font-medium">Progresso coletivo</span>
-                        <span className="text-[10px] font-bold text-indigo-600">{groupProgress}%</span>
+                        <span className="text-[10px] font-bold text-indigo-600">{group.calculatedProgress}%</span>
                       </div>
                       <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                        <div className={`h-full bg-gradient-to-r ${accentColor} rounded-full transition-all duration-700`} style={{ width: `${groupProgress}%` }} />
+                        <div className={`h-full bg-gradient-to-r ${accentColor} rounded-full transition-all duration-700`} style={{ width: `${group.calculatedProgress}%` }} />
                       </div>
                     </div>
 
@@ -2454,7 +2522,9 @@ export default function Community() {
                         </div>
                         <span className="text-xs text-stone-400 font-medium">{group.members.length} membros</span>
                       </div>
-                      <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg">Entrar →</span>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${hasUnread ? 'text-indigo-600 bg-indigo-100' : 'text-indigo-500 bg-indigo-50'}`}>
+                        {hasUnread ? 'Novas mensagens' : 'Entrar →'}
+                      </span>
                     </div>
                     </div>
                   </motion.div>

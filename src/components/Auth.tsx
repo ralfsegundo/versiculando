@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mail, Lock, Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -39,6 +39,12 @@ export default function Auth({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [quoteIdx, setQuoteIdx] = useState(0);
   const [mascotMood, setMascotMood] = useState<'idle' | 'happy' | 'sad'>('idle');
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
 
   // Rotaciona citações
   useEffect(() => {
@@ -49,39 +55,83 @@ export default function Auth({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   // Reseta mascote após reação
   useEffect(() => {
     if (mascotMood !== 'idle') {
-      const t = setTimeout(() => setMascotMood('idle'), 2000);
+      const t = setTimeout(() => {
+        if (isMounted.current) setMascotMood('idle');
+      }, 2000);
       return () => clearTimeout(t);
     }
   }, [mascotMood]);
 
   const handleAuth = async (e: FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+
     setLoading(true);
     setError(null);
     setSuccessMsg(null);
+
+    // Sanitiza o email (remove espaços extras que teclados mobile costumam adicionar)
+    const cleanEmail = email.trim().toLowerCase();
+
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ 
+          email: cleanEmail, 
+          password 
+        });
+        
         if (error) throw error;
+        
         setMascotMood('happy');
-        setTimeout(() => onAuthSuccess(), 600);
+        // O App.tsx detecta a mudança de sessão automaticamente via onAuthStateChange,
+        // mas chamamos onAuthSuccess por segurança caso haja alguma lógica pendente.
+        setTimeout(() => { if (isMounted.current) onAuthSuccess(); }, 600);
+        
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        // Validação preventiva
+        if (password.length < 6) {
+          throw new Error('password_too_short');
+        }
+
+        const { data, error } = await supabase.auth.signUp({ 
+          email: cleanEmail, 
+          password 
+        });
+        
         if (error) throw error;
-        setSuccessMsg('Cadastro realizado! Verifique seu email para confirmar e depois faça login.');
-        setIsLogin(true);
-        setMascotMood('happy');
+
+        // Se o Supabase retornar uma sessão imediatamente, significa que a confirmação 
+        // de email está desativada no projeto. Podemos logar direto.
+        if (data?.session) {
+          setMascotMood('happy');
+          setTimeout(() => { if (isMounted.current) onAuthSuccess(); }, 600);
+        } else {
+          // Requer confirmação de email
+          setSuccessMsg('Cadastro realizado! Verifique sua caixa de entrada (ou spam) para confirmar e depois faça login.');
+          setIsLogin(true);
+          setMascotMood('happy');
+        }
       }
     } catch (err: any) {
       setMascotMood('sad');
       const msg = err.message || '';
-      if (msg.includes('Invalid login credentials')) setError('Email ou senha incorretos.');
-      else if (msg.includes('Email not confirmed')) setError('Confirme seu email antes de entrar.');
-      else if (msg.includes('User already registered')) setError('Este email já está cadastrado. Faça login.');
-      else if (msg.includes('Password should be')) setError('A senha precisa ter pelo menos 6 caracteres.');
-      else setError(msg || 'Ocorreu um erro. Tente novamente.');
+      
+      // Mapeamento inteligente de erros comuns
+      if (msg === 'password_too_short' || msg.includes('Password should be')) {
+        setError('A senha precisa ter pelo menos 6 caracteres.');
+      } else if (msg.includes('Invalid login credentials') || msg.includes('Invalid credentials')) {
+        setError('Email ou senha incorretos.');
+      } else if (msg.includes('Email not confirmed')) {
+        setError('Por favor, confirme seu email antes de entrar.');
+      } else if (msg.includes('User already registered') || msg.includes('already exists')) {
+        setError('Este email já está cadastrado. Faça login.');
+      } else if (msg.includes('rate limit')) {
+        setError('Muitas tentativas. Tente novamente mais tarde.');
+      } else {
+        setError('Ocorreu um erro. Verifique seus dados e tente novamente.');
+      }
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   };
 
@@ -264,7 +314,7 @@ export default function Auth({ onAuthSuccess }: { onAuthSuccess: () => void }) {
                   className="bg-emerald-50 border-2 border-emerald-200 text-emerald-800 p-4 rounded-2xl text-sm mb-5 flex items-start gap-3"
                 >
                   <CheckCircle2 size={18} className="text-emerald-500 shrink-0 mt-0.5" />
-                  <span>{successMsg}</span>
+                  <span className="leading-snug">{successMsg}</span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -300,6 +350,7 @@ export default function Auth({ onAuthSuccess }: { onAuthSuccess: () => void }) {
                   <input
                     type="email"
                     required
+                    autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="block w-full pl-11 pr-4 py-3.5 border-2 border-stone-200 rounded-2xl focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10 transition-all outline-none text-sm bg-white font-medium placeholder:text-stone-300"
@@ -320,6 +371,8 @@ export default function Auth({ onAuthSuccess }: { onAuthSuccess: () => void }) {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
+                    minLength={isLogin ? undefined : 6}
+                    autoComplete={isLogin ? "current-password" : "new-password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="block w-full pl-11 pr-12 py-3.5 border-2 border-stone-200 rounded-2xl focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10 transition-all outline-none text-sm bg-white font-medium placeholder:text-stone-300"
@@ -361,11 +414,11 @@ export default function Auth({ onAuthSuccess }: { onAuthSuccess: () => void }) {
               {/* Botão principal — estilo Duolingo com borda inferior */}
               <motion.button
                 type="submit"
-                disabled={loading}
-                whileTap={!loading ? { scale: 0.97, y: 2 } : {}}
+                disabled={loading || !email.trim() || (!isLogin && password.length < 6)}
+                whileTap={(!loading && email.trim() && (isLogin || password.length >= 6)) ? { scale: 0.97, y: 2 } : {}}
                 className={`w-full font-black text-base py-4 rounded-2xl transition-all flex items-center justify-center gap-2 mt-2 shadow-md active:shadow-sm
-                  ${loading
-                    ? 'bg-stone-200 text-stone-400 cursor-not-allowed border-b-4 border-stone-300'
+                  ${loading || !email.trim() || (!isLogin && password.length < 6)
+                    ? 'bg-stone-200 text-stone-400 cursor-not-allowed border-b-4 border-stone-300 shadow-none'
                     : isLogin
                       ? 'bg-amber-400 hover:bg-amber-500 text-amber-900 border-b-4 border-amber-600 hover:border-amber-700 active:border-b-0 active:border-t-[3px] active:border-t-amber-600'
                       : 'bg-emerald-500 hover:bg-emerald-600 text-white border-b-4 border-emerald-700 hover:border-emerald-800 active:border-b-0 active:border-t-[3px] active:border-t-emerald-700'
@@ -416,7 +469,7 @@ export default function Auth({ onAuthSuccess }: { onAuthSuccess: () => void }) {
       </div>
 
       {/* Rodapé */}
-      <div className="relative text-center py-4 px-4">
+      <div className="relative text-center py-4 px-4 mt-auto">
         <p className="text-xs text-stone-400">
           Ao entrar, você concorda com os{' '}
           <span className="underline cursor-pointer hover:text-stone-600 transition-colors">Termos de Uso</span>

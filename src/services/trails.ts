@@ -75,9 +75,20 @@ export async function fetchTrailDays(trailId: string): Promise<TrailDay[]> {
 // Busca o progresso do usuário em todas as trilhas
 export async function fetchUserProgress(userId: string): Promise<UserTrailProgress[]> {
   try {
+    // FIX: A Mágica Contra o Cache do PWA
+    // O Service Worker está interceptando o GET e devolvendo dados velhos.
+    // Usamos o .neq com a data atual para forçar a URL a ser única a cada reload.
+    // Isso obriga o PWA a buscar a verdade no banco de dados.
+    const cacheBuster = new Date().toISOString();
+
     const { data, error } = await withTimeout(
-      supabase.from('user_trail_progress').select('trail_id, day_number, completed_at').eq('user_id', userId)
+      supabase
+        .from('user_trail_progress')
+        .select('trail_id, day_number, completed_at')
+        .eq('user_id', userId)
+        .neq('completed_at', cacheBuster) // Bypass do Service Worker
     );
+    
     if (error) { console.warn('[trails] fetchUserProgress:', error.message); return []; }
     return (data || []) as UserTrailProgress[];
   } catch (e) {

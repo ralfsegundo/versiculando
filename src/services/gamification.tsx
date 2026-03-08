@@ -150,6 +150,19 @@ export const getStreakMultiplier = (streak: number): number => {
 export const applyMultiplier = (base: number, streak: number): number =>
   Math.round(base * getStreakMultiplier(streak));
 
+// Helper: Aplica pontos atomicamente garantindo o status atualizado do título
+const applyPointsToProfile = (prev: UserProfile, amount: number, category?: 'freeExploration' | 'discipleTrail' | 'bonus'): UserProfile => {
+  const newPoints = prev.points + amount;
+  const newBreakdown = { ...(prev.pointsBreakdown || { freeExploration: 0, discipleTrail: 0, bonus: 0 }) };
+  if (category) newBreakdown[category] += amount;
+  return {
+    ...prev,
+    points: newPoints,
+    pointsBreakdown: newBreakdown,
+    title: getTitleByPoints(newPoints)
+  };
+};
+
 // --- Initial State ---
 
 const getInitialProfile = (): UserProfile => ({
@@ -160,11 +173,7 @@ const getInitialProfile = (): UserProfile => ({
   joinDate: new Date().toISOString(),
   weeklyActivity: [new Date().toISOString()],
   points: 0,
-  pointsBreakdown: {
-    freeExploration: 0,
-    discipleTrail: 0,
-    bonus: 0,
-  },
+  pointsBreakdown: { freeExploration: 0, discipleTrail: 0, bonus: 0 },
   streak: 0,
   longestStreak: 0,
   lastActiveDate: new Date().toISOString(),
@@ -225,12 +234,13 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile>(getInitialProfile());
   const [badges, setBadges] = useState<Badge[]>([]);
   const [floatingPoints, setFloatingPoints] = useState<FloatingPoint[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [supabaseReady, setSupabaseReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   
+  // FLAGS de controle de sincronização
   const isLoadingFromSupabase = useRef(false);
-  const skipNextSave = useRef(false);
+  const userActionPendingSave = useRef(false); // Flag de OURO: Só salva se o usuário agiu. Previne loops.
+  
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncChannel = useRef<RealtimeChannel | null>(null);
   const nativeBroadcast = useRef<BroadcastChannel | null>(null);
@@ -238,6 +248,17 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const hasCheckedStreak = useRef(false);
   const [notificationTrigger, setNotificationTrigger] = useState(false);
   const notifAlreadyTriggered = useRef(false);
+
+  // Wrappers de ação para marcar que a mudança foi orgânica
+  const updateStateFromUserAction = useCallback((updater: (prev: UserProfile) => UserProfile) => {
+    userActionPendingSave.current = true;
+    setProfile(updater);
+  }, []);
+
+  const updateWeeklyChallengeFromUserAction = useCallback((updater: (prev: WeeklyChallenge) => WeeklyChallenge) => {
+    userActionPendingSave.current = true;
+    setWeeklyChallenge(updater);
+  }, []);
 
   const fireNotificationTrigger = useCallback(() => {
     if (notifAlreadyTriggered.current) return;
@@ -291,8 +312,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         const localOnboardingDone = !!localOnboardingStr;
         const finalOnboardingDone = profileData.onboarding_done || localOnboardingDone || false;
 
-        skipNextSave.current = true;
-
+        // Se veio do banco de dados, NÃO consideramos ação do usuário, então não gera novo save.
         setProfile(prev => ({
           ...getInitialProfile(),
           id: uid,
@@ -331,11 +351,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           bibleFavorites: profileData.bible_favorites || {},
           bibleFavoritesEver: profileData.bible_favorites_ever || {},
         }));
-
-        // Limpa a flag após garantir que o render consumiu o skipNextSave
-        setTimeout(() => {
-          skipNextSave.current = false;
-        }, 150);
 
         if (profileData.weekly_challenge) {
           const challenge = profileData.weekly_challenge as WeeklyChallenge;
@@ -404,32 +419,30 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchProfileData]);
 
-  // Canais de Sincronização em Tempo Real (Supabase & Native)
+  // Canais de Sincronização em Tempo Real e Eventos de Janela
   useEffect(() => {
     if (!userId || !supabaseReady) return;
 
-    // 1. Supabase Realtime (Cobre abas anônimas e dispositivos diferentes)
+    // 1. Supabase Broadcast
     const channel = supabase.channel(`sync_${userId}`);
     channel.on('broadcast', { event: 'profile_updated' }, () => {
-      console.log('[gamification] Sync remoto detectado. Atualizando dados...');
+      console.log('[gamification] Sincronização remota detectada. Buscando dados...');
       fetchProfileData(userId);
     });
     channel.subscribe();
     syncChannel.current = channel;
 
-    // 2. API Nativa BroadcastChannel (Cobre abas normais instantaneamente)
+    // 2. Broadcast Nativo (Abas na mesma janela)
     const bc = new BroadcastChannel(`native_sync_${userId}`);
     bc.onmessage = (event) => {
       if (event.data === 'profile_updated') {
-        console.log('[gamification] Sync nativo detectado. Atualizando dados...');
         fetchProfileData(userId);
       }
     };
     nativeBroadcast.current = bc;
 
-    // 3. Eventos de Foco de Janela (Garante atualização quando a janela fica ativa, crucial para lado-a-lado)
+    // 3. Foco de Janela (Abas lado a lado ou PWA que volta do background)
     const handleFocus = () => {
-      console.log('[gamification] Aba ganhou foco. Garantindo dados mais recentes...');
       fetchProfileData(userId);
     };
     const handleVisibility = () => {
@@ -439,6 +452,13 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
 
+    // 4. Polling Suave (Fallback blindado para abas anônimas que bloqueiam eventos)
+    const pollInterval = setInterval(() => {
+      if (document.visibilityState === 'visible' && !userActionPendingSave.current) {
+        fetchProfileData(userId);
+      }
+    }, 10000); // 10 segundos
+
     return () => {
       supabase.removeChannel(channel);
       syncChannel.current = null;
@@ -446,23 +466,21 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       nativeBroadcast.current = null;
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(pollInterval);
     };
   }, [userId, supabaseReady, fetchProfileData]);
 
-  // Save to Supabase (Debounced rápido)
+  // Save to Supabase (Só ocorre se a flag userActionPendingSave estiver TRUE)
   useEffect(() => {
     if (!userId || isLoadingFromSupabase.current || !supabaseReady) return;
-
-    if (skipNextSave.current) {
-      skipNextSave.current = false;
-      return;
-    }
+    if (!userActionPendingSave.current) return;
 
     if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     
-    // Reduzido para 400ms para disparar os broadcasts rapidamente sem esmagar o banco
     saveDebounceRef.current = setTimeout(async () => {
-      setIsSyncing(true);
+      // Consumimos a ação
+      userActionPendingSave.current = false;
+      
       try {
         await supabase.from('profiles').upsert({
           id: userId,
@@ -502,7 +520,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
           updated_at: new Date().toISOString()
         });
 
-        // Dispara aviso para todas as abas que o dado foi atualizado
+        // Dispara aviso em tempo real para as outras abas recarregarem
         if (syncChannel.current) {
           syncChannel.current.send({
             type: 'broadcast',
@@ -515,8 +533,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         }
       } catch (err) {
         console.warn('[gamification] saveToSupabase error:', err);
-      } finally {
-        setIsSyncing(false);
       }
     }, 400);
 
@@ -526,12 +542,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   }, [profile, weeklyChallenge, userId, supabaseReady]);
 
   const triggerConfetti = () => {
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ['#FFD700', '#FFA500', '#FF4500', '#87CEEB', '#32CD32']
-    });
+    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#FFD700', '#FFA500', '#FF4500', '#87CEEB', '#32CD32'] });
   };
 
   const showFloatingPoints = useCallback((amount: number, type: FloatingPointType) => {
@@ -553,16 +564,10 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       if (userId) {
         try {
           await supabase.from('user_badges').insert({
-            user_id: userId,
-            badge_id: badgeId,
-            title: badgeDef.title,
-            description: badgeDef.description,
-            emoji: badgeDef.emoji,
-            unlocked_at: unlockedAt
+            user_id: userId, badge_id: badgeId, title: badgeDef.title,
+            description: badgeDef.description, emoji: badgeDef.emoji, unlocked_at: unlockedAt
           });
-        } catch (err) {
-          console.error('Error syncing badge to Supabase', err);
-        }
+        } catch (err) { console.error('Error syncing badge to Supabase', err); }
       }
     }
   };
@@ -584,25 +589,14 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   };
 
   const addPoints = (amount: number, reason: string, category?: 'freeExploration' | 'discipleTrail' | 'bonus') => {
-    setProfile(prev => {
-      const newPoints = prev.points + amount;
-      const newBreakdown = { ...(prev.pointsBreakdown || { freeExploration: 0, discipleTrail: 0, bonus: 0 }) };
-      if (category) newBreakdown[category] += amount;
-      const newProfile = {
-        ...prev,
-        points: newPoints,
-        pointsBreakdown: newBreakdown,
-        title: getTitleByPoints(newPoints)
-      };
-      return newProfile;
-    });
+    updateStateFromUserAction(prev => applyPointsToProfile(prev, amount, category));
   };
 
   const checkStreak = () => {
     const now = new Date();
     const toDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
-    setProfile(prev => {
+    updateStateFromUserAction(prev => {
       const lastActive = new Date(prev.lastActiveDate);
       const diffDays = Math.round((toDay(now) - toDay(lastActive)) / (1000 * 60 * 60 * 24));
 
@@ -624,15 +618,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
       if (diffDays === 0) {
         if (newStreak === 0) newStreak = 1;
-        const newProfile = { 
-          ...prev, 
-          streak: newStreak, 
-          longestStreak: Math.max(prev.longestStreak || 0, newStreak), 
-          streakFreezes: newFreezes, 
-          lastFreezeEarnedWeek: weekKey, 
-          lastActiveDate: now.toISOString(), 
-          weeklyActivity: newActivity 
-        };
+        const newProfile = { ...prev, streak: newStreak, longestStreak: Math.max(prev.longestStreak || 0, newStreak), streakFreezes: newFreezes, lastFreezeEarnedWeek: weekKey, lastActiveDate: now.toISOString(), weeklyActivity: newActivity };
         checkBadges(newProfile);
         return newProfile;
       } else if (diffDays === 1) {
@@ -645,15 +631,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
         newStreak = 1;
       }
 
-      const newProfile = {
-        ...prev,
-        streak: newStreak,
-        longestStreak: Math.max(prev.longestStreak || 0, newStreak),
-        streakFreezes: newFreezes,
-        lastFreezeEarnedWeek: weekKey,
-        lastActiveDate: now.toISOString(),
-        weeklyActivity: newActivity
-      };
+      const newProfile = { ...prev, streak: newStreak, longestStreak: Math.max(prev.longestStreak || 0, newStreak), streakFreezes: newFreezes, lastFreezeEarnedWeek: weekKey, lastActiveDate: now.toISOString(), weeklyActivity: newActivity };
       checkBadges(newProfile);
       return newProfile;
     });
@@ -661,109 +639,123 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const useStreakFreeze = (): boolean => {
     if (profile.streakFreezes <= 0) return false;
-    setProfile(prev => ({
-      ...prev,
-      streakFreezes: prev.streakFreezes - 1,
-    }));
+    updateStateFromUserAction(prev => ({ ...prev, streakFreezes: prev.streakFreezes - 1 }));
     unlockBadge('graca_dia');
     return true;
   };
 
   const completeDailyMission = (_missionDate?: string) => {
     const now = new Date();
-    // Ajuste de Fuso Horário local para salvar
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     
-    if (profile.lastDailyMissionDate === today) return;
-    
-    setProfile(prev => {
+    updateStateFromUserAction(prev => {
+      if (prev.lastDailyMissionDate === today) return prev;
+      
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
       
-      const newMissionStreak = (prev.lastDailyMissionDate === yesterdayStr)
-        ? prev.dailyMissionStreak + 1
-        : 1;
-      const newProfile = { ...prev, lastDailyMissionDate: today, dailyMissionStreak: newMissionStreak };
-      if (newMissionStreak >= 7) unlockBadge('missao_diaria');
-      return newProfile;
+      const newMissionStreak = (prev.lastDailyMissionDate === yesterdayStr) ? prev.dailyMissionStreak + 1 : 1;
+      const xp = applyMultiplier(50, prev.streak);
+      
+      let next = { ...prev, lastDailyMissionDate: today, dailyMissionStreak: newMissionStreak };
+      next = applyPointsToProfile(next, xp, 'bonus');
+      
+      setTimeout(() => {
+        if (newMissionStreak >= 7) unlockBadge('missao_diaria');
+        showFloatingPoints(xp, 'bonus_step');
+        fireNotificationTrigger();
+      }, 0);
+      
+      return next;
     });
-    const xp = applyMultiplier(50, profile.streak);
-    addPoints(xp, 'Missão diária concluída', 'bonus');
-    showFloatingPoints(xp, 'bonus_step');
-    fireNotificationTrigger();
   };
 
   const addEcoReaction = (verseRef: string, emoji: string) => {
-    setProfile(prev => {
+    updateStateFromUserAction(prev => {
       const current = prev.ecoReactions || {};
       const newEco = { ...current, [verseRef]: emoji };
       const ecoCount = Object.keys(newEco).length;
-      const newProfile = { ...prev, ecoReactions: newEco };
+      const next = { ...prev, ecoReactions: newEco };
       if (ecoCount >= 15) unlockBadge('eco_vivo');
-      return newProfile;
+      return next;
     });
   };
 
   const recordSaintEncounter = (saintKey: string) => {
-    if (profile.saintsEncountered?.includes(saintKey)) return;
-    setProfile(prev => {
+    updateStateFromUserAction(prev => {
       if (prev.saintsEncountered?.includes(saintKey)) return prev;
       const newSaints = [...(prev.saintsEncountered || []), saintKey];
-      if (newSaints.length >= 10) unlockBadge('comunhao_santos');
-      return { ...prev, saintsEncountered: newSaints };
+      const xp = applyMultiplier(10, prev.streak);
+      
+      let next = { ...prev, saintsEncountered: newSaints };
+      next = applyPointsToProfile(next, xp, 'freeExploration');
+      
+      setTimeout(() => {
+        if (newSaints.length >= 10) unlockBadge('comunhao_santos');
+        showFloatingPoints(xp, 'free');
+      }, 0);
+      
+      return next;
     });
-    const xp = applyMultiplier(10, profile.streak);
-    addPoints(xp, `Encontrou um Santo`, 'freeExploration');
-    showFloatingPoints(xp, 'free');
   };
 
   const completeFlashChallenge = (weekKey: string) => {
-    if (profile.flashChallengeDone === weekKey) return;
-    unlockBadge('guerreiro_luz');
-    const xp = applyMultiplier(300, profile.streak);
-    addPoints(xp, 'Desafio relâmpago concluído', 'bonus');
-    showFloatingPoints(xp, 'bonus_trail');
-    setProfile(prev => ({ ...prev, flashChallengeDone: weekKey }));
+    updateStateFromUserAction(prev => {
+      if (prev.flashChallengeDone === weekKey) return prev;
+      const xp = applyMultiplier(300, prev.streak);
+      let next = { ...prev, flashChallengeDone: weekKey };
+      next = applyPointsToProfile(next, xp, 'bonus');
+      
+      setTimeout(() => {
+        unlockBadge('guerreiro_luz');
+        showFloatingPoints(xp, 'bonus_trail');
+      }, 0);
+      
+      return next;
+    });
   };
 
   const completeLectio = (dateStr: string) => {
-    if (profile.lastLectioDate === dateStr) return;
-    setProfile(prev => ({ ...prev, lastLectioDate: dateStr }));
-    const xp = applyMultiplier(20, profile.streak);
-    addPoints(xp, 'Lectio Divina', 'freeExploration');
-    showFloatingPoints(xp, 'free');
+    updateStateFromUserAction(prev => {
+      if (prev.lastLectioDate === dateStr) return prev;
+      const xp = applyMultiplier(20, prev.streak);
+      let next = { ...prev, lastLectioDate: dateStr };
+      next = applyPointsToProfile(next, xp, 'freeExploration');
+      
+      setTimeout(() => showFloatingPoints(xp, 'free'), 0);
+      return next;
+    });
   };
 
   const markBookCompleted = (bookId: string, isGps: boolean = false) => {
     const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
     const chapters = bookData?.chapters || 1;
     
-    setProfile(prev => {
-      const alreadyCompleted = prev.completedBooks.includes(bookId);
-      if (alreadyCompleted) return prev;
-      const mult = getStreakMultiplier(prev.streak);
-      const xp = isGps ? Math.round((100 + chapters * 2) * mult) : Math.round((50 + chapters * 1) * mult);
-      const newProfile = {
-        ...prev,
-        completedBooks: [...prev.completedBooks, bookId],
-        points: prev.points + xp,
-        title: getTitleByPoints(prev.points + xp)
-      };
-      showFloatingPoints(xp, isGps ? 'disciple' : 'free');
-      checkBadges(newProfile);
-      return newProfile;
+    updateStateFromUserAction(prev => {
+      if (prev.completedBooks.includes(bookId)) return prev;
+      const xp = isGps 
+        ? Math.round((100 + chapters * 2) * getStreakMultiplier(prev.streak))
+        : Math.round((50 + chapters * 1) * getStreakMultiplier(prev.streak));
+        
+      let next = { ...prev, completedBooks: [...prev.completedBooks, bookId] };
+      next = applyPointsToProfile(next, xp, isGps ? 'discipleTrail' : 'freeExploration');
+      
+      setTimeout(() => {
+        showFloatingPoints(xp, isGps ? 'disciple' : 'free');
+        checkBadges(next);
+      }, 0);
+      
+      return next;
     });
 
-    setWeeklyChallenge(prev => {
+    updateWeeklyChallengeFromUserAction(prev => {
       if (prev.completed) return prev;
-      
       let isEligible = true;
       if (prev.title.includes('NT')) {
-         const bookData = BIBLE_BOOKS.find(b => b.id === bookId);
-         if (bookData?.testament !== 'NT') isEligible = false;
+         const bd = BIBLE_BOOKS.find(b => b.id === bookId);
+         if (bd?.testament !== 'NT') isEligible = false;
       }
-      
       if (isEligible) {
          const newProgress = prev.progress + 1;
          if (newProgress >= prev.target) {
@@ -780,80 +772,89 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   };
 
   const markBookVisited = (bookId: string) => {
-    setProfile(prev => {
+    updateStateFromUserAction(prev => {
       if (prev.visitedBooks?.includes(bookId)) return prev;
       return { ...prev, visitedBooks: [...(prev.visitedBooks || []), bookId] };
     });
   };
 
   const markChapterRead = (bookId: string, chapterNum: number, _totalChapters: number) => {
-    setProfile(prev => {
+    updateStateFromUserAction(prev => {
       const current = prev.readChapters?.[bookId] || [];
       if (current.includes(chapterNum)) return prev;
+      
       const newChapters = [...current, chapterNum];
       const xp = applyMultiplier(5, prev.streak);
-      addPoints(xp, `Leu cap ${chapterNum} de ${bookId}`, 'freeExploration');
-      showFloatingPoints(xp, 'free');
-      return { ...prev, readChapters: { ...prev.readChapters, [bookId]: newChapters } };
+      
+      let next = { ...prev, readChapters: { ...prev.readChapters, [bookId]: newChapters } };
+      next = applyPointsToProfile(next, xp, 'freeExploration');
+      
+      setTimeout(() => showFloatingPoints(xp, 'free'), 0);
+      return next;
     });
   };
 
   const markAllChaptersRead = (bookId: string, chapterNums: number[]) => {
-    setProfile(prev => ({
-      ...prev,
-      readChapters: { ...prev.readChapters, [bookId]: chapterNums }
+    updateStateFromUserAction(prev => ({
+      ...prev, readChapters: { ...prev.readChapters, [bookId]: chapterNums }
     }));
   };
 
   const addNote = () => {
-    setProfile(prev => {
-      const newProfile = { ...prev, notesCount: prev.notesCount + 1 };
-      checkBadges(newProfile);
-      return newProfile;
+    updateStateFromUserAction(prev => {
+      const xp = applyMultiplier(25, prev.streak);
+      let next = { ...prev, notesCount: prev.notesCount + 1 };
+      next = applyPointsToProfile(next, xp, 'freeExploration');
+      
+      setTimeout(() => {
+        checkBadges(next);
+        showFloatingPoints(xp, 'free');
+      }, 0);
+      return next;
     });
-    const xp = applyMultiplier(25, profile.streak);
-    addPoints(xp, 'Fez uma anotação', 'freeExploration');
-    showFloatingPoints(xp, 'free');
   };
 
   const addFavorite = () => {
-    setProfile(prev => {
-      const newProfile = { ...prev, favoritesCount: prev.favoritesCount + 1 };
-      checkBadges(newProfile);
-      return newProfile;
+    updateStateFromUserAction(prev => {
+      const next = { ...prev, favoritesCount: prev.favoritesCount + 1 };
+      setTimeout(() => checkBadges(next), 0);
+      return next;
     });
   };
 
   const updateFavorites = (favorites: Record<string, boolean>, favoritesEver: Record<string, boolean>) => {
-    setProfile(prev => ({ ...prev, bibleFavorites: favorites, bibleFavoritesEver: favoritesEver }));
+    updateStateFromUserAction(prev => ({ ...prev, bibleFavorites: favorites, bibleFavoritesEver: favoritesEver }));
   };
 
   const accessDailyVerse = (dateStr?: string) => {
-    setProfile(prev => {
-      const now = new Date();
-      const today = dateStr || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      
+    const now = new Date();
+    const today = dateStr || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
+    updateStateFromUserAction(prev => {
       if (prev.lastDailyVerseDate === today) return prev;
-      const newProfile = { ...prev, dailyVerseCount: prev.dailyVerseCount + 1, lastDailyVerseDate: today };
       const xp = applyMultiplier(15, prev.streak);
-      addPoints(xp, 'Acessou versículo do dia', 'freeExploration');
-      showFloatingPoints(xp, 'free');
-      checkBadges(newProfile);
-      fireNotificationTrigger();
-      return newProfile;
+      let next = { ...prev, dailyVerseCount: prev.dailyVerseCount + 1, lastDailyVerseDate: today };
+      next = applyPointsToProfile(next, xp, 'freeExploration');
+      
+      setTimeout(() => {
+        checkBadges(next);
+        showFloatingPoints(xp, 'free');
+        fireNotificationTrigger();
+      }, 0);
+      return next;
     });
   };
 
   const completePlan = () => {
-    setProfile(prev => {
-      const newProfile = { ...prev, completedPlans: prev.completedPlans + 1 };
-      checkBadges(newProfile);
-      return newProfile;
+    updateStateFromUserAction(prev => {
+      const next = { ...prev, completedPlans: prev.completedPlans + 1 };
+      setTimeout(() => checkBadges(next), 0);
+      return next;
     });
   };
 
   const updateProfile = (updates: Partial<UserProfile>) => {
-    setProfile(prev => ({ ...prev, ...updates }));
+    updateStateFromUserAction(prev => ({ ...prev, ...updates }));
   };
 
   useEffect(() => {
@@ -865,33 +866,12 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   return (
     <GamificationContext.Provider value={{
-      profile,
-      userId,
-      badges,
-      weeklyChallenge,
-      isReady: supabaseReady,
-      addPoints,
-      markBookCompleted,
-      markBookVisited,
-      markChapterRead,
-      markAllChaptersRead,
-      addNote,
-      addFavorite,
-      updateFavorites,
-      accessDailyVerse,
-      completePlan,
-      checkStreak,
-      updateProfile,
-      showFloatingPoints,
-      useStreakFreeze,
-      completeDailyMission,
-      addEcoReaction,
-      recordSaintEncounter,
-      completeFlashChallenge,
-      completeLectio,
-      notificationTrigger,
-      clearNotificationTrigger,
-      triggerNotificationPrompt: fireNotificationTrigger,
+      profile, userId, badges, weeklyChallenge, isReady: supabaseReady,
+      addPoints, markBookCompleted, markBookVisited, markChapterRead, markAllChaptersRead,
+      addNote, addFavorite, updateFavorites, accessDailyVerse, completePlan, checkStreak,
+      updateProfile, showFloatingPoints, useStreakFreeze, completeDailyMission,
+      addEcoReaction, recordSaintEncounter, completeFlashChallenge, completeLectio,
+      notificationTrigger, clearNotificationTrigger, triggerNotificationPrompt: fireNotificationTrigger,
     }}>
       {children}
       <div className="fixed inset-0 pointer-events-none z-[100] flex items-center justify-center">
